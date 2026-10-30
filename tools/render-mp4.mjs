@@ -148,7 +148,10 @@ async function openPage(workerPort) {
 try {
   const first = await openPage(PORT);
   const info = first.info;
-  const frames = maxFrames > 0 ? maxFrames : Math.round(info.duration * fps);
+  /* Round UP: the audio can run a hair past the last whole frame
+     (23.36 s * 30 fps = 700.8) and a rounded-down count left the video
+     stream shorter than the audio — players showed a black tail there. */
+  const frames = maxFrames > 0 ? maxFrames : Math.ceil(info.duration * fps - 1e-9);
   const clip = { x: info.rect.x, y: info.rect.y, width: info.width, height: info.height, scale: 1 };
   console.log(`rendering ${frames} frames at ${info.width}x${info.height} ${fps}fps with ${workers} workers`);
 
