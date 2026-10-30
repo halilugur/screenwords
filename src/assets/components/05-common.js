@@ -3,17 +3,11 @@
    own module and paints from the same helpers as packs one and two, so the
    theme contract (global T, params colour overrides) stays identical. */
 
-function p3T() {
-  return (typeof T !== 'undefined' && T) ? T : {};
-}
 function p3TextOf(p) {
   return ecS(p.text, ecS(p.title, ''));
 }
 function p3SubOf(p) {
   return ecS(p.subtitle, ecS(p.label, ''));
-}
-function p3P(p, W, H, fx, fy) {
-  return ecXY(p, W, H, fx, fy);
 }
 function p3Base(p) {
   return ec2Base(p);
@@ -26,12 +20,6 @@ function p3Items(p, n, colors) {
 }
 function p3Loop(q) {
   return ((q % 1) + 1) % 1;
-}
-function p3Wave(t, speed, amp) {
-  return Math.sin(t * speed) * amp;
-}
-function p3LineCount(ctx, lines, size, lh) {
-  return Math.max(1, lines.length) * (lh || size * 1.3);
 }
 function ecDot(ctx, x, y, r, color) {
   const rr = Math.max(0.1, ecN(r, 2));

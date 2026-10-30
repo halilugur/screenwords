@@ -22,12 +22,6 @@ function sbMix(a, b, q) {
   return '#' + h(c(0)) + h(c(2)) + h(c(4));
 }
 function sbNorm(v) { return String(v || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
-function sbSeed(v) {
-  let n = 13;
-  const s = sbNorm(v);
-  for (let i = 0; i < s.length; i++) n = (n * 31 + s.charCodeAt(i)) % 9973;
-  return n || 13;
-}
 function sbGrad(ctx, x0, y0, x1, y1, a, b) {
   const g = ctx.createLinearGradient(x0, y0, x1, y1);
   g.addColorStop(0, a); g.addColorStop(1, b);
