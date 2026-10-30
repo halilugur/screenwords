@@ -1254,7 +1254,12 @@ let tlZoom = 1;
 const TL_MAX = 16;
 function applyTlZoom() {
   const lanes = document.querySelector('.lanes');
-  if (lanes) lanes.style.width = (tlZoom * 100) + '%';
+  /* At fit, drop the inline width and hide the x-axis: ticks and the
+     playhead sit on the 100% edge and would otherwise show a phantom
+     horizontal scrollbar. Zoomed, the lanes exceed the viewport and pan. */
+  if (lanes) lanes.style.width = tlZoom === 1 ? '' : (tlZoom * 100) + '%';
+  const scroller = document.querySelector('.timeline-scroller');
+  if (scroller) scroller.style.overflowX = tlZoom === 1 ? 'hidden' : 'auto';
   const label = $('#tl-zoom-label');
   if (label) label.textContent = tlZoom === 1 ? 'Fit' : Math.round(tlZoom * 100) + '%';
   const out = $('#tl-zoom-out');
