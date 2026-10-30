@@ -1038,6 +1038,11 @@ function pointOf(value, fallbackX, fallbackY) {
   return { x: fallbackX, y: fallbackY };
 }
 
+/* The library's host contract expects getImage; this page already caches
+   decoded images in getEditorImage — alias it so photo backgrounds paint
+   on the editor stage exactly as they do in the player. */
+function getImage(src) { return getEditorImage(src); }
+
 /* @@COMPONENTS@@ */
 
 function renderStageScene(time) {
