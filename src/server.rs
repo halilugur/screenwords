@@ -150,8 +150,38 @@ impl McpServer {
     }
 }
 
-fn serde_ready(server: &McpServer) -> String {
-    // The ready.json first line the scripts expect.
+/// The spoken part of a TTS chunk window: an energy-based trim of the
+/// near-silence the model emits before and after the sentence. 20 ms
+/// analysis frames; a frame counts as speech when its peak passes 6% of the
+/// chunk's own peak, so a quiet voice trims as tightly as a loud one.
+fn speech_span(samples: &[f32], rate: u32, wa: f64, wd: f64) -> (f64, f64) {
+    let rate = rate as usize;
+    let a = ((wa * rate as f64) as usize).min(samples.len());
+    let b = (((wa + wd) * rate as f64) as usize).min(samples.len());
+    if a >= b {
+        return (wa, wa + wd);
+    }
+    let win = (rate / 50).max(1);
+    let peak = samples[a..b].iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    let thresh = peak * 0.06;
+    let n = (b - a) / win;
+    let loud = |i: usize| {
+        let s = a + i * win;
+        let e = (s + win).min(b);
+        samples[s..e].iter().fold(0.0f32, |m, x| m.max(x.abs())) > thresh
+    };
+    let first = (0..n).find(|&i| loud(i));
+    let last = (0..n).rev().find(|&i| loud(i));
+    match (first, last) {
+        (Some(f), Some(l)) if l > f => (
+            wa + f as f64 * win as f64 / rate as f64,
+            wa + (l + 1) as f64 * win as f64 / rate as f64,
+        ),
+        _ => (wa, wa + wd),
+    }
+}
+
+fn serde_ready(server: &McpServer) -> String {    // The ready.json first line the scripts expect.
     format!(
         "{{\"port\":__PORT__,\"project\":{{\"name\":\"{}\"}},\"token\":\"{}\",\"url\":\"http://127.0.0.1:__PORT__/mcp\"}}",
         server.document.lock().unwrap().project().name().replace('"', "\\\""),
@@ -487,10 +517,20 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
             let speech_end = segs.last().map(|(_, e)| *e).unwrap_or(0.0);
             let duration = duration;
             let piecewise: Vec<((f64, f64), (f64, f64))> = match &chunk_windows {
+                // A chunk window is its full audio span, including the
+                // leading/trailing near-silence the model emits around the
+                // sentence. Mapping onto the raw window stretched every
+                // sentence over speech + pause, so captions drifted late by
+                // up to the pause length. Trim each window to the spoken
+                // part first; the pause then lands between sentences, where
+                // no word needs it.
                 Some(wins) if wins.len() == segs.len() && !segs.is_empty() => segs
                     .iter()
                     .zip(wins.iter())
-                    .map(|((s0, e0), (wa, wd))| ((*s0, *e0), (*wa, *wa + *wd)))
+                    .map(|((s0, e0), (wa, wd))| {
+                        let (na, nb) = speech_span(&audio.samples, audio.rate, *wa, *wd);
+                        ((*s0, *e0), (na, nb))
+                    })
                     .collect(),
                 _ => Vec::new(),
             };
@@ -1257,6 +1297,24 @@ pub fn run_server(server: Arc<McpServer>, listener: std::net::TcpListener, mut r
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn speech_span_trims_the_pause_around_a_sentence() {
+        // 1.0 s silence, 1.0 s speech at half amplitude, 1.0 s silence at
+        // 24 kHz — the chunk window covers all three; only the middle may
+        // survive the trim (within one 20 ms frame).
+        let rate = 24000u32;
+        let mut samples = vec![0.0f32; rate as usize * 3];
+        for s in samples.iter_mut().take(rate as usize * 2).skip(rate as usize) {
+            *s = 0.5;
+        }
+        let (a, b) = speech_span(&samples, rate, 0.0, 3.0);
+        assert!((a - 0.98).abs() < 0.03, "leading silence kept: {a}");
+        assert!((b - 2.02).abs() < 0.03, "trailing silence kept: {b}");
+        // A degenerate window (all silence) must not collapse to a point.
+        let (a, b) = speech_span(&[0.0f32; 480], rate, 0.0, 0.02);
+        assert_eq!((a, b), (0.0, 0.02));
+    }
 
     #[test]
     fn provider_search_picks_the_first_portrait_photo() {
