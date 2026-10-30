@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:,">
 <title>screenwords editor</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect width='96' height='96' rx='22' fill='%23121A36'/><rect x='26' y='28' width='24' height='10' rx='5' fill='%23E8ECF8'/><rect x='26' y='43' width='46' height='10' rx='5' fill='%23FFC857'/><rect x='26' y='58' width='24' height='10' rx='5' fill='%23E8ECF8'/></svg>">
 <meta name="description" content="The screenwords video design editor: live stage monitor, multi-track timeline, transcript, and production tools over a word-anchored document.">
 <style>/* @@FONTS@@ */</style>
 <style>
@@ -53,7 +54,8 @@ button, input, select { font: inherit; }
 .app-header { display: flex; align-items: center; gap: var(--space-md); height: 48px; padding: 0 var(--space-md); border-bottom: 1px solid var(--rule); background: var(--paper-2); flex-shrink: 0; }
 .app-header .header-actions { margin-left: auto; }
 .wordmark { font-size: var(--text-md); font-weight: 300; font-stretch: 125%; letter-spacing: -0.015em; color: var(--ink); display: flex; align-items: center; gap: var(--space-xs); }
-.wordmark svg { width: 16px; height: 16px; fill: var(--accent); }
+.wordmark svg { width: 20px; height: 20px; }
+.wordmark .wm-accent { color: #E8950C; }
 .proj-info { display: flex; align-items: center; gap: var(--space-xs); color: var(--muted); font-size: var(--text-sm); padding-left: var(--space-md); border-left: 1px solid var(--rule); height: 20px; }
 .proj-info b { color: var(--ink); font-weight: 500; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { display: inline-flex; align-items: center; padding: var(--space-3xs) var(--space-xs); border: 1px solid var(--rule); color: var(--ink-2); font-size: var(--text-xs); border-radius: 2px; }
@@ -335,8 +337,13 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
 <!-- Top Application Header -->
 <header class="app-header">
   <div class="wordmark">
-    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12v10H2zm2 2v6h8V5z"/></svg>
-    <span>screenwords</span>
+    <svg viewBox="0 0 96 96" aria-hidden="true">
+      <rect x="4" y="4" width="88" height="88" rx="20" fill="#121A36"/>
+      <rect x="28" y="30" width="22" height="9" rx="4.5" fill="#E8ECF8"/>
+      <rect x="28" y="43.5" width="42" height="9" rx="4.5" fill="#FFC857"/>
+      <rect x="28" y="57" width="22" height="9" rx="4.5" fill="#E8ECF8"/>
+    </svg>
+    <span>screen<span class="wm-accent">words</span></span>
   </div>
   <div class="proj-info"><b id="pname">Story</b></div>
 

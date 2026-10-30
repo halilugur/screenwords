@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 452 96" role="img" aria-label="screenwords logo">
+  <title>screenwords — words, on screen, in motion</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#121A36"/>
+      <stop offset="1" stop-color="#070B18"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon: a play glyph built from caption lines; the spoken word is gold. -->
+  <rect x="0" y="0" width="96" height="96" rx="22" fill="url(#tile)"/>
+  <rect x="26" y="28" width="24" height="10" rx="5" fill="#E8ECF8"/>
+  <rect x="26" y="43" width="46" height="10" rx="5" fill="#FFC857"/>
+  <rect x="26" y="58" width="24" height="10" rx="5" fill="#E8ECF8"/>
+
+  <!-- Wordmark -->
+  <text x="118" y="63"
+        font-family="'Space Grotesk','Mona Sans',ui-sans-serif,system-ui,sans-serif"
+        font-size="47" font-weight="700" letter-spacing="-1.2"
+        fill="#141B33">screen<tspan fill="#E8950C">words</tspan></text>
+</svg>
