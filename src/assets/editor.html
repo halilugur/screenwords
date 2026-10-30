@@ -87,7 +87,14 @@ button, input, select { font: inherit; }
 #banner { display: none; padding: var(--space-2xs) var(--space-md); background: var(--paper-3); color: var(--color-error); font-size: var(--text-xs); border-bottom: 1px solid var(--rule); }
 
 /* Main Central Split Workspace */
-.workspace { display: grid; grid-template-columns: minmax(360px, 460px) minmax(0, 1.25fr); flex: 1; min-height: 0; border-bottom: 1px solid var(--rule); }
+.workspace { display: grid; grid-template-columns: clamp(340px, var(--panel-w, 430px), 640px) 6px minmax(0, 1.25fr); flex: 1; min-height: 0; border-bottom: 1px solid var(--rule); }
+
+/* Draggable pane gutters: width between drawer and monitor, height between
+   monitor and timeline. Double-click a gutter to reset it. */
+.pane-gutter { flex-shrink: 0; background: var(--paper-3); z-index: 6; }
+.pane-gutter:hover, .pane-gutter.active { background: var(--accent); }
+.pane-gutter-v { width: 6px; cursor: col-resize; }
+.pane-gutter-h { height: 6px; cursor: row-resize; }
 
 /* Right: Monitor Stage */
 .monitor-area { display: flex; flex-direction: column; background: var(--paper); border-inline-start: 1px solid var(--rule); overflow: hidden; }
@@ -523,6 +530,7 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
       </section>
     </div>
   </aside>
+  <div class="pane-gutter pane-gutter-v" id="gutter-panel" title="Drag to resize the panel — double-click to reset"></div>
   <!-- Right: Live Video Monitor Stage -->
   <div class="monitor-area">
     <div class="stage-viewport">
@@ -571,7 +579,8 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
 </main>
 
 <!-- Bottom Multi-Track Timeline -->
-<footer class="timeline-area">
+  <div class="pane-gutter pane-gutter-h" id="gutter-timeline" title="Drag to resize the timeline — double-click to reset"></div>
+  <footer class="timeline-area">
   <div class="timeline-header">
     <span>Timeline Tracks</span>
     <div class="tl-zoom" title="Ctrl/⌘ + wheel over the timeline zooms toward the cursor">
@@ -1295,11 +1304,62 @@ $('#tl-zoom-fit').addEventListener('click', () => {
   const s = document.querySelector('.timeline-scroller');
   if (s) s.scrollLeft = 0;
 });
-document.querySelector('.timeline-scroller').addEventListener('wheel', e => {
-  if (!(e.ctrlKey || e.metaKey)) return;
-  e.preventDefault();
-  setTlZoom(e.deltaY < 0 ? tlZoom * 1.25 : tlZoom / 1.25, e.clientX);
-}, { passive: false });
+
+/* Resizable panes: drag the gutter between drawer and monitor (panel width)
+   and between monitor and timeline (timeline height). Double-click resets.
+   Sizes persist across sessions; the stage refits live while dragging. */
+function dragPane(gutter, onMove, onDone, onReset) {
+  gutter.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    gutter.setPointerCapture(e.pointerId);
+    gutter.classList.add('active');
+    const move = ev => onMove(ev);
+    const up = ev => {
+      gutter.releasePointerCapture(ev.pointerId);
+      gutter.classList.remove('active');
+      gutter.removeEventListener('pointermove', move);
+      gutter.removeEventListener('pointerup', up);
+      onDone();
+    };
+    gutter.addEventListener('pointermove', move);
+    gutter.addEventListener('pointerup', up);
+  });
+  gutter.addEventListener('dblclick', onReset);
+}
+dragPane($('#gutter-panel'),
+  e => {
+    document.documentElement.style.setProperty('--panel-w', Math.min(640, Math.max(340, e.clientX)) + 'px');
+    fitStage();
+  },
+  () => localStorage.setItem('sw.panelW', document.documentElement.style.getPropertyValue('--panel-w')),
+  () => {
+    localStorage.removeItem('sw.panelW');
+    document.documentElement.style.removeProperty('--panel-w');
+    fitStage();
+  });
+dragPane($('#gutter-timeline'),
+  e => {
+    const tl = document.querySelector('.timeline-area');
+    tl.style.height = Math.min(640, Math.max(140, innerHeight - e.clientY)) + 'px';
+    fitStage();
+  },
+  () => {
+    const tl = document.querySelector('.timeline-area');
+    if (tl) localStorage.setItem('sw.tlH', tl.style.height);
+  },
+  () => {
+    const tl = document.querySelector('.timeline-area');
+    localStorage.removeItem('sw.tlH');
+    if (tl) tl.style.height = '';
+    fitStage();
+  });
+(function restorePanes() {
+  const w = localStorage.getItem('sw.panelW');
+  if (w) document.documentElement.style.setProperty('--panel-w', w);
+  const h = localStorage.getItem('sw.tlH');
+  const tl = document.querySelector('.timeline-area');
+  if (h && tl) tl.style.height = h;
+})();
 
 /* Greedy interval layout: items that overlap in time get their own sub-row
    so no card can hide another one on the same track. */
