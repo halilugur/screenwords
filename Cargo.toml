@@ -1,0 +1,25 @@
+[package]
+name = "screenwords"
+version = "1.0.0"
+edition = "2021"
+description = "Rust re-implementation of Screenwords's engine contracts: the project.json document model, the .swanim package validator, and the Streamable-HTTP MCP client/stdio proxy."
+license = "MIT"
+
+# Zero dependencies by design: JSON, regex subset, DEFLATE, ZIP, HTTP/1.1 and SSE
+# are all implemented in this crate on top of libstd only. Two exceptions were
+# added by explicit user request:
+#   - ort: on-device TTS inference ("if there is onnx dependency exist we can use it").
+#   - rustls + webpki-roots: HTTPS so `find_background` can download commercially
+#     licensed photos in-process instead of shelling out to curl.
+[dependencies]
+ort = { version = "=2.0.0-rc.10", features = ["download-binaries"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
+webpki-roots = "0.26"
+
+[lib]
+name = "screenwords"
+path = "src/lib.rs"
+
+[[bin]]
+name = "screenwords"
+path = "src/main.rs"

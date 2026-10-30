@@ -1,0 +1,8 @@
+# Rust build output
+/target
+
+# ONNX TTS models — staged at runtime, ~1 GB; re-download, don't commit
+/tts-models
+
+# macOS
+.DS_Store

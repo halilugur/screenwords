@@ -1,0 +1,1635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>screenwords editor</title>
+<meta name="description" content="The screenwords video design editor: live stage monitor, multi-track timeline, transcript, and production tools over a word-anchored document.">
+<style>/* @@FONTS@@ */</style>
+<style>
+/* Hallmark · shape: app screen · genre: atmospheric · theme: Midnight (deal 2/3, seed screenwords-from-zero-video-story-engine-c3e3·98d8e259·2026-10-29·r0)
+ * nav: top bar, wordmark and one action · signature: the video stage and timeline lanes · states: loading, empty, error, full
+ * axes: dark/grotesk-sans/cool · posture: committed · contrast: pass · v2.0.0 */
+/* Hallmark · pre-emit critique: P_ H_ E_ S_ R_ V_ · weakest: previous editor was an unstyled text dashboard with hidden preview; rebuilt as a full desktop-class NLE video editor */
+
+:root {
+  color-scheme: dark;
+  --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px;
+  --text-xs: 0.75rem; --text-sm: 0.875rem; --text-md: 1rem; --text-lg: 1.2rem; --text-xl: 1.44rem; --text-2xl: 1.728rem;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms; --dur-short: 220ms; --dur-long: 420ms;
+  --color-error: oklch(72% 0.15 27); --color-success: oklch(76% 0.13 150);
+  --paper: oklch(14% 0.048 264); --paper-2: oklch(18.5% 0.052 264); --paper-3: oklch(23% 0.055 264);
+  --ink: oklch(95% 0.016 250); --ink-2: oklch(88% 0.05 245); --muted: oklch(73% 0.04 256);
+  --rule: oklch(29% 0.058 264); --rule-2: oklch(40% 0.06 262);
+  --accent: oklch(80% 0.11 230); --accent-2: oklch(58% 0.1 236); --accent-ink: oklch(16% 0.05 264); --focus: oklch(84% 0.12 228);
+  --font: "Mona Sans", ui-sans-serif, system-ui, sans-serif;
+  --control-h: 32px;
+  /* video-frame palette (content on the stage, distinct from page chrome) */
+  --vid-white: #F4F8FF; --vid-dim: rgba(244, 248, 255, 0.72); --vid-ink-2: #D9E2F2;
+  --vid-stroke: #050A16; --vid-accent: #38BDF8; --vid-accent-hot: #22E0FF;
+  --vid-accent-ink: #04101E; --vid-gold: #FFD54A;
+  --vid-accent-glow: rgba(56, 189, 248, 0.8);
+  --vid-plate: #101828; --vid-plate-border: rgba(148, 163, 184, 0.28);
+  --shadow-vid: rgba(2, 5, 12, 0.82);
+  --font-display: "Montserrat", "Arial Black", sans-serif;
+  --shadow-deep: oklch(6% 0.04 264 / 0.7);
+  --scrim-deep: oklch(6% 0.04 264 / 0.55);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { overflow-x: clip; height: 100vh; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font); font-size: var(--text-md); line-height: 1.5; font-synthesis: none; -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; }
+::selection { background: color-mix(in oklab, var(--accent) 24%, transparent); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+h1, h2, h3 { margin: 0; font-weight: 500; letter-spacing: -0.01em; line-height: 1.15; text-wrap: balance; overflow-wrap: break-word; min-width: 0; }
+p { margin: 0; text-wrap: pretty; }
+button, input, select { font: inherit; }
+[hidden] { display: none !important; }
+.num { font-variant-numeric: tabular-nums; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Top Application Bar */
+.app-header { display: flex; align-items: center; gap: var(--space-md); height: 48px; padding: 0 var(--space-md); border-bottom: 1px solid var(--rule); background: var(--paper-2); flex-shrink: 0; }
+.app-header .header-actions { margin-left: auto; }
+.wordmark { font-size: var(--text-md); font-weight: 300; font-stretch: 125%; letter-spacing: -0.015em; color: var(--ink); display: flex; align-items: center; gap: var(--space-xs); }
+.wordmark svg { width: 16px; height: 16px; fill: var(--accent); }
+.proj-info { display: flex; align-items: center; gap: var(--space-xs); color: var(--muted); font-size: var(--text-sm); padding-left: var(--space-md); border-left: 1px solid var(--rule); height: 20px; }
+.proj-info b { color: var(--ink); font-weight: 500; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { display: inline-flex; align-items: center; padding: var(--space-3xs) var(--space-xs); border: 1px solid var(--rule); color: var(--ink-2); font-size: var(--text-xs); border-radius: 2px; }
+.badge.accent { border-color: var(--accent); color: var(--accent); }
+
+/* Center Transport in Top Bar */
+.transport { display: flex; align-items: center; gap: var(--space-xs); margin-inline: auto; }
+.t-btn { display: grid; place-items: center; width: var(--control-h); height: var(--control-h); border-radius: 2px; border: 1px solid var(--rule-2); background: var(--paper); color: var(--ink); cursor: pointer; transition: background-color var(--dur-micro) var(--ease-in-out), color var(--dur-micro) var(--ease-in-out); }
+.t-btn:hover { background: var(--paper-3); }
+.t-btn:active { background: var(--accent); color: var(--accent-ink); }
+.t-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.t-btn svg { width: 14px; height: 14px; fill: currentColor; }
+.t-btn.stroke svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.t-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.t-btn.primary:hover { background: var(--focus); border-color: var(--focus); }
+.timecode { color: var(--ink); font-size: var(--text-sm); font-weight: 500; font-variant-numeric: tabular-nums; padding: 0 var(--space-xs); min-width: 7.5rem; text-align: center; }
+
+/* Right actions in Top Bar */
+.header-actions { display: flex; align-items: center; gap: var(--space-xs); }
+.btn { display: inline-flex; align-items: center; gap: var(--space-xs); height: var(--control-h); padding: 0 var(--space-sm); border: 1px solid var(--rule-2); background: transparent; color: var(--ink); cursor: pointer; text-decoration: none; font-size: var(--text-xs); transition: background-color var(--dur-micro) var(--ease-in-out), border-color var(--dur-micro) var(--ease-in-out); }
+.btn:hover { background: var(--paper-3); }
+.btn:active { background: var(--paper-3); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+.btn svg { width: 12px; height: 12px; fill: currentColor; }
+
+#vu-top { display: flex; align-items: flex-end; gap: var(--space-3xs); height: 16px; width: 14px; }
+.vu-bar-top { flex: 1; background: var(--accent-2); height: 100%; transform: scaleY(0.15); transform-origin: bottom center; transition: transform var(--dur-micro) var(--ease-out); }
+.vu-bar-top.active { background: var(--accent); }
+
+#banner { display: none; padding: var(--space-2xs) var(--space-md); background: var(--paper-3); color: var(--color-error); font-size: var(--text-xs); border-bottom: 1px solid var(--rule); }
+
+/* Main Central Split Workspace */
+.workspace { display: grid; grid-template-columns: minmax(360px, 460px) minmax(0, 1.25fr); flex: 1; min-height: 0; border-bottom: 1px solid var(--rule); }
+
+/* Right: Monitor Stage */
+.monitor-area { display: flex; flex-direction: column; background: var(--paper); border-inline-start: 1px solid var(--rule); overflow: hidden; }
+.stage-viewport { flex: 1; display: flex; justify-content: center; align-items: center; padding: var(--space-md); overflow: hidden; position: relative; }
+/* --sx/--sy scale the stage overlays with the stage: horizontal sizes follow
+   the width, vertical offsets follow the height. */
+.stage-frame { --sx: 1; --sy: 1; position: relative; width: 280px; height: 498px; border: 1px solid var(--rule-2); background: var(--paper-2); overflow: clip; }
+.stage-canvas-layer { position: absolute; inset: 0; }
+#stage-canvas { width: 100%; height: 100%; display: block; }
+#editor-zoomer { position: absolute; inset: 0; transform-origin: 50% 50%; }
+
+/* Stage title card */
+/* Same placement as the rendered player: a title card sits in the upper fifth. */
+#editor-title { position: absolute; top: calc(99px * var(--sy)); left: 0; right: 0; bottom: auto; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 0 calc(16px * var(--sx)); background: transparent; opacity: 0; pointer-events: none; z-index: 3; transition: opacity var(--dur-long) var(--ease-in-out); }
+#editor-title.show { opacity: 1; }
+#editor-title h2 { font-size: calc(23.72px * var(--sx)); font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; color: var(--vid-white); text-shadow: 0 4px 20px var(--shadow-vid), 0 2px 4px var(--vid-stroke); }
+#editor-title p { color: var(--vid-accent); margin-top: calc(8px * var(--sx)); font-size: calc(12px * var(--sx)); font-weight: 600; text-shadow: 0 2px 10px var(--shadow-vid); }
+
+/* Stage kinetic words: strictly anchored at lower-third */
+#editor-kinetic {
+  position: absolute;
+  left: calc(6px * var(--sx));
+  right: calc(6px * var(--sx));
+  bottom: calc(34px * var(--sy));
+  top: auto;
+  max-height: calc(76px * var(--sy));
+  overflow: clip;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  align-content: center;
+  gap: calc(2px * var(--sx)) calc(8px * var(--sx));
+  text-align: center;
+  pointer-events: none;
+  z-index: 10;
+}
+#editor-kinetic span {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: calc(24.77px * var(--sx));
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  color: var(--vid-white);
+  display: inline-block;
+  paint-order: stroke fill;
+  -webkit-text-stroke: calc(2.5px * var(--sx)) var(--vid-stroke);
+  text-shadow: 0 3px 12px var(--shadow-vid), 0 2px 4px var(--vid-stroke);
+  transform-origin: center bottom;
+  transition: transform 90ms cubic-bezier(0.16, 1, 0.3, 1), color 90ms ease-out;
+  padding: 0 1px;
+  margin-inline: calc(4px * var(--sx));
+}
+#editor-kinetic.long span { font-size: calc(18.71px * var(--sx)); -webkit-text-stroke: calc(2px * var(--sx)) var(--vid-stroke); }
+#editor-kinetic.long span.now { transform: scale(1.08) translateY(-1px); }
+#editor-kinetic span.said {
+  color: var(--vid-dim);
+  transform: none;
+}
+#editor-kinetic span.now {
+  color: var(--kw-active-color, var(--vid-accent-hot));
+  transform: scale(1.15) translateY(-1px);
+  -webkit-text-stroke: calc(3px * var(--sx)) var(--vid-stroke);
+  text-shadow: 0 0 16px var(--kw-active-color, var(--vid-accent-hot)), 0 3px 12px var(--shadow-vid);
+}
+#editor-kinetic span.kw-highlight.now {
+  color: var(--kw-emphasis-color, var(--vid-accent-hot)) !important;
+  text-shadow: 0 0 20px var(--kw-emphasis-color, var(--vid-accent-hot)), 0 3px 12px var(--shadow-vid) !important;
+}
+#editor-kinetic span.kw-badge.now {
+  background: var(--kw-emphasis-color, var(--vid-accent-hot));
+  color: var(--vid-accent-ink) !important;
+  -webkit-text-stroke: 0 !important;
+  text-shadow: none !important;
+  padding: var(--space-3xs) var(--space-xs);
+  border-radius: 4px;
+  box-shadow: 0 0 14px var(--kw-emphasis-color, var(--vid-accent-hot));
+}
+
+/* Stage counter */
+#editor-counter { position: absolute; left: 0; right: 0; top: calc(60px * var(--sy)); bottom: auto; text-align: center; opacity: 0; pointer-events: none; z-index: 5; transition: opacity var(--dur-short) var(--ease-in-out); }
+#editor-counter.show { opacity: 1; }
+#editor-counter b { display: block; font-size: calc(28.8px * var(--sx)); font-weight: 800; font-stretch: 125%; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--vid-white); text-shadow: 0 0 18px var(--vid-accent-glow), 0 2px 8px var(--vid-stroke); }
+#editor-counter i { display: block; color: var(--vid-accent); font-style: normal; font-size: calc(10px * var(--sx)); font-weight: 700; margin-top: calc(2px * var(--sx)); text-shadow: 0 1px 6px var(--shadow-vid); }
+
+/* Stage lower third: strictly anchored at bottom with no top stretch */
+#editor-lower { position: absolute; left: calc(12px * var(--sx)); right: calc(12px * var(--sx)); bottom: calc(120px * var(--sy)); top: auto; height: auto; opacity: 0; pointer-events: none; z-index: 6; transition: opacity var(--dur-long) var(--ease-out); }
+#editor-lower.show { opacity: 1; }
+#editor-lower .bar { background: var(--vid-gold); color: var(--vid-accent-ink); font-weight: 800; font-size: calc(10px * var(--sx)); padding: calc(4px * var(--sx)) calc(12px * var(--sx)); border-radius: calc(4px * var(--sx)) calc(4px * var(--sx)) 0 0; text-align: center; }
+#editor-lower .sub { background: var(--vid-plate); color: var(--vid-ink-2); font-size: calc(9px * var(--sx)); font-weight: 500; padding: calc(4px * var(--sx)) calc(12px * var(--sx)); border-radius: 0 0 calc(4px * var(--sx)) calc(4px * var(--sx)); border: 1px solid var(--vid-plate-border); border-top: none; text-align: center; }
+
+/* Chapter floating pill capsule: clean floating pill at top, NO full-stage box */
+#editor-chapter { position: absolute; top: calc(12px * var(--sy)); left: 50%; transform: translateX(-50%); bottom: auto; width: auto; max-width: 90%; height: auto; text-align: center; color: var(--vid-ink-2); font-size: calc(10px * var(--sx)); font-weight: 600; background: var(--vid-plate); border: 1px solid var(--vid-plate-border); border-radius: 9999px; padding: calc(2px * var(--sx)) calc(16px * var(--sx)); pointer-events: none; z-index: 10; transition: opacity var(--dur-short) var(--ease-in-out); }
+html.js #editor-chapter:not(.show) { opacity: 0; }
+#editor-chapter.show { opacity: 1; }
+#editor-scene-tag { position: absolute; top: calc(12px * var(--sy)); left: calc(12px * var(--sx)); bottom: auto; max-width: 60%; text-align: left; color: var(--vid-white); font-size: calc(9px * var(--sx)); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; background: color-mix(in oklab, var(--vid-plate) 88%, transparent); border: 1px solid var(--vid-plate-border); border-radius: 9999px; padding: calc(2px * var(--sx)) calc(8px * var(--sx)); pointer-events: none; z-index: 9; opacity: 0; transition: opacity var(--dur-short) var(--ease-in-out); }
+#editor-scene-tag.show { opacity: 1; }
+
+/* Monitor toolbar below stage */
+.monitor-toolbar { display: flex; align-items: center; gap: var(--space-sm); height: 48px; padding: 0 var(--space-md); border-top: 1px solid var(--rule); background: var(--paper-2); font-size: var(--text-xs); }
+.monitor-toolbar .transport { margin: 0; }
+.monitor-toolbar .timecode { min-width: 0; padding: 0; color: var(--muted); }
+.monitor-mini-track { position: relative; flex: 1; height: 24px; cursor: pointer; touch-action: none; margin: 0; }
+.mini-rail { position: absolute; top: 11px; left: 0; right: 0; height: 2px; background: var(--rule-2); }
+.mini-fill { position: absolute; top: 11px; left: 0; right: 0; height: 2px; background: var(--accent); transform: scaleX(0); transform-origin: left center; }
+.mini-dot { position: absolute; top: 8px; left: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+
+/* Right: Production Drawer — icon rail on the left, panel on the right */
+.drawer { display: grid; grid-template-columns: 48px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); background: var(--paper); overflow: hidden; }
+.tabs { display: flex; flex-direction: column; align-items: center; gap: var(--space-3xs); padding: var(--space-xs) 0; border-right: 1px solid var(--rule); background: var(--paper-2); overflow-y: auto; overflow-x: hidden; }
+.tab { appearance: none; flex: 0 0 auto; width: 34px; height: 34px; display: grid; place-items: center; padding: 0; border: none; border-radius: 5px; background: none; color: var(--muted); cursor: pointer; transition: color var(--dur-micro) var(--ease-in-out), background var(--dur-micro) var(--ease-in-out); }
+.tab svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tab:hover { color: var(--ink); background: var(--paper-3); }
+.tab[aria-selected=true] { color: var(--accent-ink); background: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.panel-viewport { min-width: 0; overflow-y: auto; padding: var(--space-md); }
+section[data-panel] { display: none; }
+section[data-panel].on { display: block; }
+
+/* Panel Forms & Tables */
+.panel-title { font-size: var(--text-sm); font-weight: 500; margin-bottom: var(--space-md); color: var(--ink); display: flex; align-items: center; justify-content: space-between; }
+.field { display: flex; align-items: center; gap: var(--space-xs); margin-bottom: var(--space-sm); }
+.ratio-row { display: flex; gap: var(--space-2xs); margin-bottom: var(--space-xs); }
+.ratio-row .btn { flex: 1; justify-content: center; padding: 0; }
+.ratio-row .btn[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
+.muted { color: var(--muted); font-size: var(--text-xs); }
+#frame-fps { width: 4.25rem; }
+#frame-out { margin: 0 0 var(--space-sm); }
+#frame-out:empty { display: none; }
+.field > label { color: var(--muted); font-size: var(--text-xs); min-width: 5rem; }
+input[type=text], input[type=number], select { height: var(--control-h); padding: 0 var(--space-xs); border: 1px solid var(--rule-2); background: var(--paper-2); color: var(--ink); font-size: var(--text-xs); border-radius: 2px; }
+input[type=number] { width: 6rem; }
+input:hover, select:hover { border-color: var(--muted); }
+textarea { padding: var(--space-xs); border: 1px solid var(--rule-2); background: var(--paper-2); color: var(--ink); font: inherit; font-size: var(--text-xs); line-height: 1.55; border-radius: 2px; resize: none; }
+/* Voice: actions on top, then a script box that owns the rest of the panel */
+section[data-panel="voice"].on { display: flex; flex-direction: column; height: 100%; }
+.script-field { display: flex; flex-direction: column; gap: var(--space-2xs); flex: 1; min-height: 0; }
+/* label and controls share one line, so the box owns the rest of the panel */
+.script-head { display: flex; align-items: center; gap: var(--space-xs); }
+.script-head > label { flex: 1; color: var(--muted); font-size: var(--text-xs); }
+#tts-voice { max-width: 9.5rem; }
+.script-field textarea { flex: 1; width: 100%; min-height: 8rem; }
+#ttsout { margin-top: var(--space-xs); }
+#ttsout:empty { display: none; }
+textarea:focus { outline: none; border-color: var(--accent); }
+.actions { display: flex; gap: var(--space-xs); flex-wrap: wrap; margin-bottom: var(--space-md); }
+
+/* Stat strip inside Inspector */
+.strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--rule); margin-bottom: var(--space-md); background: var(--paper-2); }
+.stat { padding: var(--space-xs) var(--space-sm); border-inline-start: 1px solid var(--rule); min-width: 0; }
+.stat:nth-child(3n+1) { border-inline-start: none; }
+.stat:nth-child(n+4) { border-top: 1px solid var(--rule); }
+.stat b { display: block; font-size: var(--text-md); font-weight: 500; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: var(--text-xs); }
+
+/* Playhead Inspector Card */
+.playhead-card { border: 1px solid var(--rule); background: var(--paper-2); color: var(--ink); padding: var(--space-sm); margin-bottom: var(--space-md); }
+.playhead-card h3 { font-size: var(--text-xs); color: var(--accent); margin-bottom: var(--space-xs); font-weight: 500; }
+.card-row { display: flex; justify-content: space-between; font-size: var(--text-xs); padding: var(--space-3xs) 0; border-bottom: 1px solid var(--rule); }
+.card-row:last-child { border-bottom: none; }
+.card-row span:first-child { color: var(--muted); }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
+th { text-align: left; color: var(--muted); font-weight: 500; padding: var(--space-3xs) var(--space-xs); border-bottom: 1px solid var(--rule-2); white-space: nowrap; }
+td { padding: var(--space-3xs) var(--space-xs); border-bottom: 1px solid var(--rule); vertical-align: top; }
+tr.active-word td { background: color-mix(in oklab, var(--accent) 15%, transparent); color: var(--accent); font-weight: 500; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: var(--paper-3); }
+
+/* State and Output */
+.state { color: var(--muted); font-size: var(--text-xs); padding: var(--space-md) 0; }
+.state.error { color: var(--color-error); }
+.skel { height: 32px; margin-bottom: var(--space-2xs); background: var(--paper-2); animation: pulse 1.2s var(--ease-in-out) infinite; }
+@keyframes pulse { 50% { opacity: 0.45; } }
+pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: var(--ink-2); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: var(--text-xs); line-height: 1.5; overflow-x: auto; border: 1px solid var(--rule); }
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows li { display: grid; grid-template-columns: 5rem 7rem minmax(0, 1fr) auto; gap: var(--space-xs); padding: var(--space-2xs) 0; border-bottom: 1px solid var(--rule); font-size: var(--text-xs); align-items: baseline; cursor: pointer; }
+.rows li:hover { background: var(--paper-2); }
+.rows li > .t { color: var(--muted); font-variant-numeric: tabular-nums; }
+.rows.chapters li { grid-template-columns: 4.5rem minmax(0, 1fr); }
+.rows.chapters li > .ttl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rows li.on { background: var(--paper-3); }
+.rows li.on .t { color: var(--accent); }
+.chap-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); margin-top: var(--space-md); }
+.chap-head .note { margin: 0; }
+.note { color: var(--muted); font-size: var(--text-xs); margin-top: var(--space-xs); }
+
+/* Bottom Multi-Track Timeline */
+.timeline-area { height: 260px; display: flex; flex-direction: column; background: var(--paper-2); flex-shrink: 0; overflow: hidden; }
+.timeline-header { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 var(--space-md); border-bottom: 1px solid var(--rule); font-size: var(--text-xs); color: var(--muted); background: var(--paper-3); }
+.timeline-scroller { flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; }
+
+.lanes { border: none; }
+.ruler-row { display: grid; grid-template-columns: 10rem minmax(0, 1fr); border-bottom: 1px solid var(--rule); background: var(--paper-3); position: sticky; top: 0; z-index: 10; }
+.ruler-spacer { border-inline-end: 1px solid var(--rule); padding: var(--space-3xs) var(--space-xs); font-size: var(--text-xs); color: var(--muted); display: flex; align-items: center; }
+.ruler { position: relative; height: 26px; cursor: crosshair; }
+.ruler i { position: absolute; bottom: 0; width: 1px; height: 6px; background: var(--rule-2); }
+.ruler i.maj { height: 12px; background: var(--ink-2); }
+.ruler b { position: absolute; bottom: 10px; transform: translateX(2px); color: var(--ink-2); font-size: var(--text-xs); font-weight: 400; font-variant-numeric: tabular-nums; }
+.ruler b.end { transform: translateX(calc(-100% - 2px)); }
+.playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); display: none; z-index: 20; }
+.playhead::after { content: ""; position: absolute; top: -1px; left: -3px; border: 4px solid transparent; border-top-color: var(--accent); }
+.ph-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); opacity: 0.6; pointer-events: none; display: none; z-index: 15; }
+
+.lane-row { display: grid; grid-template-columns: 10rem minmax(0, 1fr); border-bottom: 1px solid var(--rule); }
+.lane-head { display: flex; flex-direction: column; justify-content: center; gap: var(--space-3xs); padding: var(--space-2xs) var(--space-xs); background: var(--paper-2); border-inline-end: 1px solid var(--rule); }
+.lane-head b { font-weight: 500; font-size: var(--text-xs); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lane-head span { color: var(--muted); font-size: var(--text-xs); }
+.lane { position: relative; height: 36px; background: var(--paper); }
+.item { position: absolute; border-radius: 2px; top: 4px; bottom: 4px; display: flex; align-items: center; padding: 0 var(--space-xs); overflow: hidden; white-space: nowrap; font-size: var(--text-xs); border: 1px solid var(--rule-2); background: var(--paper-3); color: var(--ink-2); cursor: pointer; }
+.item:hover { border-color: var(--accent); }
+.item.component { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+.item.audio { background: color-mix(in oklab, var(--paper-3) 90%, transparent); border-color: var(--muted); color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+</style>
+</head>
+<body>
+<!-- Top Application Header -->
+<header class="app-header">
+  <div class="wordmark">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12v10H2zm2 2v6h8V5z"/></svg>
+    <span>screenwords</span>
+  </div>
+  <div class="proj-info"><b id="pname">Story</b></div>
+
+  <div class="header-actions">
+    <a class="btn" href="/preview" target="_blank" rel="noopener">
+      <span>Open preview</span>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2v2h6.59L2 12.59 3.41 14 12 5.41V12h2V2z"/></svg>
+    </a>
+    <a class="btn" id="dlbtn" hidden download>Download</a>
+    <button class="btn primary" type="button" id="exportbtn" title="Render the final MP4 (takes a few minutes)">Render MP4</button>
+  </div>
+</header>
+
+<div id="banner" role="alert">The editor stopped answering. Retry when the process is back.</div>
+
+<!-- Main Split Workspace -->
+<main class="workspace">
+  <!-- Left: Production Drawer -->
+  <aside class="drawer">
+    <nav class="tabs" aria-label="Production panels">
+      <button class="tab" type="button" data-tab="inspector" aria-selected="true" aria-label="Inspector" title="Inspector">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+      </button>
+      <button class="tab" type="button" data-tab="transcript" aria-label="Transcript" title="Transcript">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+      </button>
+      <button class="tab" type="button" data-tab="find" aria-label="Find" title="Find">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20.5 20.5 16 16"/></svg>
+      </button>
+      <button class="tab" type="button" data-tab="chapters" aria-label="Chapters" title="Chapters">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1z"/></svg>
+      </button>
+      <button class="tab" type="button" data-tab="subtitles" aria-label="Subtitles" title="Subtitles">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M9.5 10.4a2.2 2.2 0 1 0 0 3.2M16 10.4a2.2 2.2 0 1 0 0 3.2"/></svg>
+      </button>
+      <button class="tab" type="button" data-tab="voice" aria-label="Voice" title="Voice">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+      </button>
+      <button class="tab" type="button" data-tab="cut" aria-label="Cut" title="Cut">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><path d="M8.2 8.2 20 20M8.2 15.8 20 4"/></svg>
+      </button>
+    </nav>
+
+    <div class="panel-viewport">
+      <!-- 1. Inspector Panel -->
+      <section data-panel="inspector" class="on">
+        <h2 class="panel-title">Project Overview</h2>
+        <div class="strip" id="strip" aria-label="Project figures"></div>
+
+        <h3 class="panel-title">Frame</h3>
+        <div class="ratio-row" id="ratio-row">
+          <button class="btn" type="button" data-ratio="1080x1920">9:16</button>
+          <button class="btn" type="button" data-ratio="1920x1080">16:9</button>
+          <button class="btn" type="button" data-ratio="1080x1080">1:1</button>
+          <button class="btn" type="button" data-ratio="1080x1350">4:5</button>
+        </div>
+        <div class="field">
+          <label for="frame-w">Size</label>
+          <input type="number" id="frame-w" min="16" max="7680" step="2" aria-label="Frame width in pixels">
+          <span class="muted">×</span>
+          <input type="number" id="frame-h" min="16" max="7680" step="2" aria-label="Frame height in pixels">
+        </div>
+        <div class="field">
+          <label for="frame-fps">Rate</label>
+          <input type="number" id="frame-fps" min="1" max="120" step="1" aria-label="Frame rate">
+          <span class="muted">fps</span>
+          <button class="btn primary" type="button" id="frame-apply">Apply</button>
+        </div>
+        <p class="hint" id="frame-out" role="status"></p>
+
+        <h3 class="panel-title" style="margin-top:var(--space-md)">Active at Playhead</h3>
+        <div class="playhead-card">
+          <h3>Current Selection</h3>
+          <div class="card-row"><span>Time</span><span id="insp-time" class="num">0.000s</span></div>
+          <div class="card-row"><span>Scene</span><span id="insp-scene">None</span></div>
+          <div class="card-row"><span>Word</span><span id="insp-word">None</span></div>
+          <div class="card-row"><span>Component</span><span id="insp-component">None</span></div>
+          <div class="card-row"><span>Audio</span><span id="insp-audio">None</span></div>
+        </div>
+      </section>
+
+      <!-- 2. Transcript Panel -->
+      <section data-panel="transcript">
+        <h2 class="panel-title">Transcript</h2>
+        <div class="field">
+          <label for="wfilter">Filter words</label>
+          <input type="text" id="wfilter" placeholder="search words">
+        </div>
+        <div class="region" id="words">
+          <div class="skel"></div><div class="skel"></div>
+        </div>
+      </section>
+
+      <!-- 3. Find Panel -->
+      <section data-panel="find">
+        <h2 class="panel-title">Find & Sweeps</h2>
+        <form class="actions" id="findform">
+          <div class="field">
+            <label for="fq">Phrase</label>
+            <input type="text" id="fq" placeholder="diacritic blind phrase">
+          </div>
+          <div class="field">
+            <label for="fkind">Kind</label>
+            <select id="fkind"><option value="">phrase</option><option>number</option><option>filler</option><option>pause</option></select>
+          </div>
+          <button class="btn primary" type="submit">Search</button>
+        </form>
+        <div class="region" id="findout"><p class="state">Search the transcript, or sweep numbers, fillers and pauses.</p></div>
+      </section>
+
+      <!-- 4. Chapters Panel -->
+      <section data-panel="chapters">
+        <h2 class="panel-title">
+          <span>Chapters</span>
+          <button class="btn" type="button" id="chrefresh">Refresh</button>
+        </h2>
+        <div class="region" id="chapout"><div class="skel"></div></div>
+      </section>
+
+      <!-- 5. Subtitles Panel -->
+      <section data-panel="subtitles">
+        <h2 class="panel-title">Subtitles</h2>
+        <div class="actions">
+          <div class="field">
+            <label for="sfmt">Format</label>
+            <select id="sfmt"><option>srt</option><option>vtt</option></select>
+          </div>
+          <button class="btn primary" type="button" id="srtgo">Render</button>
+          <button class="btn" type="button" id="srtcopy" hidden>Copy</button>
+          <a class="btn" id="srtdl" hidden download="story.srt">Download</a>
+        </div>
+        <div class="output"><pre id="srtout">Subtitles render from the transcript.</pre></div>
+      </section>
+
+      <!-- 6. Voice Panel -->
+      <section data-panel="voice">
+        <h2 class="panel-title">Voice</h2>
+        <div class="script-field">
+          <form class="script-head" id="ttsform">
+            <label for="tts-text">Script</label>
+            <select id="tts-lang" aria-label="Narration language" title="Language">
+              <option value="en">English</option>
+              <option value="tr">Türkçe</option>
+              <option value="ar">Arabic</option>
+              <option value="bg">Bulgarian</option>
+              <option value="hr">Croatian</option>
+              <option value="cs">Czech</option>
+              <option value="da">Danish</option>
+              <option value="nl">Dutch</option>
+              <option value="et">Estonian</option>
+              <option value="fi">Finnish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="el">Greek</option>
+              <option value="hi">Hindi</option>
+              <option value="hu">Hungarian</option>
+              <option value="id">Indonesian</option>
+              <option value="it">Italian</option>
+              <option value="ja">Japanese</option>
+              <option value="ko">Korean</option>
+              <option value="lv">Latvian</option>
+              <option value="lt">Lithuanian</option>
+              <option value="pl">Polish</option>
+              <option value="pt">Portuguese</option>
+              <option value="ro">Romanian</option>
+              <option value="ru">Russian</option>
+              <option value="sk">Slovak</option>
+              <option value="sl">Slovenian</option>
+              <option value="es">Spanish</option>
+              <option value="sv">Swedish</option>
+              <option value="uk">Ukrainian</option>
+              <option value="vi">Vietnamese</option>
+            </select>
+            <select id="tts-voice" aria-label="Voice style" title="Voice style">
+              <option value="easton">Easton</option>
+            </select>
+            <button class="btn primary" type="submit" id="ttsgo">Generate</button>
+          </form>
+          <textarea id="tts-text" spellcheck="false" placeholder="One sentence per line…"></textarea>
+        </div>
+        <p class="hint" id="ttsout" role="status"></p>
+      </section>
+
+      <!-- 7. Dry-Run Cut Panel -->
+      <section data-panel="cut">
+        <h2 class="panel-title">Dry-run cut</h2>
+        <form class="actions" id="cutform">
+          <div class="field"><label for="cs">Start, seconds</label><input type="number" id="cs" step="0.1" value="2.0"></div>
+          <div class="field"><label for="ce">End, seconds</label><input type="number" id="ce" step="0.1" value="2.7"></div>
+          <button class="btn primary" type="submit">Preview the cut</button>
+        </form>
+        <div class="region" id="cutout"><p class="state">A cut preview runs on a copy of the document in memory. The project file never changes from here.</p></div>
+      </section>
+    </div>
+  </aside>
+  <!-- Right: Live Video Monitor Stage -->
+  <div class="monitor-area">
+    <div class="stage-viewport">
+      <div class="stage-frame" id="stage-frame">
+        <div class="stage-canvas-layer">
+          <canvas id="stage-canvas" aria-hidden="true"></canvas>
+        </div>
+        <div id="editor-zoomer">
+          <div id="editor-title"><h2></h2><p></p></div>
+          <div id="editor-counter"><b class="num"></b><i></i></div>
+          <div id="editor-kinetic"></div>
+          <div id="editor-lower"><div class="bar"></div><div class="sub"></div></div>
+        </div>
+        <div id="editor-chapter"></div>
+        <div id="editor-scene-tag"></div>
+      </div>
+    </div>
+    <div class="monitor-toolbar">
+      <div class="transport">
+        <button class="t-btn" id="t-start" type="button" aria-label="Rewind to start" title="Rewind">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h2v10H2zm3 5 9-6v12z"/></svg>
+        </button>
+        <button class="t-btn" id="t-step-back" type="button" aria-label="Step back 1 second" title="Back 1s">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 8l7-5v10zm-6 0l7-5v10z"/></svg>
+        </button>
+        <button class="t-btn primary" id="t-play" type="button" aria-label="Play" title="Play / pause">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2l10 6-10 6z"/></svg>
+        </button>
+        <button class="t-btn" id="t-step-fwd" type="button" aria-label="Step forward 1 second" title="Forward 1s">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3l7 5-7 5zm7 0l7 5-7 5z"/></svg>
+        </button>
+        <button class="t-btn stroke" id="t-mute" type="button" aria-label="Mute audio" title="Mute / unmute">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.6a4.6 4.6 0 0 1 0 6.8"/><path d="M18.4 6a8.6 8.6 0 0 1 0 12"/></svg>
+        </button>
+        <div id="vu-top" aria-hidden="true"><div class="vu-bar-top" id="vu-top-l"></div><div class="vu-bar-top" id="vu-top-r"></div></div>
+      </div>
+      <div class="monitor-mini-track" id="mini-track" aria-label="Mini timeline scrubber">
+        <div class="mini-rail"></div>
+        <div class="mini-fill" id="mini-fill"></div>
+        <div class="mini-dot" id="mini-dot"></div>
+      </div>
+      <span class="timecode" id="main-timecode">0:00.0 / 0:00.0</span>
+    </div>
+  </div>
+
+</main>
+
+<!-- Bottom Multi-Track Timeline -->
+<footer class="timeline-area">
+  <div class="timeline-header">
+    <span>Timeline Tracks</span>
+    <a class="btn" id="playlink" href="/preview" target="_blank" rel="noopener">Play from start</a>
+  </div>
+  <div class="timeline-scroller">
+    <div class="region" id="timeline" aria-live="polite">
+      <div class="skel"></div><div class="skel"></div><div class="skel"></div>
+    </div>
+  </div>
+</footer>
+
+<script>
+document.documentElement.classList.add('js');
+const $ = s => document.querySelector(s);
+const fmt = t => { const m = Math.floor(t / 60), s = (t - m * 60).toFixed(2); return m + ':' + (s < 10 ? '0' : '') + s; };
+const fmtc = x => { const m = Math.floor(x / 60), s = (x - m * 60).toFixed(1); return m + ':' + (s < 10 ? '0' : '') + s; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const PLAY_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2l10 6-10 6z"/></svg>';
+const PAUSE_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2h4v12H3zM9 2h4v12H9z"/></svg>';
+const MUTE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.6a4.6 4.6 0 0 1 0 6.8"/><path d="M18.4 6a8.6 8.6 0 0 1 0 12"/></svg>';
+const UNMUTE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>';
+
+let netOk = true;
+let totalDuration = 10.0;
+let playheadT = 0;
+let isPlaying = false;
+let isMuted = false;
+let spokenWordIdx = -1;
+let audioCtx = null;
+let rafId = null;
+let lastFrameTime = performance.now();
+
+let timelineData = null;
+/* The component-oriented view of the timeline: tracks carry `components`
+   (each with params) the stage renderers read, while `items` stays the flat
+   lane list. Kept in sync by loadTimeline / loadWords. */
+let doc = { tracks: [], words: [], analysis: { scenes: [] } };
+let allWords = [];
+let chaptersData = [];
+let sceneClips = [];
+
+async function getJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+function fail(el, err) {
+  el.innerHTML = '<p class="state error">That did not load: ' + esc(err.message) + '. <button class="btn" type="button" data-retry>Retry</button></p>';
+  el.querySelector('[data-retry]').addEventListener('click', () => location.reload());
+}
+
+/* Tabs */
+const tabs = [...document.querySelectorAll('.tab')];
+function selectTab(name, push) {
+  if (!tabs.some(t => t.dataset.tab === name)) name = tabs[0] ? tabs[0].dataset.tab : 'inspector';
+  tabs.forEach(t => t.setAttribute('aria-selected', t.dataset.tab === name ? 'true' : 'false'));
+  document.querySelectorAll('section[data-panel]').forEach(p => p.classList.toggle('on', p.dataset.panel === name));
+  if (push) history.replaceState(null, '', '#' + name);
+}
+tabs.forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab, true)));
+addEventListener('hashchange', () => selectTab(location.hash.slice(1), false));
+selectTab((location.hash || '#inspector').slice(1), false);
+
+/* Stage Canvas setup */
+const stageCanvas = $('#stage-canvas');
+const stageCtx = stageCanvas.getContext('2d');
+const stageFrame = $('#stage-frame');
+const particles = [];
+for (let i = 0; i < 28; i++) {
+  particles.push({ x: Math.random(), y: Math.random(), r: 1 + Math.random() * 2, speed: 0.02 + Math.random() * 0.04, alpha: 0.15 + Math.random() * 0.35 });
+}
+
+function resizeStageCanvas() {
+  const rect = stageFrame.getBoundingClientRect();
+  stageCanvas.width = rect.width * (window.devicePixelRatio || 1);
+  stageCanvas.height = rect.height * (window.devicePixelRatio || 1);
+}
+addEventListener('resize', fitStage);
+
+/* Audio Web API */
+function initAudio() {
+  if (!audioCtx) {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtor) audioCtx = new AudioCtor();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+function playVoiceTone(freq, dur) {
+  if (isMuted || !audioCtx) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + dur);
+  } catch (e) {}
+}
+let speechOk = null;
+function speechReady() {
+  if (speechOk !== null) return speechOk;
+  try { speechOk = 'speechSynthesis' in window && typeof speechSynthesis.speaking === 'boolean'; }
+  catch (e) { speechOk = false; }
+  return speechOk;
+}
+function speakWord(text) {
+  if (isMuted) return;
+  if (speechReady()) {
+    try {
+      if (!speechSynthesis.speaking) {
+        const u = new SpeechSynthesisUtterance(text);
+        u.rate = 1.3; u.volume = 0.45;
+        speechSynthesis.speak(u);
+        return;
+      }
+    } catch (e) { speechOk = false; }
+  }
+  playVoiceTone(280 + (text.length * 15), 0.12);
+}
+
+/* Narration audio (the asset synthesize_speech wrote) */
+const editorAudio = new Audio();
+editorAudio.preload = 'auto';
+editorAudio.src = '/api/audio';
+let hasRealAudio = true;
+editorAudio.addEventListener('error', () => {
+  hasRealAudio = false;
+  console.warn('Editor audio failed to load from /api/audio');
+});
+
+/* Playback Control */
+function setPlaying(p) {
+  isPlaying = p;
+  $('#t-play').innerHTML = p ? PAUSE_SVG : PLAY_SVG;
+  $('#t-play').setAttribute('aria-label', p ? 'Pause' : 'Play');
+  if (p) {
+    if (playheadT >= totalDuration) playheadT = 0;
+    if (hasRealAudio) {
+      editorAudio.currentTime = playheadT;
+      editorAudio.muted = isMuted;
+      editorAudio.play().catch(() => {});
+    }
+  } else {
+    if (hasRealAudio) editorAudio.pause();
+  }
+  lastFrameTime = performance.now();
+}
+
+function seekTo(time) {
+  playheadT = Math.max(0, Math.min(totalDuration, time));
+  if (hasRealAudio) editorAudio.currentTime = playheadT;
+  spokenWordIdx = -1;
+  updateStageAndPlayhead();
+}
+
+/* Animation frame loop */
+function playbackFrame(now) {
+  const dt = (now - lastFrameTime) / 1000;
+  lastFrameTime = now;
+  if (isPlaying) {
+    if (hasRealAudio && !editorAudio.paused && !editorAudio.ended) {
+      playheadT = editorAudio.currentTime;
+    } else {
+      playheadT = Math.min(totalDuration, playheadT + dt);
+    }
+    if (playheadT >= totalDuration) setPlaying(false);
+  }
+  updateStageAndPlayhead();
+  rafId = requestAnimationFrame(playbackFrame);
+}
+
+/* Update Stage Visuals, Kinetic Words, Components, and Playhead */
+function updateStageAndPlayhead() {
+  const t = playheadT;
+  const dur = Math.max(totalDuration, 0.001);
+  const prog = t / dur;
+
+  /* Timecode texts */
+  const timeStr = fmtc(t) + ' / ' + fmtc(dur);
+  $('#main-timecode').textContent = timeStr;
+  $('#insp-time').textContent = t.toFixed(3) + 's';
+
+  /* Mini monitor track */
+  $('#mini-fill').style.transform = 'scaleX(' + prog + ')';
+  $('#mini-dot').style.transform = 'translateX(' + (prog * ($('#mini-track').clientWidth - 8)) + 'px)';
+
+  /* Current chapter */
+  if (chapRows.length) {
+    let active = -1;
+    for (let i = 0; i < chapRows.length; i++) {
+      if (t >= parseFloat(chapRows[i].dataset.start || '0')) active = i;
+    }
+    chapRows.forEach((li, i) => li.classList.toggle('on', i === active));
+  }
+
+  /* Playhead on timeline lanes */
+  const ph = $('#ph');
+  if (ph) {
+    ph.style.display = 'block';
+    ph.style.left = (prog * 100) + '%';
+  }
+  document.querySelectorAll('.ph-line').forEach(el => {
+    el.style.display = 'block';
+    el.style.left = (prog * 100) + '%';
+  });
+
+  const link = $('#playlink');
+  if (link) {
+    link.href = '/preview?t=' + t.toFixed(2);
+    link.textContent = 'Play from ' + fmt(t).slice(0, -1);
+  }
+
+  /* Render living canvas scene */
+  renderStageScene(t);
+
+  /* Active Phrase & Kinetic Layer */
+  let activePhrase = null, pIdx = -1;
+  for (let i = 0; i < phrases.length; i++) {
+    if (t >= phrases[i].start && t <= phrases[i].end) {
+      activePhrase = phrases[i];
+      pIdx = i;
+      break;
+    }
+  }
+
+  const kin = $('#editor-kinetic');
+  const compsList = (doc && doc.tracks) ? doc.tracks.flatMap(t => t.components || []) : [];
+  const kinC = compsList.find(c => c.componentId === 'kineticWords' || c.componentId === 'captions');
+  const kinP = (kinC && kinC.params) || {};
+  const activeColor = kinP.activeColor || T.accent;
+  const emphasisColor = kinP.emphasisColor || kinP.activeColor || T.accent;
+  const fontFamily = kinP.fontFamily || "'Space Grotesk', -apple-system, sans-serif";
+  const emSet = new Set(kinP.emphasis || []);
+  const wordColors = kinP.wordColors || {};
+
+  kin.style.setProperty('--kw-active-color', activeColor);
+  kin.style.setProperty('--kw-emphasis-color', emphasisColor);
+  if (kinP.fontFamily) kin.style.fontFamily = fontFamily;
+
+  if (pIdx !== curPhraseIdx) {
+    curPhraseIdx = pIdx;
+    kin.innerHTML = '';
+    if (activePhrase) {
+      activePhrase.words.forEach(w => {
+        const el = document.createElement('span');
+        el.textContent = w.text;
+        el.dataset.id = w.id;
+        if (kinP.fontFamily) el.style.fontFamily = fontFamily;
+        const clean = w.text.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const isEm = emSet.has(w.id) || emSet.has(clean) || emSet.has(w.text.trim());
+        if (isEm) el.classList.add('kw-highlight');
+        if (wordColors[w.id] || wordColors[clean] || wordColors[w.text.trim()]) {
+          el.dataset.customColor = wordColors[w.id] || wordColors[clean] || wordColors[w.text.trim()];
+        }
+        kin.appendChild(el);
+      });
+    }
+    kin.classList.toggle('long', !!activePhrase && (activePhrase.words.length > 2 ||
+      activePhrase.words.reduce((n, w) => n + w.text.length, 0) > 15));
+  }
+
+  let activeWord = null;
+  if (activePhrase) {
+    const spans = [...kin.children];
+    activePhrase.words.forEach((w, idx) => {
+      const el = spans[idx];
+      if (el) {
+        const isPast = w.end <= t;
+        const isCurrent = w.start <= t && w.end > t;
+        el.classList.toggle('said', isPast);
+        el.classList.toggle('now', isCurrent);
+        if (isCurrent) {
+          activeWord = w;
+          if (el.dataset.customColor) {
+            el.style.color = el.dataset.customColor;
+            el.style.textShadow = '0 0 16px ' + el.dataset.customColor + ', 0 3px 12px #000';
+          }
+        } else if (!isPast) {
+          if (el.dataset.customColor) {
+            el.style.color = '';
+            el.style.textShadow = '';
+          }
+        }
+      }
+    });
+  }
+
+  /* Active word in table */
+  document.querySelectorAll('#words tr[data-word-id]').forEach(tr => {
+    tr.classList.toggle('active-word', activeWord && tr.dataset.wordId === activeWord.id);
+  });
+
+  /* VU meter pulsing */
+  const vuTopL = $('#vu-top-l'), vuTopR = $('#vu-top-r');
+  if (activeWord && isPlaying && !isMuted) {
+    const level = 0.4 + Math.random() * 0.55;
+    vuTopL.style.transform = 'scaleY(' + level + ')';
+    vuTopR.style.transform = 'scaleY(' + Math.min(1, level * 1.1) + ')';
+    vuTopL.classList.add('active'); vuTopR.classList.add('active');
+  } else {
+    vuTopL.style.transform = 'scaleY(0.15)'; vuTopR.style.transform = 'scaleY(0.15)';
+    vuTopL.classList.remove('active'); vuTopR.classList.remove('active');
+  }
+
+  $('#insp-word').textContent = activeWord ? (activeWord.text + ' (' + activeWord.id + ')') : 'None';
+
+  /* Active Components: a foreground card beats the backdrop it sits on. */
+  let activeComp = null;
+  if (timelineData) {
+    const live = [];
+    for (const tr of timelineData.tracks) {
+      for (const it of tr.items) {
+        if (it.kind === 'component' && t >= it.start && t <= it.end) live.push(it);
+      }
+    }
+    const foreground = live.filter(it => !/background/i.test(it.componentId || ''));
+    activeComp = (foreground.length ? foreground : live)[0] || null;
+  }
+  $('#insp-component').textContent = activeComp ? (activeComp.componentId || activeComp.id) : 'None';
+
+  /* Title Card */
+  const tEl = $('#editor-title');
+  if (activeComp && activeComp.componentId === 'titleCard') {
+    tEl.classList.add('show');
+    const tp = activeComp.params || {};
+    const h2 = tEl.querySelector('h2'), p = tEl.querySelector('p');
+    h2.textContent = tp.title || $('#pname').textContent;
+    p.textContent = tp.subtitle || '';
+    if (tp.fontFamily) { h2.style.fontFamily = tp.fontFamily; p.style.fontFamily = tp.fontFamily; }
+    if (tp.titleColor) h2.style.color = tp.titleColor;
+    if (tp.subtitleColor) p.style.color = tp.subtitleColor;
+  } else {
+    tEl.classList.remove('show');
+  }
+
+  /* Number Counter */
+  const cEl = $('#editor-counter');
+  if (activeComp && activeComp.componentId === 'numberCounter') {
+    cEl.classList.add('show');
+    const cp = activeComp.params || {}, span = Math.max(0.01, activeComp.end - activeComp.start);
+    const prog = Math.min(1, (t - activeComp.start) / span * 1.15);
+    const v = Math.round((cp.from ?? 0) + ((cp.to ?? 100) - (cp.from ?? 0)) * prog);
+    const b = cEl.querySelector('b'), i = cEl.querySelector('i');
+    b.textContent = (cp.prefix || '') + v.toLocaleString() + (cp.suffix || '');
+    i.textContent = cp.label || '';
+    if (cp.fontFamily) { b.style.fontFamily = cp.fontFamily; i.style.fontFamily = cp.fontFamily; }
+    if (cp.numberColor) b.style.color = cp.numberColor;
+    if (cp.labelColor) i.style.color = cp.labelColor;
+  } else {
+    cEl.classList.remove('show');
+  }
+
+  /* Lower Third */
+  const lowerEl = $('#editor-lower');
+  if (activeComp && activeComp.componentId === 'lowerThird') {
+    lowerEl.classList.add('show');
+    const lp = activeComp.params || {};
+    const bar = lowerEl.querySelector('.bar'), sub = lowerEl.querySelector('.sub');
+    bar.textContent = lp.title || '';
+    sub.textContent = lp.subtitle || '';
+    if (lp.fontFamily) { bar.style.fontFamily = lp.fontFamily; sub.style.fontFamily = lp.fontFamily; }
+    if (lp.barColor) bar.style.background = lp.barColor;
+    if (lp.textColor) bar.style.color = lp.textColor;
+    if (lp.subColor) sub.style.color = lp.subColor;
+    if (lp.subBg) sub.style.background = lp.subBg;
+    if (lp.borderColor) sub.style.borderColor = lp.borderColor;
+  } else {
+    lowerEl.classList.remove('show');
+  }
+
+  /* Punch-in camera zoom */
+  let zoom = 1;
+  if (activeComp && activeComp.componentId === 'punchIn') {
+    const z = (activeComp.params || {}).zoom ?? 1.25;
+    const prog = Math.min(1, (t - activeComp.start) / 0.45);
+    zoom = 1 + (z - 1) * prog;
+  }
+  $('#editor-zoomer').style.transform = 'scale(' + zoom + ')';
+
+  /* Active chapter pill: the title shows for the first seconds of the chapter. */
+  let chapter = null;
+  for (const c of chaptersData) { if (t >= (c.start || 0)) chapter = c; }
+  const chapterEl = $('#editor-chapter');
+  if (chapter && t - (chapter.start || 0) < 4) {
+    chapterEl.textContent = chapter.title;
+    chapterEl.classList.add('show');
+  } else {
+    chapterEl.classList.remove('show');
+  }
+
+  /* Active Scene */
+  let activeScene = null;
+  for (const c of sceneClips) {
+    if (t >= c.start && t <= c.end) { activeScene = c; break; }
+  }
+  $('#insp-scene').textContent = activeScene ? activeScene.name : 'None';
+  const tagEl = $('#editor-scene-tag');
+  if (activeScene) {
+    tagEl.textContent = activeScene.name;
+    tagEl.classList.add('show');
+  } else {
+    tagEl.classList.remove('show');
+  }
+
+  /* Active Audio Event */
+  let activeAudio = null;
+  if (timelineData) {
+    for (const tr of timelineData.tracks) {
+      for (const it of tr.items) {
+        if (it.kind === 'audio' && t >= it.start && t <= it.end) {
+          activeAudio = it; break;
+        }
+      }
+      if (activeAudio) break;
+    }
+  }
+  $('#insp-audio').textContent = activeAudio ? (activeAudio.role || activeAudio.id) : 'None';
+}
+
+const scenePalettes = [
+  { name: 'The Observatory', c1: 'oklch(14% 0.05 264)', c2: 'oklch(22% 0.06 250)', wave: 'oklch(24% 0.06 240 / 0.35)', part: 'oklch(80% 0.11 230)' },
+  { name: 'The Stellar Core', c1: 'oklch(16% 0.06 65)', c2: 'oklch(26% 0.09 75)', wave: 'oklch(28% 0.09 70 / 0.35)', part: 'oklch(85% 0.14 85)' },
+  { name: 'Celestial Frequencies', c1: 'oklch(15% 0.06 160)', c2: 'oklch(24% 0.09 150)', wave: 'oklch(26% 0.09 155 / 0.35)', part: 'oklch(82% 0.12 150)' },
+  { name: 'The Awakening', c1: 'oklch(15% 0.06 295)', c2: 'oklch(25% 0.09 310)', wave: 'oklch(27% 0.09 305 / 0.35)', part: 'oklch(84% 0.13 315)' }
+];
+
+/* Universal Editor Visual Engine */
+const editorParticles = [];
+for (let i = 0; i < 48; i++) {
+  editorParticles.push({
+    x: Math.random() * 1080,
+    y: Math.random() * 1920,
+    r: 1.2 + Math.random() * 2.4,
+    speed: 12 + Math.random() * 28,
+    alpha: 0.15 + Math.random() * 0.45,
+    seed: Math.random() * 100
+  });
+}
+
+const editorImgCache = {};
+function getEditorImage(src) {
+  if (!src) return null;
+  if (!editorImgCache[src]) {
+    const img = new Image();
+    img.src = src;
+    editorImgCache[src] = img;
+  }
+  return editorImgCache[src].complete && editorImgCache[src].naturalWidth > 0 ? editorImgCache[src] : null;
+}
+
+/* Monogram from document data, never from a baked-in placeholder string. */
+function initialsOf(value) {
+  const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '';
+  return (parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+/* A point param is {x, y} in 0–1 frame space. Anything else falls back to the
+   default, so a malformed constant can never turn a component into NaN. */
+/* Deterministic 0–1 noise for particle layouts: stable across frames. */
+function hash01(n) {
+  const v = Math.sin(n * 12.9898) * 43758.5453;
+  return v - Math.floor(v);
+}
+
+function pointOf(value, fallbackX, fallbackY) {
+  if (value && typeof value === 'object' &&
+      typeof value.x === 'number' && typeof value.y === 'number' &&
+      isFinite(value.x) && isFinite(value.y)) {
+    return { x: value.x, y: value.y };
+  }
+  return { x: fallbackX, y: fallbackY };
+}
+
+/* @@COMPONENTS@@ */
+
+function renderStageScene(time) {
+  const w = stageCanvas.width, h = stageCanvas.height;
+  if (!w || !h) return;
+  if (typeof stageCtx.reset === 'function') stageCtx.reset();
+  else stageCtx.setTransform(1, 0, 0, 1, 0, 0);
+  stageCtx.clearRect(0, 0, w, h);
+
+  /* 1080-wide drawing space; the stage's own aspect keeps geometry round. */
+  const W = 1080, H = 1080 * h / w;
+  stageCtx.save();
+  stageCtx.scale(w / W, h / H);
+
+  const comps = (doc && doc.tracks) ? doc.tracks.flatMap(t => t.components || []) : [];
+
+  /* Background: a background component overrides the procedural scene style. */
+  const scenesTrack = (doc.tracks || []).find(t => t.role === 'scenes' || t.kind === 'scenes');
+  const trackScenes = scenesTrack
+    ? (scenesTrack.items || []).filter(i => i.kind === 'clip' || /background/i.test(i.componentId || ''))
+    : [];
+  const analysisScenes = (doc.analysis && doc.analysis.scenes) || [];
+  const allScenes = trackScenes.length ? trackScenes : analysisScenes;
+  const currentScene = allScenes.find(s => time >= s.start && time < s.end) || null;
+  const scene = sharedSceneOverride(comps, time) || currentScene;
+
+  sharedSceneTransforms(stageCtx, comps, W, H, time);
+  sharedBackground(stageCtx, W, H, time, scene, editorParticles);
+
+  /* Custom code overlays: project-local scripts, executed against the stage. */
+  const activeCodeOverlays = comps.filter(c =>
+    (c.componentId && (c.componentId.startsWith('codeOverlay_') || (c.params && c.params.code))) &&
+    time >= c.start && time <= c.end);
+  activeCodeOverlays.forEach(c => {
+    if (!c._compiled && c.params && c.params.code) {
+      try {
+        c._compiled = new Function('ctx', 'W', 'H', 'time', 'localTime', 'params', 'words', c.params.code);
+      } catch (err) {
+        c._compiled = null;
+      }
+    }
+    if (c._compiled) {
+      stageCtx.save();
+      try {
+        c._compiled(stageCtx, W, H, time, Math.max(0, time - c.start), c.params || {}, doc.words || []);
+      } catch (err) {}
+      stageCtx.restore();
+    }
+  });
+
+  /* Every parametric component, from the shared library. The editor has no
+     DOM caption overlays, so the canvas fallbacks paint those six ids here. */
+  drawSharedComponents(stageCtx, W, H, time, comps, {
+    skip: DRAW_FALLBACK_IDS, words: doc.words || [], docName: doc.name
+  });
+
+  /* Effects and overlay transitions. */
+  sharedPostFX(stageCtx, W, H, time, comps, stageCanvas);
+
+  stageCtx.restore();
+}
+
+/* Fit the stage frame to the monitor viewport instead of a fixed box. */
+let stageAspect = 1080 / 1920;
+let projectRev = 1;
+function fitStage() {
+  const stageBox = $('#stage-frame');
+  const viewport = stageBox.parentElement;
+  const availW = Math.max(160, (viewport.clientWidth || 420) - 32);
+  const availH = Math.max(240, (viewport.clientHeight || 520) - 32);
+  let frameW = availW, frameH = frameW / stageAspect;
+  if (frameH > availH) { frameH = availH; frameW = frameH * stageAspect; }
+  stageBox.style.width = Math.round(frameW) + 'px';
+  stageBox.style.height = Math.round(frameH) + 'px';
+  stageBox.style.setProperty('--sx', Math.min(2.2, frameW / 280).toFixed(4));
+  stageBox.style.setProperty('--sy', (frameH / 498).toFixed(4));
+  resizeStageCanvas();
+}
+
+/* Load Summary */
+async function loadSummary() {
+  const s = await getJSON('/api/summary');
+  netOk = true; $('#banner').style.display = 'none';
+  $('#pname').textContent = s.name;
+  projectRev = s.revision;
+
+  const w = s.width || 1080, h = s.height || 1920;
+  stageAspect = w / h;
+  fitStage();
+  frameShow(w, h, s.fps);
+
+  /* The last exported video, downloadable if one exists */
+  const dl = $('#dlbtn');
+  if (dl) {
+    if (s.video && s.video.name) {
+      dl.hidden = false;
+      dl.href = '/video?download=1';
+      dl.setAttribute('download', s.video.name);
+      dl.title = s.video.path + ' · ' + (s.video.bytes / 1048576).toFixed(1) + ' MB';
+    } else {
+      dl.hidden = true;
+    }
+  }
+
+  $('#strip').innerHTML = [
+    ['revision', s.revision], ['resolution', s.width + ' x ' + s.height], ['framerate', s.fps + ' fps'],
+    ['words', s.words], ['assets', s.assets], ['undo', s.canUndo ? 'yes' : 'none']
+  ].map(x => '<div class="stat"><b class="num">' + esc(x[1]) + '</b><span>' + x[0] + '</span></div>').join('');
+}
+
+/* The stage look follows the project's theme (document data set via MCP). */
+let T = { paper: '#04070F', ink: '#F4F8FF', accent: '#38BDF8', accent2: '#FFD54A', accentInk: '#04101E', bg: {} };
+function applyVideoTheme(theme) {
+  T = Object.assign({}, T, theme || {});
+  const rs = document.documentElement.style;
+  rs.setProperty('--stage-void', T.paper);
+  rs.setProperty('--vid-white', T.ink);
+  rs.setProperty('--vid-ink-2', T.ink);
+  rs.setProperty('--vid-accent', T.accent);
+  rs.setProperty('--vid-accent-hot', T.accent);
+  rs.setProperty('--vid-gold', T.accent2);
+  rs.setProperty('--vid-accent-ink', T.accentInk);
+}
+
+/* Load Timeline */
+async function loadTimeline() {
+  const d = await getJSON('/api/timeline');
+  timelineData = d;
+  totalDuration = Math.max(d.duration, 0.001);
+  applyVideoTheme(d.theme);
+
+  /* The stage renderers read components (with params) off doc.tracks; keep
+     that view derived from the same timeline response. */
+  doc = {
+    tracks: (d.tracks || []).map(tr => Object.assign({}, tr, {
+      components: (tr.items || []).filter(i => i.kind === 'component')
+    })),
+    words: allWords,
+    analysis: d.analysis || { scenes: [] }
+  };
+
+  sceneClips = [];
+  (d.tracks || []).forEach(tr => {
+    (tr.items || []).forEach(it => {
+      if (it.kind === 'clip') {
+        sceneClips.push({ start: it.start, end: it.end, name: it.name || tr.name });
+      }
+    });
+  });
+
+  const dur = totalDuration;
+  const step = dur > 60 ? 10 : dur > 20 ? 5 : 1;
+  let ruler = '';
+  for (let t = 0; t <= dur + 1e-9; t += step) {
+    const pct = t / dur * 100;
+    /* The last label sits on the right edge: pull it left of its tick so it
+       is not clipped by the timeline viewport. */
+    const align = pct > 92 ? ' class="end"' : '';
+    ruler += '<i class="maj" style="left:' + pct + '%"></i><b' + align + ' style="left:' + pct + '%">' + fmt(t).replace('.00', '') + '</b>';
+  }
+  ruler += '<span class="playhead" id="ph"></span>';
+
+  const rows = d.tracks.map(tr => {
+    const laid = layOutItems(tr.items || []);
+    const laneH = Math.max(36, laid.rows * 32 + 8);
+    const items = laid.items.map(i => {
+      const w = Math.max((i.end - i.start) / dur * 100, 0.7);
+      const label = i.componentId || i.name || i.role || i.kind;
+      /* On a long timeline a short item is only a few pixels wide: a clipped
+         first letter reads as noise, so keep the text for the tooltip only. */
+      const visibleLabel = w >= 2.2 ? esc(label) : '';
+      return '<span class="item ' + i.kind + '" style="left:' + (i.start / dur * 100) + '%;width:' + w +
+        '%;top:' + (4 + i.row * 32) + 'px;height:28px;bottom:auto" data-time="' + i.start + '" title="' +
+        esc(i.id + ' ' + label + ' ' + fmt(i.start) + ' to ' + fmt(i.end)) + '">' +
+        visibleLabel + '</span>';
+    }).join('');
+    return '<div class="lane-row"><div class="lane-head"><b>' + esc(tr.name) + '</b><span>' + esc(tr.role || tr.kind) + '</span></div><div class="lane" style="height:' + laneH + 'px">' + items + '<span class="ph-line"></span></div></div>';
+  }).join('');
+
+  /* The 2.5 s refresh rebuilds this DOM; keep the user's scroll position. */
+  const scroller = document.querySelector('.timeline-scroller');
+  const keepScroll = scroller ? scroller.scrollTop : 0;
+  $('#timeline').innerHTML = '<div class="lanes"><div class="ruler-row"><div class="ruler-spacer">Tracks</div><div class="ruler" id="ruler" title="Click to seek playhead">' + ruler + '</div></div>' + rows + '</div>';
+  if (scroller) scroller.scrollTop = keepScroll;
+
+  bindTimelineSeek(dur);
+}
+
+/* Greedy interval layout: items that overlap in time get their own sub-row
+   so no card can hide another one on the same track. */
+function layOutItems(items) {
+  const sorted = items.slice().sort((a, b) => a.start - b.start || a.end - b.end);
+  const laneEnds = [];
+  const placed = sorted.map(it => {
+    let row = laneEnds.findIndex(end => it.start >= end - 1e-6);
+    if (row === -1) {
+      row = laneEnds.length;
+      laneEnds.push(it.end);
+    } else {
+      laneEnds[row] = Math.max(laneEnds[row], it.end);
+    }
+    return Object.assign({}, it, { row: row });
+  });
+  return { items: placed, rows: Math.max(1, laneEnds.length) };
+}
+
+function bindTimelineSeek(dur) {
+  const ruler = $('#ruler');
+  const setPos = clientX => {
+    const r = ruler.getBoundingClientRect();
+    const t = Math.min(1, Math.max(0, (clientX - r.left) / r.width)) * dur;
+    seekTo(t);
+  };
+  ruler.addEventListener('pointerdown', e => {
+    initAudio();
+    setPos(e.clientX);
+    ruler.setPointerCapture(e.pointerId);
+    const move = ev => setPos(ev.clientX);
+    ruler.addEventListener('pointermove', move);
+    ruler.addEventListener('pointerup', () => ruler.removeEventListener('pointermove', move), { once: true });
+  });
+
+  document.querySelectorAll('.item').forEach(el => {
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      seekTo(parseFloat(el.dataset.time || '0'));
+    });
+  });
+}
+
+/* Load Words */
+let phrases = [];
+let curPhraseIdx = -1;
+
+async function loadWords() {
+  const w = await getJSON('/api/words');
+  allWords = w.words || [];
+  doc.words = allWords;
+  /* Keep whatever the user typed in the transcript filter across refreshes. */
+  drawWords(($('#wfilter') && $('#wfilter').value) || '');
+
+  /* Pre-calculate high-retention micro-phrase chunks (2-3 words) */
+  phrases = [];
+  if (allWords.length > 0) {
+    let curr = [];
+    allWords.forEach((w, i) => {
+      curr.push(w);
+      const txt = w.text.trim();
+      const isMajor = /[.!?:]$/.test(txt);
+      const isComma = txt.endsWith(',');
+      const isLast = (i === allWords.length - 1);
+
+      let nextIsSoloEnder = false;
+      if (i + 1 < allWords.length) {
+        const nextTxt = allWords[i + 1].text.trim();
+        if (/[.!?:]$/.test(nextTxt)) nextIsSoloEnder = true;
+      }
+
+      const shouldBreak = isMajor
+        || (isComma && curr.length >= 2)
+        || (curr.length >= 3 && !nextIsSoloEnder)
+        || isLast;
+
+      if (shouldBreak) {
+        phrases.push({
+          start: curr[0].start,
+          end: curr[curr.length - 1].end + 0.35,
+          words: [...curr]
+        });
+        curr = [];
+      }
+    });
+
+    for (let i = 0; i < phrases.length; i++) {
+      if (i + 1 < phrases.length) {
+        const nextStart = phrases[i + 1].start;
+        if (nextStart - phrases[i].end < 0.55) {
+          phrases[i].end = nextStart;
+        }
+      }
+    }
+  }
+  curPhraseIdx = -1;
+}
+
+function drawWords(f) {
+  f = f.toLowerCase();
+  const rows = allWords.filter(w => !f || w.text.toLowerCase().includes(f));
+  const body = rows.length ? rows.map(w =>
+    '<tr class="clickable" data-word-id="' + esc(w.id) + '" data-start="' + w.start + '"><td>' + esc(w.id) + '</td><td class="num">' + w.start.toFixed(3) + '</td><td class="num">' + w.end.toFixed(3) + '</td><td>' + esc(w.text) + '</td></tr>'
+  ).join('') : '';
+
+  $('#words').innerHTML = rows.length
+    ? '<table id="wordtable"><thead><tr><th>Id</th><th>Start</th><th>End</th><th>Word</th></tr></thead><tbody>' + body + '</tbody></table>'
+    : '<p class="state">No words' + (f ? ' match "' + esc(f) + '"' : ' yet') + '. Author a transcript to give the story words.</p>';
+
+  document.querySelectorAll('#words tr.clickable').forEach(tr => {
+    tr.addEventListener('click', () => {
+      seekTo(parseFloat(tr.dataset.start || '0'));
+    });
+  });
+}
+$('#wfilter').addEventListener('input', e => drawWords(e.target.value.trim()));
+
+/* Find form */
+$('#findform').addEventListener('submit', async e => {
+  e.preventDefault();
+  const kind = $('#fkind').value, q = $('#fq').value.trim();
+  if (!kind && !q) { $('#findout').innerHTML = '<p class="state">Give a phrase, or pick a kind.</p>'; return; }
+  $('#findout').innerHTML = '<div class="skel"></div>';
+  try {
+    const r = await getJSON('/api/find?' + (kind ? 'kind=' + kind : 'q=' + encodeURIComponent(q)));
+    if (r.error) { $('#findout').innerHTML = '<p class="state error">' + esc(r.error) + ': ' + esc(r.message || '') + '</p>'; return; }
+    const list = r.results || [];
+    $('#findout').innerHTML = list.length
+      ? '<ul class="rows">' + list.map(m =>
+          '<li data-start="' + m.start + '"><span class="t">' + fmt(m.start) + '</span><span>' + m.wordIds.map(esc).join(' ') + '</span><span>' + esc(m.text) +
+          (m.value !== undefined ? ' <span class="badge num">' + esc(m.value) + (m.numberKind ? ' ' + esc(m.numberKind) : '') + '</span>' : '') +
+          (m.suspect ? ' <span class="badge">check</span>' : '') + '</span><span>' +
+          (m.cutRange ? '<span class="badge num">' + fmt(m.cutRange.start) + ' to ' + fmt(m.cutRange.end) + '</span>' : '') + '</span></li>'
+        ).join('') + '</ul>' + (r.savedSeconds !== undefined ? '<p class="note">Would save ' + r.savedSeconds + ' s.</p>' : '')
+      : '<p class="state">No matches. Try a shorter phrase, or a kind sweep.</p>';
+
+    document.querySelectorAll('#findout li').forEach(li => {
+      li.addEventListener('click', () => seekTo(parseFloat(li.dataset.start || '0')));
+    });
+  } catch (err) { fail($('#findout'), err); }
+});
+
+/* Chapters */
+/* Ten "less than 10 s apart" lines are noise on a 38 s cut: fold the repeats
+   into one sentence and surface anything else as-is. */
+function issueSummary(list) {
+  const gaps = list.filter(m => /less than 10 s/.test(m)).length;
+  const rest = list.filter(m => !/less than 10 s/.test(m)).slice(0, 2);
+  const parts = [];
+  if (gaps) parts.push(gaps + ' chapters start under 10 s apart — YouTube ignores chapters that dense');
+  return parts.concat(rest).join(' · ');
+}
+
+let chapRows = [];
+async function loadChapters() {
+  const c = await getJSON('/api/chapters');
+  chaptersData = c.chapters || [];
+  if (!chaptersData.length) {
+    $('#chapout').innerHTML = '<p class="state">No chapters. Add them over MCP with add_chapter, at seconds or at a word.</p>';
+    chapRows = [];
+    return;
+  }
+  const issues = c.youtubeIssues && c.youtubeIssues.length
+    ? '<p class="note">' + esc(issueSummary(c.youtubeIssues)) + '</p>'
+    : '';
+  $('#chapout').innerHTML =
+    '<ul class="rows chapters">' + chaptersData.map(x =>
+      '<li data-start="' + (x.start || 0) + '"><span class="t">' + esc(x.time || fmt(x.start)) +
+      '</span><span class="ttl">' + esc(x.title) + '</span></li>').join('') + '</ul>' +
+    '<div class="chap-head"><p class="note">YouTube description</p>' +
+    '<button class="btn" type="button" id="chapcopy">Copy</button></div>' +
+    '<pre id="chapdesc">' + esc(c.youtubeDescription || '') + '</pre>' + issues;
+
+  chapRows = [...document.querySelectorAll('#chapout li')];
+  chapRows.forEach(li => {
+    li.addEventListener('click', () => seekTo(parseFloat(li.dataset.start || '0')));
+  });
+  const copy = $('#chapcopy');
+  if (copy) copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText($('#chapdesc').textContent);
+      copy.textContent = 'Copied';
+      setTimeout(() => { copy.textContent = 'Copy'; }, 1200);
+    } catch (e) { copy.textContent = 'Copy failed'; }
+  });
+}
+$('#chrefresh').addEventListener('click', () => { $('#chapout').innerHTML = '<div class="skel"></div>'; loadChapters().catch(e => fail($('#chapout'), e)); });
+
+/* Subtitles */
+$('#srtgo').addEventListener('click', async () => {
+  const fmtSel = $('#sfmt').value;
+  $('#srtout').textContent = 'Rendering subtitles.';
+  try {
+    const r = await fetch('/api/srt?format=' + fmtSel);
+    const text = await r.text();
+    $('#srtout').textContent = text.startsWith('{') ? JSON.parse(text).message || 'No transcript.' : text;
+    $('#srtcopy').hidden = false;
+    const dl = $('#srtdl'); dl.hidden = false; dl.setAttribute('download', 'story.' + fmtSel);
+    dl.setAttribute('href', '/api/srt?format=' + fmtSel);
+  } catch (err) { $('#srtout').textContent = 'Subtitles did not load: ' + err.message; }
+});
+$('#srtcopy').addEventListener('click', async () => {
+  await navigator.clipboard.writeText($('#srtout').textContent);
+  $('#srtcopy').textContent = 'Copied';
+  setTimeout(() => { $('#srtcopy').textContent = 'Copy'; }, 1200);
+});
+
+/* Dry-run Cut */
+$('#cutform').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('#cutout').innerHTML = '<div class="skel"></div>';
+  try {
+    const r = await fetch('/api/cut', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start: parseFloat($('#cs').value), end: parseFloat($('#ce').value) }) });
+    const d = await r.json();
+    $('#cutout').innerHTML = d.ok
+      ? '<p class="state">A ripple cut at these seconds would land as revision ' + d.revision + ': ' +
+        d.wordsBefore + ' words become ' + d.wordsAfter + ', a new edit point at ' + fmt(d.cutPoints[0]) +
+        '. The file keeps revision ' + projectRev + '.</p>'
+      : '<p class="state error">' + esc(d.error) + ': ' + esc(d.message) + '</p>';
+  } catch (err) { fail($('#cutout'), err); }
+});
+
+/* Transport buttons */
+$('#t-play').addEventListener('click', () => setPlaying(!isPlaying));
+$('#t-start').addEventListener('click', () => seekTo(0));
+$('#t-step-back').addEventListener('click', () => seekTo(playheadT - 1.0));
+$('#t-step-fwd').addEventListener('click', () => seekTo(playheadT + 1.0));
+$('#t-mute').addEventListener('click', () => {
+  isMuted = !isMuted;
+  if (hasRealAudio) editorAudio.muted = isMuted;
+  $('#t-mute').innerHTML = isMuted ? UNMUTE_SVG : MUTE_SVG;
+});
+
+/* Mini track scrubber */
+const miniTrack = $('#mini-track');
+function seekMini(clientX) {
+  const r = miniTrack.getBoundingClientRect();
+  seekTo(totalDuration * Math.min(1, Math.max(0, (clientX - r.left) / r.width)));
+}
+miniTrack.addEventListener('pointerdown', e => {
+  initAudio();
+  seekMini(e.clientX);
+  miniTrack.setPointerCapture(e.pointerId);
+  const move = ev => seekMini(ev.clientX);
+  miniTrack.addEventListener('pointermove', move);
+  miniTrack.addEventListener('pointerup', () => miniTrack.removeEventListener('pointermove', move), { once: true });
+});
+
+/* Keyboard shortcuts */
+addEventListener('keydown', e => {
+  if (e.code === 'Space' && !/INPUT|SELECT/.test(document.activeElement.tagName)) {
+    e.preventDefault();
+    setPlaying(!isPlaying);
+  } else if (e.code === 'KeyM' && !/INPUT|SELECT/.test(document.activeElement.tagName)) {
+    isMuted = !isMuted;
+    if (hasRealAudio) editorAudio.muted = isMuted;
+    $('#t-mute').innerHTML = isMuted ? UNMUTE_SVG : MUTE_SVG;
+  } else if (e.code === 'ArrowLeft' && !/INPUT|SELECT/.test(document.activeElement.tagName)) {
+    seekTo(playheadT - 1.0);
+  } else if (e.code === 'ArrowRight' && !/INPUT|SELECT/.test(document.activeElement.tagName)) {
+    seekTo(playheadT + 1.0);
+  }
+});
+
+/* Create video: write the self-contained player next to the project */
+const exportBtn = $('#exportbtn');
+if (exportBtn) exportBtn.addEventListener('click', async () => {
+  const label = exportBtn.textContent;
+  exportBtn.disabled = true;
+  exportBtn.textContent = 'Rendering…';
+  try {
+    const res = await fetch('/api/render-mp4', { method: 'POST' });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(d.message || d.error || ('HTTP ' + res.status));
+    const mb = (d.bytes / (1024 * 1024)).toFixed(1);
+    exportBtn.textContent = 'Saved ' + mb + ' MB';
+    loadSummary();
+    setTimeout(() => { exportBtn.textContent = label; exportBtn.disabled = false; }, 3000);
+  } catch (err) {
+    exportBtn.textContent = 'Failed';
+    exportBtn.title = err.message;
+    setTimeout(() => { exportBtn.textContent = label; exportBtn.disabled = false; }, 2200);
+  }
+});
+
+/* Frame: four presets, or any even custom size */
+const frameW = $('#frame-w'), frameH = $('#frame-h'), frameFps = $('#frame-fps'), frameOut = $('#frame-out');
+function frameShow(w, h, fps) {
+  if (frameW && document.activeElement !== frameW) frameW.value = w;
+  if (frameH && document.activeElement !== frameH) frameH.value = h;
+  if (frameFps && fps && document.activeElement !== frameFps) frameFps.value = fps;
+  document.querySelectorAll('.ratio-row .btn').forEach(b => {
+    b.setAttribute('aria-pressed', b.dataset.ratio === w + 'x' + h ? 'true' : 'false');
+  });
+}
+async function applyFrame(w, h, fps) {
+  const res = await fetch('/api/frame', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ width: w, height: h, fps: fps })
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) { frameOut.textContent = d.message || d.error || ('HTTP ' + res.status); return; }
+  frameOut.textContent = d.width + ' × ' + d.height + ' · ' + d.fps + ' fps';
+  loadSummary();   /* the stage refits to the new aspect */
+}
+document.querySelectorAll('.ratio-row .btn').forEach(b => b.addEventListener('click', () => {
+  const [w, h] = b.dataset.ratio.split('x').map(Number);
+  frameShow(w, h, Number(frameFps.value) || undefined);
+  applyFrame(w, h, Number(frameFps.value) || undefined).catch(err => { frameOut.textContent = 'Failed: ' + err.message; });
+}));
+if ($('#frame-apply')) $('#frame-apply').addEventListener('click', () => {
+  applyFrame(Number(frameW.value), Number(frameH.value), Number(frameFps.value))
+    .catch(err => { frameOut.textContent = 'Failed: ' + err.message; });
+});
+
+/* Voice: the whole script lives here — edit it, then generate in one pass */
+const ttsForm = $('#ttsform'), ttsBtn = $('#ttsgo'), ttsLang = $('#tts-lang'),
+      ttsVoice = $('#tts-voice'), ttsText = $('#tts-text'), ttsOut = $('#ttsout');
+/* "captain-silas-blackwater" reads better as "Captain Silas Blackwater";
+   the option value stays the file stem. */
+const VOICE_MINOR = new Set(['the', 'of', 'a', 'an', 'and', 'under', 'in', 'on']);
+/* Supertonic styles are two characters (M1..M5, F1..F5); spelled out they
+   read as "Male 1", which is what the model card calls them. */
+const S3_LABELS = { M: 'Male', F: 'Female' };
+function voiceLabel(name) {
+  if (/^[MF][0-9]$/.test(name)) return S3_LABELS[name[0]] + ' ' + name[1];
+  return name
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((w, i) => (i > 0 && VOICE_MINOR.has(w.toLowerCase()))
+      ? w.toLowerCase()
+      : w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+/* English has Phonon styles and Turkish has EMA's one sound; every other
+   language is spoken by Supertonic 3, so the picker must offer its styles. */
+let supertonicVoices = [];
+function ttsSyncVoice() {
+  const other = ttsLang.value !== 'en' && ttsLang.value !== 'tr';
+  if (other && supertonicVoices.length && supertonicVoices.indexOf(ttsVoice.value) < 0) {
+    ttsVoice.value = supertonicVoices.indexOf('M1') >= 0 ? 'M1' : supertonicVoices[0];
+  }
+}
+if (ttsLang && ttsVoice) {
+  ttsLang.addEventListener('change', ttsSyncVoice);
+  ttsSyncVoice();
+  fetch('/api/voices').then(r => r.json()).then(d => {
+    const voices = Array.isArray(d.voices) ? d.voices : [];
+    if (!voices.length) return;
+    supertonicVoices = Array.isArray(d.supertonic) ? d.supertonic : [];
+    const keep = ttsVoice.value;
+    ttsVoice.innerHTML = '';
+    voices.forEach(v => {
+      const o = document.createElement('option');
+      o.value = v;               /* the file stem is what the server loads */
+      o.textContent = voiceLabel(v);
+      ttsVoice.appendChild(o);
+    });
+    if (voices.indexOf(keep) >= 0) ttsVoice.value = keep;
+    ttsSyncVoice();
+  }).catch(() => {});
+}
+function loadScript() {
+  fetch('/api/script').then(r => r.json()).then(d => {
+    if (ttsText && typeof d.text === 'string' && !ttsText.value) ttsText.value = d.text;
+  }).catch(() => {});
+}
+loadScript();
+if (ttsForm) ttsForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  ttsBtn.disabled = true;
+  ttsOut.textContent = 'Synthesizing…';
+  try {
+    const res = await fetch('/api/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lang: ttsLang.value, voice: ttsVoice.value, text: ttsText.value })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || ('HTTP ' + res.status));
+    ttsOut.textContent = 'Narration generated — reloading…';
+    /* The whole timeline is re-fitted to the new audio, so reload. */
+    setTimeout(() => location.reload(), 500);
+  } catch (err) {
+    ttsOut.textContent = 'Failed: ' + err.message;
+    ttsBtn.disabled = false;
+  }
+});
+
+/* Initial boot */
+async function refresh() {
+  try {
+    await Promise.all([loadSummary(), loadTimeline(), loadWords()]);
+  } catch (e) {
+    netOk = false;
+    $('#banner').style.display = 'block';
+  }
+}
+loadChapters().catch(() => {});
+refresh().then(() => {
+  rafId = requestAnimationFrame(playbackFrame);
+});
+setInterval(() => { if (!document.hidden && !isPlaying) refresh(); }, 2500);
+</script>
+</body>
+</html>
