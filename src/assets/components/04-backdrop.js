@@ -941,6 +941,13 @@ function sbAtmosphere(ctx, W, H, time, kind, strength, grade) {
   }
 }
 
+/* The empty stage: the theme's base colour, flat. */
+function sbFlatStage(ctx, W, H) {
+  const base = (typeof T !== 'undefined' && T && T.paper) ? T.paper : '#0B1020';
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, W, H);
+}
+
 function sharedBackground(ctx, W, H, time, scene, particles) {
   const params = (scene && scene.params) || {};
 
@@ -1026,7 +1033,16 @@ function sharedBackground(ctx, W, H, time, scene, particles) {
     }
   }
 
-  const resolved = sbResolve(params.style || 'gradientwaves');
+  /* No photo and no explicit style: a flat, quiet stage. A project does not
+     come with a default background clip — dress the frame with a background
+     component (style or photo) or a scene style; until then the stage is the
+     theme's own base colour and nothing else. */
+  if (!params.style) {
+    sbFlatStage(ctx, W, H);
+    return;
+  }
+
+  const resolved = sbResolve(params.style);
   const theme = resolved.theme;
   const pal = {
     bg: theme.colors[0], a: theme.colors[1], b: theme.colors[1], c: theme.colors[2]

@@ -476,6 +476,19 @@ mod tests {
     }
 
     #[test]
+    fn a_bare_scene_paints_a_flat_stage_not_a_default_clip() {
+        // A project with no background used to silently resolve to the
+        // animated gradientWaves clip — a "default background" the user
+        // never added. The empty stage must be the theme base, flat.
+        assert!(COMPONENTS.contains("function sbFlatStage"), "the flat-stage painter is missing");
+        assert!(COMPONENTS.contains("if (!params.style)"), "a missing style must fall to the flat stage");
+        assert!(
+            !COMPONENTS.contains("sbResolve(params.style || '"),
+            "a missing style must not silently resolve to a default clip"
+        );
+    }
+
+    #[test]
     fn background_theme_table_is_complete() {
         let themes = block_between(COMPONENTS, "const SB_THEMES = {", "};");
         let mut keys = Vec::new();
