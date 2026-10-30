@@ -280,7 +280,16 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
 /* Bottom Multi-Track Timeline */
 .timeline-area { height: 260px; display: flex; flex-direction: column; background: var(--paper-2); flex-shrink: 0; overflow: hidden; }
 .timeline-header { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 var(--space-md); border-bottom: 1px solid var(--rule); font-size: var(--text-xs); color: var(--muted); background: var(--paper-3); }
-.timeline-scroller { flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; }
+.timeline-scroller { flex: 1; overflow-y: auto; overflow-x: auto; position: relative; }
+
+/* Horizontal zoom: the lanes grow past the viewport and the scroller pans;
+   the label column stays pinned so track names never slide away. */
+.lanes { min-width: 100%; }
+.ruler-spacer, .lane-head { position: sticky; left: 0; z-index: 5; }
+.ruler-spacer { background: var(--paper-3); }
+.tl-zoom { display: flex; align-items: center; gap: var(--space-2xs); }
+.tl-zoom .btn { min-width: 26px; text-align: center; padding: 0 var(--space-2xs); }
+#tl-zoom-label { min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; color: var(--muted); }
 
 .lanes { border: none; }
 .ruler-row { display: grid; grid-template-columns: 10rem minmax(0, 1fr); border-bottom: 1px solid var(--rule); background: var(--paper-3); position: sticky; top: 0; z-index: 10; }
@@ -561,6 +570,12 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
 <footer class="timeline-area">
   <div class="timeline-header">
     <span>Timeline Tracks</span>
+    <div class="tl-zoom" title="Ctrl/⌘ + wheel over the timeline zooms toward the cursor">
+      <button class="btn" id="tl-zoom-out" title="Zoom out">−</button>
+      <span id="tl-zoom-label">Fit</span>
+      <button class="btn" id="tl-zoom-in" title="Zoom in">+</button>
+      <button class="btn" id="tl-zoom-fit" title="Fit the window width">Fit</button>
+    </div>
     <a class="btn" id="playlink" href="/preview" target="_blank" rel="noopener">Play from start</a>
   </div>
   <div class="timeline-scroller">
@@ -1224,12 +1239,58 @@ async function loadTimeline() {
 
   /* The 2.5 s refresh rebuilds this DOM; keep the user's scroll position. */
   const scroller = document.querySelector('.timeline-scroller');
-  const keepScroll = scroller ? scroller.scrollTop : 0;
+  const keepScroll = scroller ? [scroller.scrollTop, scroller.scrollLeft] : [0, 0];
   $('#timeline').innerHTML = '<div class="lanes"><div class="ruler-row"><div class="ruler-spacer">Tracks</div><div class="ruler" id="ruler" title="Click to seek playhead">' + ruler + '</div></div>' + rows + '</div>';
-  if (scroller) scroller.scrollTop = keepScroll;
+  if (scroller) { scroller.scrollTop = keepScroll[0]; scroller.scrollLeft = keepScroll[1]; }
+  applyTlZoom();
 
   bindTimelineSeek(dur);
 }
+
+/* Timeline zoom: 1 = fit the window width (default); zooming widens the
+   lanes past the viewport so the scroller pans horizontally, with the label
+   column pinned. Ctrl/⌘ + wheel zooms toward the cursor. */
+let tlZoom = 1;
+const TL_MAX = 16;
+function applyTlZoom() {
+  const lanes = document.querySelector('.lanes');
+  if (lanes) lanes.style.width = (tlZoom * 100) + '%';
+  const label = $('#tl-zoom-label');
+  if (label) label.textContent = tlZoom === 1 ? 'Fit' : Math.round(tlZoom * 100) + '%';
+  const out = $('#tl-zoom-out');
+  if (out) out.disabled = tlZoom <= 1;
+}
+function setTlZoom(next, anchorX) {
+  next = Math.min(TL_MAX, Math.max(1, next));
+  if (next === tlZoom) return;
+  const scroller = document.querySelector('.timeline-scroller');
+  let frac = 0, anchorIn = 0;
+  if (scroller && anchorX !== undefined) {
+    anchorIn = anchorX - scroller.getBoundingClientRect().left;
+    frac = (scroller.scrollLeft + anchorIn) / (scroller.scrollWidth || 1);
+  }
+  tlZoom = next;
+  applyTlZoom();
+  if (scroller && anchorX !== undefined) {
+    /* Keep the time under the cursor stationary across the width change. */
+    requestAnimationFrame(() => {
+      scroller.scrollLeft = Math.max(0, frac * (scroller.scrollWidth || 1) - anchorIn);
+    });
+  }
+}
+$('#tl-zoom-in').addEventListener('click', () => setTlZoom(tlZoom * 1.5));
+$('#tl-zoom-out').addEventListener('click', () => setTlZoom(tlZoom / 1.5));
+$('#tl-zoom-fit').addEventListener('click', () => {
+  tlZoom = 1;
+  applyTlZoom();
+  const s = document.querySelector('.timeline-scroller');
+  if (s) s.scrollLeft = 0;
+});
+document.querySelector('.timeline-scroller').addEventListener('wheel', e => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  e.preventDefault();
+  setTlZoom(e.deltaY < 0 ? tlZoom * 1.25 : tlZoom / 1.25, e.clientX);
+}, { passive: false });
 
 /* Greedy interval layout: items that overlap in time get their own sub-row
    so no card can hide another one on the same track. */
