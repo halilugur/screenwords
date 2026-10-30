@@ -1248,12 +1248,15 @@ async function loadTimeline() {
     const laid = layOutItems(tr.items || []);
     const laneH = Math.max(36, laid.rows * 32 + 8);
     const items = laid.items.map(i => {
-      const w = Math.max((i.end - i.start) / dur * 100, 0.7);
+      const left = i.start / dur * 100;
+      /* A clip can legitimately run past the film end (an outro hold); draw
+         it to the lane edge, never beyond it into hidden overflow. */
+      const w = Math.min(Math.max((i.end - i.start) / dur * 100, 0.7), Math.max(100 - left, 0.7));
       const label = i.componentId || i.name || i.role || i.kind;
       /* On a long timeline a short item is only a few pixels wide: a clipped
          first letter reads as noise, so keep the text for the tooltip only. */
       const visibleLabel = w >= 2.2 ? esc(label) : '';
-      return '<span class="item ' + i.kind + '" style="left:' + (i.start / dur * 100) + '%;width:' + w +
+      return '<span class="item ' + i.kind + '" style="left:' + left + '%;width:' + w +
         '%;top:' + (4 + i.row * 32) + 'px;height:28px;bottom:auto" data-time="' + i.start + '" title="' +
         esc(i.id + ' ' + label + ' ' + fmt(i.start) + ' to ' + fmt(i.end)) + '">' +
         visibleLabel + '</span>';
