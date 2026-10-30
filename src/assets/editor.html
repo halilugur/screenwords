@@ -1248,9 +1248,11 @@ async function loadTimeline() {
     const laid = layOutItems(tr.items || []);
     const laneH = Math.max(36, laid.rows * 32 + 8);
     const items = laid.items.map(i => {
-      const left = i.start / dur * 100;
-      /* A clip can legitimately run past the film end (an outro hold); draw
-         it to the lane edge, never beyond it into hidden overflow. */
+      /* Clips can legitimately start before zero (an opener pre-rolled so
+         its fade-in is done at frame zero) or run past the film end (an
+         outro hold): draw them inside the lane edges, never into hidden
+         overflow on either side. */
+      const left = Math.max(i.start / dur * 100, 0);
       const w = Math.min(Math.max((i.end - i.start) / dur * 100, 0.7), Math.max(100 - left, 0.7));
       const label = i.componentId || i.name || i.role || i.kind;
       /* On a long timeline a short item is only a few pixels wide: a clipped
