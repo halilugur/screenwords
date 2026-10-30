@@ -226,10 +226,14 @@ textarea { padding: var(--space-xs); border: 1px solid var(--rule-2); background
 /* Voice: actions on top, then a script box that owns the rest of the panel */
 section[data-panel="voice"].on { display: flex; flex-direction: column; height: 100%; }
 .script-field { display: flex; flex-direction: column; gap: var(--space-2xs); flex: 1; min-height: 0; }
-/* label and controls share one line, so the box owns the rest of the panel */
-.script-head { display: flex; align-items: center; gap: var(--space-xs); }
-.script-head > label { flex: 1; color: var(--muted); font-size: var(--text-xs); }
-#tts-voice { max-width: 9.5rem; }
+/* One header row that must fit the panel width: the label and button take
+   only what they need, the two selects share what's left and can shrink
+   (a select clips its own text, so narrow beats clipped controls). */
+.script-head { display: flex; align-items: center; gap: var(--space-2xs); min-width: 0; }
+.script-head > label { flex: 0 0 auto; color: var(--muted); font-size: var(--text-xs); }
+.script-head select { flex: 1 1 4rem; min-width: 0; width: auto; }
+#tts-voice { flex: 1.2 1 4rem; }
+#ttsgo { flex: 0 0 auto; }
 .script-field textarea { flex: 1; width: 100%; min-height: 8rem; }
 #ttsout { margin-top: var(--space-xs); }
 #ttsout:empty { display: none; }
@@ -278,7 +282,7 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
 .note { color: var(--muted); font-size: var(--text-xs); margin-top: var(--space-xs); }
 
 /* Bottom Multi-Track Timeline */
-.timeline-area { height: 260px; display: flex; flex-direction: column; background: var(--paper-2); flex-shrink: 0; overflow: hidden; }
+.timeline-area { height: 320px; display: flex; flex-direction: column; background: var(--paper-2); flex-shrink: 0; overflow: hidden; }
 .timeline-header { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 var(--space-md); border-bottom: 1px solid var(--rule); font-size: var(--text-xs); color: var(--muted); background: var(--paper-3); }
 .timeline-scroller { flex: 1; overflow-y: auto; overflow-x: auto; position: relative; }
 
