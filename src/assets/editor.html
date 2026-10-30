@@ -291,7 +291,9 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
 /* Bottom Multi-Track Timeline */
 .timeline-area { height: 320px; display: flex; flex-direction: column; background: var(--paper-2); flex-shrink: 0; overflow: hidden; }
 .timeline-header { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 var(--space-md); border-bottom: 1px solid var(--rule); font-size: var(--text-xs); color: var(--muted); background: var(--paper-3); }
-.timeline-scroller { flex: 1; overflow-y: auto; overflow-x: auto; position: relative; }
+.timeline-scroller { flex: 1; overflow-y: auto; overflow-x: auto; position: relative; scrollbar-width: none; }
+.timeline-scroller::-webkit-scrollbar { display: none; }
+.timeline-header .header-right { display: flex; align-items: center; gap: var(--space-md); }
 
 /* Horizontal zoom: the lanes grow past the viewport and the scroller pans;
    the label column stays pinned so track names never slide away. */
@@ -583,13 +585,15 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
   <footer class="timeline-area">
   <div class="timeline-header">
     <span>Timeline Tracks</span>
-    <div class="tl-zoom" title="Ctrl/⌘ + wheel over the timeline zooms toward the cursor">
-      <button class="btn" id="tl-zoom-out" title="Zoom out">−</button>
-      <span id="tl-zoom-label">Fit</span>
-      <button class="btn" id="tl-zoom-in" title="Zoom in">+</button>
-      <button class="btn" id="tl-zoom-fit" title="Fit the window width">Fit</button>
+    <div class="header-right">
+      <div class="tl-zoom" title="Zoom the timeline; pan with a trackpad swipe">
+        <button class="btn" id="tl-zoom-out" title="Zoom out">−</button>
+        <span id="tl-zoom-label">Fit</span>
+        <button class="btn" id="tl-zoom-in" title="Zoom in">+</button>
+        <button class="btn" id="tl-zoom-fit" title="Fit the window width">Fit</button>
+      </div>
+      <a class="btn" id="playlink" href="/preview" target="_blank" rel="noopener">Play from start</a>
     </div>
-    <a class="btn" id="playlink" href="/preview" target="_blank" rel="noopener">Play from start</a>
   </div>
   <div class="timeline-scroller">
     <div class="region" id="timeline" aria-live="polite">
