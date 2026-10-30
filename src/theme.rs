@@ -13,8 +13,31 @@ pub struct Preset {
     pub json: &'static str,
 }
 
-/// The fallback when a project carries no theme: the original midnight look.
+/// The fallback when a project carries no theme: the brand look — the logo's
+/// deep navy tile, off-white ink, gold accent, amber second.
 pub const DEFAULT: &str = r##"{
+  "paper": "#0B1020", "ink": "#E8ECF8", "accent": "#FFC857", "accent2": "#E8950C",
+  "accentInk": "#1A1205",
+  "bg": {
+    "stars":   ["#070B16", "#0D1527", "#F4F8FF"],
+    "grid":    ["#05070E", "rgba(255,200,87,0.22)", "rgba(255,200,87,0.14)"],
+    "mesh":    ["#070A12", "#6366F1", "#06B6D4", "#EC4899"],
+    "waves":   ["#050D1A", "#0B1D3A", "#FFC857"],
+    "sunset":  ["#0B0A1C", "#2E1038", "#7C1F38"],
+    "studio":  ["#050811", "#0C1322", "#1E293B"]
+  }
+}"##;
+
+pub const PRESETS: &[Preset] = &[
+    Preset {
+        name: "brand",
+        description: "the logo look: deep navy, gold accent, amber second",
+        json: DEFAULT,
+    },
+    Preset {
+        name: "midnight",
+        description: "deep night blue, cyan accent, gold second (the original look)",
+        json: r##"{
   "paper": "#04070F", "ink": "#F4F8FF", "accent": "#38BDF8", "accent2": "#FFD54A",
   "accentInk": "#04101E",
   "bg": {
@@ -25,13 +48,7 @@ pub const DEFAULT: &str = r##"{
     "sunset":  ["#0B0A1C", "#2E1038", "#7C1F38"],
     "studio":  ["#050811", "#0C1322", "#1E293B"]
   }
-}"##;
-
-pub const PRESETS: &[Preset] = &[
-    Preset {
-        name: "midnight",
-        description: "deep night blue, cyan accent, gold second (the original look)",
-        json: DEFAULT,
+}"##,
     },
     Preset {
         name: "editorial",

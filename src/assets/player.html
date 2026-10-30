@@ -31,7 +31,7 @@
   /* video-frame palette (content on the stage, distinct from page chrome) */
   --stage-void: #04070F;
   --vid-white: #F4F8FF; --vid-dim: rgba(244, 248, 255, 0.72); --vid-ink-2: #D9E2F2;
-  --vid-stroke: #050A16; --vid-accent: #38BDF8; --vid-accent-hot: #22E0FF;
+  --vid-stroke: #050A16; --vid-accent: #FFC857; --vid-accent-hot: #FFDE8A;
   --vid-accent-ink: #04101E; --vid-gold: #FFD54A;
   --vid-accent-glow: color-mix(in oklab, var(--vid-accent) 90%, transparent); --vid-accent-glow-soft: color-mix(in oklab, var(--vid-accent) 60%, transparent);
   --vid-plate: color-mix(in oklab, var(--vid-white) 8%, var(--stage-void)); --vid-plate-translucent: rgba(13, 20, 36, 0.85); --vid-plate-border: rgba(148, 163, 184, 0.28);
@@ -230,7 +230,7 @@ const D = __DATA__;
 /* The look is DOCUMENT DATA: the theme the AI set through MCP drives every
    default below. Component params still override per-instance. */
 const T = Object.assign(
-  { paper: '#04070F', ink: '#F4F8FF', accent: '#38BDF8', accent2: '#FFD54A', accentInk: '#04101E', bg: {} },
+  { paper: '#0B1020', ink: '#E8ECF8', accent: '#FFC857', accent2: '#E8950C', accentInk: '#1A1205', bg: {} },
   D.theme || {}
 );
 {
