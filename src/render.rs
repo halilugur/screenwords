@@ -30,12 +30,15 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
         })
         .collect();
     let speech_end = words
-        .last()
-        .and_then(|w| w.get("end").and_then(Value::as_f64))
-        .unwrap_or(0.0);
-    let components: Vec<Value> = p
-        .components()
         .iter()
+        .filter_map(|w| w.get("end").and_then(Value::as_f64))
+        .fold(0.0_f64, f64::max);
+    let components: Vec<Value> = p
+        .tracks()
+        .into_iter()
+        .filter(|t| !t.is_hidden())
+        .flat_map(|t| t.components().iter())
+        .filter(|c| c.get("isEnabled").and_then(Value::as_bool).unwrap_or(true))
         .filter_map(|c| {
             let (start, end) = p.component_window(c)?;
             let end = end.unwrap_or(start);
@@ -48,11 +51,16 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
             Some(o)
         })
         .collect();
+    let visual_end = components
+        .iter()
+        .filter_map(|c| c.get("end").and_then(Value::as_f64))
+        .fold(0.0_f64, f64::max);
     let duration = s
         .target_duration()
         .map(|t| t.seconds())
         .unwrap_or(speech_end + 1.0)
-        .max(speech_end + 0.5);
+        .max(speech_end + 0.5)
+        .max(visual_end);
 
     let mut tracks = Vec::new();
     for t in p.tracks() {
@@ -188,7 +196,18 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
     let mut audio_uri: Option<String> = None;
     let mut audio_bytes = None;
     let mut audio_wav = false;
-    for a in p.assets() {
+    let mut audio_assets = Vec::new();
+    for t in p.tracks() {
+        for ev in t.audio_events() {
+            if ev.get("role").and_then(Value::as_str) == Some("voice") {
+                if let Some(a) = ev.get("assetId").and_then(Value::as_str).and_then(|id| p.asset(id)) {
+                    audio_assets.push(a);
+                }
+            }
+        }
+    }
+    audio_assets.extend(p.assets());
+    for a in audio_assets {
         if a.get("kind").and_then(Value::as_str) == Some("audio") {
             // New projects embed narration as a data URI: nothing on disk.
             // A path is only the legacy form (older bundles, CLI output).
@@ -286,7 +305,8 @@ pub fn render_html(p: &Project) -> String {
 }
 
 pub fn render_html_in(p: &Project, base: Option<&Path>) -> String {
-    let data = render_data_in(p, base).to_string();
+    // HTML parses script closing tags even inside a JavaScript string.
+    let data = render_data_in(p, base).to_string().replace('<', "\\u003c");
     page_html().replace("__DATA__", &data)
 }
 
@@ -356,6 +376,54 @@ mod tests {
         let editor = include_str!("assets/editor.html");
         assert!(!editor.contains("fonts.googleapis.com"), "the editor still links Google Fonts");
         assert!(editor.contains(FONTS_MARKER), "the editor has no font marker");
+    }
+
+    #[test]
+    fn duration_covers_visual_content_without_narration() {
+        let p = Project::parse(r#"{"schemaVersion":2,"id":"p","name":"P","settings":{},"tracks":[
+            {"components":[{"timing":{"start":{"seconds":0},"end":{"seconds":12}}},
+            {"isEnabled":false,"timing":{"start":{"seconds":0},"end":{"seconds":50}}}]},
+            {"isHidden":true,"components":[{"timing":{"start":{"seconds":0},"end":{"seconds":60}}}]}]}"#).unwrap();
+        assert_eq!(render_data(&p).get("duration").and_then(Value::as_f64), Some(12.0));
+    }
+
+    #[test]
+    fn duration_uses_the_latest_word_end_not_storage_order() {
+        let p = Project::parse(r#"{"schemaVersion":2,"id":"p","name":"P","settings":{},"tracks":[],
+            "transcripts":[{"words":[{"id":"late","end":{"value":10000,"timescale":1000}},
+            {"id":"early","end":{"value":2000,"timescale":1000}}]}]}"#).unwrap();
+        assert_eq!(render_data(&p).get("duration").and_then(Value::as_f64), Some(11.0));
+    }
+
+    #[test]
+    fn hidden_and_disabled_components_are_not_rendered() {
+        let p = Project::parse(r#"{"schemaVersion":2,"id":"p","name":"P","settings":{},"tracks":[
+            {"isHidden":true,"components":[{"id":"hidden","timing":{"start":{"seconds":0},"end":{"seconds":2}}}]},
+            {"components":[{"id":"disabled","isEnabled":false,"timing":{"start":{"seconds":0},"end":{"seconds":2}}},
+            {"id":"visible","timing":{"start":{"seconds":0},"end":{"seconds":2}}}]}]}"#).unwrap();
+        let data = render_data(&p);
+        let components = data.get("components").unwrap().as_array().unwrap();
+        assert_eq!(components.len(), 1);
+        assert_eq!(components[0].get("id").and_then(Value::as_str), Some("visible"));
+    }
+
+    #[test]
+    fn narration_audio_wins_over_an_earlier_music_asset() {
+        let p = Project::parse(r#"{"schemaVersion":2,"id":"p","name":"P","settings":{},
+            "tracks":[{"audioEvents":[{"assetId":"voice","role":"voice"}]}],
+            "assets":[{"id":"music","kind":"audio","source":{"dataUri":"data:audio/wav;base64,bXVzaWM="}},
+            {"id":"voice","kind":"audio","source":{"dataUri":"data:audio/wav;base64,dm9pY2U="}}]}"#).unwrap();
+        assert_eq!(render_data(&p).get("audioData").and_then(Value::as_str),
+            Some("data:audio/wav;base64,dm9pY2U="));
+    }
+
+    #[test]
+    fn project_text_cannot_close_the_player_script() {
+        let mut p = crate::server::blank_project("P", true);
+        p.root.set("name", Value::str("</script><script>alert('injected')</script>"));
+        let html = render_html(&p);
+        assert!(!html.contains("</script><script>alert('injected')"));
+        assert!(html.contains("\\u003c/script>"));
     }
 
     #[test]
