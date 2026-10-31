@@ -1,0 +1,1117 @@
+{
+  "analysis" : {
+    "audio" : [],
+    "masks" : [],
+    "scenes" : []
+  },
+  "assets" : [],
+  "chapters" : [
+    {
+      "id" : "chp_ufh72cj4",
+      "time" : {
+        "wordId" : "w21"
+      },
+      "title" : "Watch the words come alive"
+    },
+    {
+      "id" : "chp_0t6y46rh",
+      "time" : {
+        "wordId" : "w36"
+      },
+      "title" : "One engine, start to finish"
+    }
+  ],
+  "id" : "prj_blank001",
+  "name" : "hello",
+  "schemaVersion" : 2,
+  "settings" : {
+    "audioSampleRate" : 48000,
+    "frameRate" : {
+      "denominator" : 1,
+      "numerator" : 30
+    },
+    "hdrPolicy" : "toneMapToSDR",
+    "loudness" : {
+      "integratedLUFS" : -14,
+      "normalizeOnExport" : true,
+      "truePeakDBTP" : -1
+    },
+    "outputColor" : {
+      "bitDepth" : 8,
+      "fullRange" : false,
+      "matrix" : "bt709",
+      "primaries" : "bt709",
+      "transfer" : "bt709"
+    },
+    "resolution" : {
+      "height" : 1920,
+      "width" : 1080
+    },
+    "targetDuration" : {
+      "timescale" : 1000,
+      "value" : 34000
+    }
+  },
+  "tracks" : [
+    {
+      "audioEvents" : [],
+      "clips" : [],
+      "components" : [],
+      "id" : "trk_blank0",
+      "isHidden" : false,
+      "isMuted" : false,
+      "kind" : "video",
+      "name" : "Video"
+    },
+    {
+      "audioEvents" : [],
+      "clips" : [],
+      "components" : [
+        {
+          "componentId" : "gradientBackground",
+          "id" : "cmp_rosjl00l",
+          "isEnabled" : true,
+          "keyframes" : [],
+          "params" : {
+            "accent" : "#7C5CFF"
+          },
+          "timing" : {
+            "end" : {
+              "timescale" : 1000,
+              "value" : 34000
+            },
+            "start" : {
+              "timescale" : 1000,
+              "value" : 0
+            }
+          },
+          "zIndex" : 0
+        }
+      ],
+      "id" : "trk_blank1",
+      "isHidden" : false,
+      "isMuted" : false,
+      "kind" : "overlay",
+      "name" : "Scenes",
+      "role" : "scenes"
+    },
+    {
+      "audioEvents" : [],
+      "clips" : [],
+      "components" : [
+        {
+          "componentId" : "titleCard",
+          "id" : "cmp_xb25czpr",
+          "isEnabled" : true,
+          "keyframes" : [],
+          "params" : {
+            "subtitle" : "words that move",
+            "title" : "screenwords"
+          },
+          "timing" : {
+            "duration" : {
+              "timescale" : 1000,
+              "value" : 3400
+            },
+            "start" : {
+              "timescale" : 1000,
+              "value" : 0
+            }
+          },
+          "zIndex" : 0
+        },
+        {
+          "componentId" : "statBadge",
+          "id" : "cmp_2rvazgo0",
+          "isEnabled" : true,
+          "keyframes" : [],
+          "params" : {
+            "label" : "binary, zero cloud",
+            "title" : "1",
+            "value" : 1
+          },
+          "timing" : {
+            "duration" : {
+              "timescale" : 1000,
+              "value" : 5400
+            },
+            "start" : {
+              "wordId" : "w44"
+            }
+          },
+          "zIndex" : 0
+        },
+        {
+          "componentId" : "chapterCard",
+          "id" : "cmp_jc5fwmaf",
+          "isEnabled" : true,
+          "keyframes" : [],
+          "params" : {
+            "chapter" : "act two",
+            "subtitle" : "playing",
+            "title" : "Your story, playing"
+          },
+          "timing" : {
+            "duration" : {
+              "timescale" : 1000,
+              "value" : 4600
+            },
+            "start" : {
+              "wordId" : "w48"
+            }
+          },
+          "zIndex" : 0
+        }
+      ],
+      "id" : "trk_blank2",
+      "isHidden" : false,
+      "isMuted" : false,
+      "kind" : "overlay",
+      "name" : "Overlays"
+    },
+    {
+      "audioEvents" : [],
+      "clips" : [],
+      "components" : [
+        {
+          "componentId" : "kineticWords",
+          "id" : "cmp_koipfued",
+          "isEnabled" : true,
+          "keyframes" : [],
+          "params" : {},
+          "timing" : {
+            "duration" : {
+              "timescale" : 1000,
+              "value" : 5200
+            },
+            "start" : {
+              "wordId" : "w21"
+            }
+          },
+          "zIndex" : 0
+        },
+        {
+          "componentId" : "subtitleBar",
+          "id" : "cmp_s4mysjf0",
+          "isEnabled" : true,
+          "keyframes" : [],
+          "params" : {},
+          "timing" : {
+            "duration" : {
+              "timescale" : 1000,
+              "value" : 5400
+            },
+            "start" : {
+              "wordId" : "w36"
+            }
+          },
+          "zIndex" : 0
+        }
+      ],
+      "id" : "trk_blank3",
+      "isHidden" : false,
+      "isMuted" : false,
+      "kind" : "caption",
+      "name" : "Captions"
+    },
+    {
+      "audioEvents" : [],
+      "clips" : [],
+      "components" : [],
+      "id" : "trk_blank4",
+      "isHidden" : false,
+      "isMuted" : false,
+      "kind" : "audio",
+      "name" : "Voice",
+      "role" : "voice"
+    },
+    {
+      "audioEvents" : [],
+      "clips" : [],
+      "components" : [],
+      "id" : "trk_blank5",
+      "isHidden" : false,
+      "isMuted" : false,
+      "kind" : "audio",
+      "name" : "Music",
+      "role" : "music"
+    },
+    {
+      "audioEvents" : [],
+      "clips" : [],
+      "components" : [],
+      "id" : "trk_blank6",
+      "isHidden" : false,
+      "isMuted" : false,
+      "kind" : "audio",
+      "name" : "SFX",
+      "role" : "sfx"
+    }
+  ],
+  "transcripts" : [
+    {
+      "assetId" : "authoring",
+      "engine" : "author/rust",
+      "language" : "en",
+      "segments" : [
+        {
+          "end" : {
+            "timescale" : 1000,
+            "value" : 3360
+          },
+          "id" : "seg_1",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 0
+          },
+          "text" : "Every story deserves to be seen",
+          "wordIds" : [
+            "w1",
+            "w2",
+            "w3",
+            "w4",
+            "w5",
+            "w6"
+          ]
+        },
+        {
+          "end" : {
+            "timescale" : 1000,
+            "value" : 8770
+          },
+          "id" : "seg_2",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 3670
+          },
+          "text" : "Screenwords turns plain words into an animated video",
+          "wordIds" : [
+            "w7",
+            "w8",
+            "w9",
+            "w10",
+            "w11",
+            "w12",
+            "w13",
+            "w14"
+          ]
+        },
+        {
+          "end" : {
+            "timescale" : 1000,
+            "value" : 10820
+          },
+          "id" : "seg_3",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 9080
+          },
+          "text" : "Write the script",
+          "wordIds" : [
+            "w15",
+            "w16",
+            "w17"
+          ]
+        },
+        {
+          "end" : {
+            "timescale" : 1000,
+            "value" : 12630
+          },
+          "id" : "seg_4",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 11130
+          },
+          "text" : "Pick a theme",
+          "wordIds" : [
+            "w18",
+            "w19",
+            "w20"
+          ]
+        },
+        {
+          "end" : {
+            "timescale" : 1000,
+            "value" : 15760
+          },
+          "id" : "seg_5",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 12940
+          },
+          "text" : "Watch the words come alive",
+          "wordIds" : [
+            "w21",
+            "w22",
+            "w23",
+            "w24",
+            "w25"
+          ]
+        },
+        {
+          "end" : {
+            "timescale" : 1000,
+            "value" : 22190
+          },
+          "id" : "seg_6",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 16070
+          },
+          "text" : "Titles captions and charts ride the timeline on word anchors",
+          "wordIds" : [
+            "w26",
+            "w27",
+            "w28",
+            "w29",
+            "w30",
+            "w31",
+            "w32",
+            "w33",
+            "w34",
+            "w35"
+          ]
+        },
+        {
+          "end" : {
+            "timescale" : 1000,
+            "value" : 27180
+          },
+          "id" : "seg_7",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 22500
+          },
+          "text" : "One engine renders the preview and the export",
+          "wordIds" : [
+            "w36",
+            "w37",
+            "w38",
+            "w39",
+            "w40",
+            "w41",
+            "w42",
+            "w43"
+          ]
+        },
+        {
+          "end" : {
+            "timescale" : 1000,
+            "value" : 28510
+          },
+          "id" : "seg_8",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 27490
+          },
+          "text" : "No cloud",
+          "wordIds" : [
+            "w44",
+            "w45"
+          ]
+        },
+        {
+          "end" : {
+            "timescale" : 1000,
+            "value" : 30020
+          },
+          "id" : "seg_9",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 28820
+          },
+          "text" : "No accounts",
+          "wordIds" : [
+            "w46",
+            "w47"
+          ]
+        },
+        {
+          "end" : {
+            "timescale" : 1000,
+            "value" : 32790
+          },
+          "id" : "seg_10",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 30330
+          },
+          "text" : "Just your story playing",
+          "wordIds" : [
+            "w48",
+            "w49",
+            "w50",
+            "w51"
+          ]
+        }
+      ],
+      "words" : [
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 540
+          },
+          "id" : "w1",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 0
+          },
+          "text" : "Every"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 1140
+          },
+          "id" : "w2",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 600
+          },
+          "text" : "story"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 1920
+          },
+          "id" : "w3",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 1200
+          },
+          "text" : "deserves"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 2340
+          },
+          "id" : "w4",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 1980
+          },
+          "text" : "to"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 2760
+          },
+          "id" : "w5",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 2400
+          },
+          "text" : "be"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 3360
+          },
+          "id" : "w6",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 2820
+          },
+          "text" : "seen."
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 4570
+          },
+          "id" : "w7",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 3670
+          },
+          "text" : "Screenwords"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 5170
+          },
+          "id" : "w8",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 4630
+          },
+          "text" : "turns"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 5770
+          },
+          "id" : "w9",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 5230
+          },
+          "text" : "plain"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 6370
+          },
+          "id" : "w10",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 5830
+          },
+          "text" : "words"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 6910
+          },
+          "id" : "w11",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 6430
+          },
+          "text" : "into"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 7330
+          },
+          "id" : "w12",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 6970
+          },
+          "text" : "an"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 8110
+          },
+          "id" : "w13",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 7390
+          },
+          "text" : "animated"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 8770
+          },
+          "id" : "w14",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 8170
+          },
+          "text" : "video."
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 9620
+          },
+          "id" : "w15",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 9080
+          },
+          "text" : "Write"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 10100
+          },
+          "id" : "w16",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 9680
+          },
+          "text" : "the"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 10820
+          },
+          "id" : "w17",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 10160
+          },
+          "text" : "script."
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 11610
+          },
+          "id" : "w18",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 11130
+          },
+          "text" : "Pick"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 11970
+          },
+          "id" : "w19",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 11670
+          },
+          "text" : "a"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 12630
+          },
+          "id" : "w20",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 12030
+          },
+          "text" : "theme."
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 13480
+          },
+          "id" : "w21",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 12940
+          },
+          "text" : "Watch"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 13960
+          },
+          "id" : "w22",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 13540
+          },
+          "text" : "the"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 14560
+          },
+          "id" : "w23",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 14020
+          },
+          "text" : "words"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 15100
+          },
+          "id" : "w24",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 14620
+          },
+          "text" : "come"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 15760
+          },
+          "id" : "w25",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 15160
+          },
+          "text" : "alive."
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 16730
+          },
+          "id" : "w26",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 16070
+          },
+          "text" : "Titles,"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 17510
+          },
+          "id" : "w27",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 16790
+          },
+          "text" : "captions"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 17990
+          },
+          "id" : "w28",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 17570
+          },
+          "text" : "and"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 18650
+          },
+          "id" : "w29",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 18050
+          },
+          "text" : "charts"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 19190
+          },
+          "id" : "w30",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 18710
+          },
+          "text" : "ride"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 19670
+          },
+          "id" : "w31",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 19250
+          },
+          "text" : "the"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 20450
+          },
+          "id" : "w32",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 19730
+          },
+          "text" : "timeline"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 20870
+          },
+          "id" : "w33",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 20510
+          },
+          "text" : "on"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 21410
+          },
+          "id" : "w34",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 20930
+          },
+          "text" : "word"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 22190
+          },
+          "id" : "w35",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 21470
+          },
+          "text" : "anchors."
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 22920
+          },
+          "id" : "w36",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 22500
+          },
+          "text" : "One"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 23580
+          },
+          "id" : "w37",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 22980
+          },
+          "text" : "engine"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 24300
+          },
+          "id" : "w38",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 23640
+          },
+          "text" : "renders"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 24780
+          },
+          "id" : "w39",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 24360
+          },
+          "text" : "the"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 25500
+          },
+          "id" : "w40",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 24840
+          },
+          "text" : "preview"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 25980
+          },
+          "id" : "w41",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 25560
+          },
+          "text" : "and"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 26460
+          },
+          "id" : "w42",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 26040
+          },
+          "text" : "the"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 27180
+          },
+          "id" : "w43",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 26520
+          },
+          "text" : "export."
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 27850
+          },
+          "id" : "w44",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 27490
+          },
+          "text" : "No"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 28510
+          },
+          "id" : "w45",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 27910
+          },
+          "text" : "cloud."
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 29180
+          },
+          "id" : "w46",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 28820
+          },
+          "text" : "No"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 30020
+          },
+          "id" : "w47",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 29240
+          },
+          "text" : "accounts."
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 30810
+          },
+          "id" : "w48",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 30330
+          },
+          "text" : "Just"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 31350
+          },
+          "id" : "w49",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 30870
+          },
+          "text" : "your"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 32010
+          },
+          "id" : "w50",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 31410
+          },
+          "text" : "story,"
+        },
+        {
+          "confidence" : 1,
+          "end" : {
+            "timescale" : 1000,
+            "value" : 32790
+          },
+          "id" : "w51",
+          "start" : {
+            "timescale" : 1000,
+            "value" : 32070
+          },
+          "text" : "playing."
+        }
+      ]
+    }
+  ],
+  "wordCounter" : 51
+}
