@@ -4,5 +4,18 @@
 # ONNX TTS models — staged at runtime, ~1 GB; re-download, don't commit
 /tts-models
 
-# macOS
+# Editor exports land next to their project (hello.html, hello.mp4, …);
+# regenerate them from the editor instead of committing
+examples/*/*.html
+examples/*/*.mp4
+examples/*/*.wav
+
+# macOS / IDE / editor droppings
 .DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Local agent working directories
+.claude/
+.zcode/
