@@ -1,4 +1,4 @@
-<h1 align="center"><img src="logo.svg" alt="screenwords" width="360"></h1>
+<h1 align="center"><img src="docs/logo.svg" alt="screenwords" width="360"></h1>
 
 <p align="center"><strong>Words, on screen, in motion.</strong></p>
 
