@@ -62,17 +62,26 @@ pub fn models_dir() -> std::path::PathBuf {
     std::path::PathBuf::from("/tmp/tts-models")
 }
 
-/// Route a request. An explicit Supertonic voice wins for every language;
-/// otherwise English keeps Phonon (it has word-level timings) and Turkish
-/// keeps EMA. Any other language needs Supertonic 3 staged.
+/// Route a request. An explicit Supertonic voice wins for every language
+/// once those models are staged; otherwise English keeps Phonon (it has
+/// word-level timings) and Turkish keeps EMA. Any other language needs
+/// Supertonic 3 staged.
 pub fn backend_for(lang: &str, voice: &str) -> Backend {
-    if s3::available() && s3::is_voice(voice) {
+    route(lang, voice, s3::available())
+}
+
+/// The routing decision with staging as an input, so the whole matrix is
+/// testable on a machine without models (CI stages nothing): the voice
+/// naming alone must not promise Supertonic — `M1` on a bare install still
+/// speaks the language default.
+fn route(lang: &str, voice: &str, s3_staged: bool) -> Backend {
+    if s3_staged && s3::is_voice(voice) {
         return Backend::Supertonic;
     }
     match lang {
         "en" => Backend::Phonon,
         "tr" => Backend::Ema,
-        _ if s3::available() => Backend::Supertonic,
+        _ if s3_staged => Backend::Supertonic,
         _ => Backend::Phonon,
     }
 }
@@ -112,10 +121,19 @@ mod tests {
 
     #[test]
     fn explicit_supertonic_voice_wins_over_the_language_default() {
-        // is_voice is pure naming, so this holds even with no models staged.
-        assert_eq!(backend_for("en", "M1"), Backend::Supertonic);
-        assert_eq!(backend_for("tr", "F3"), Backend::Supertonic);
-        assert_eq!(backend_for("en", "easton"), Backend::Phonon);
-        assert_eq!(backend_for("tr", "easton"), Backend::Ema);
+        // An M1..F5 style only reaches Supertonic when those models are
+        // staged; without them the language default speaks instead (the
+        // naming alone is not a promise).
+        assert_eq!(route("en", "M1", true), Backend::Supertonic);
+        assert_eq!(route("tr", "F3", true), Backend::Supertonic);
+        assert_eq!(route("en", "M1", false), Backend::Phonon);
+        assert_eq!(route("tr", "F3", false), Backend::Ema);
+        // A Phonon voice name never leaves the language default.
+        assert_eq!(route("en", "easton", true), Backend::Phonon);
+        assert_eq!(route("tr", "easton", true), Backend::Ema);
+        // A third language needs Supertonic staged; without it Phonon is the
+        // least-wrong fallback (synthesize_timed rejects it earlier).
+        assert_eq!(route("de", "any", true), Backend::Supertonic);
+        assert_eq!(route("de", "any", false), Backend::Phonon);
     }
 }
