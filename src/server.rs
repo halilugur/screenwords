@@ -95,15 +95,15 @@ const TOOLS: &[ToolSpec] = &[
     ToolSpec { name: "get_project", description: "Project summary: settings, revision, assets, tracks with clips/components/audio, undo state." },
     ToolSpec { name: "get_transcript", description: "Transcript words with ids and times; a window or segmentId on long videos." },
     ToolSpec { name: "find_in_transcript", description: "Phrase search (case/diacritic-insensitive) or kind sweeps: number | filler | pause." },
-    ToolSpec { name: "list_components", description: "The built-in component catalog (id, category)." },
+    ToolSpec { name: "list_components", description: "The built-in component catalog (id, category) and howTo for characters and conversations; componentId? returns that component's params." },
     ToolSpec { name: "list_chapters", description: "Chapters in timeline order with the YouTube description and issues." },
     ToolSpec { name: "list_notes", description: "The user's timeline notes." },
     ToolSpec { name: "export_subtitles", description: "SRT / WebVTT of the edited transcript (<= 2 lines, 1-7 s cues)." },
     ToolSpec { name: "get_history", description: "Undo / redo steps newest first: label, by, revision." },
-    ToolSpec { name: "apply_edits", description: "Several edit tools as ONE atomic undo step; edits [{tool, arguments}] (<= 200), label?, ifRevision?." },
+    ToolSpec { name: "apply_edits", description: "Several edit tools as ONE atomic undo step; edits [{tool, arguments}] (<= 200), label?, ifRevision?. Tools include add_component / update_component / remove_component and set_project_settings {name?, width?, height?, fps?, cast? {name: character | null}} — the cast is the project's characters (see list_components howTo)." },
     ToolSpec { name: "author_transcript", description: "From-zero authoring: create the transcript from plain text (or turns [{speaker, text, gap?}] for a conversation; a negative gap overlaps the previous turn) with TTS-like timing (the stand-in for the TTS job)." },
     ToolSpec { name: "set_theme", description: "Set the project's visual theme (document data, not engine defaults): preset? (midnight | editorial | meadow | noir | candy | sunset | glacier) and/or overrides paper/ink/accent/accent2/accentInk (hex) and bg.{style} color arrays. Component colour params still win over the theme." },
-    ToolSpec { name: "synthesize_speech", description: "On-device TTS (ONNX): speak the transcript (or text?) in lang, voice?, seed?; writes a WAV asset into the bundle, places it on the Voice track and fits the project duration. English uses Phonon and Turkish EMA unless a Supertonic voice is chosen; Supertonic 3 covers 31 languages with voices M1-M5 / F1-F5 (voices? {speakerId: voice} speaks a transcript authored with turns in one voice per speaker): en ko ja ar bg cs da de el es et fi fr hi hr hu id it lt lv nl pl pt ro ru sk sl sv tr uk vi (anything else falls back to <na>)." },
+    ToolSpec { name: "synthesize_speech", description: "On-device TTS (ONNX): speak the transcript (or text?) in lang, voice?, seed?; writes a WAV asset into the bundle, places it on the Voice track and fits the project duration. English uses Phonon and Turkish EMA unless a Supertonic voice is chosen; Supertonic 3 covers 31 languages with voices M1-M5 / F1-F5 (voices? {speakerId: voice} speaks a transcript authored with turns in one voice per speaker, levelled to one loudness; bed? 'ambient' adds a quiet music bed ducked under the speech): en ko ja ar bg cs da de el es et fi fr hi hr hu id it lt lv nl pl pt ro ru sk sl sv tr uk vi (anything else falls back to <na>)." },
     ToolSpec { name: "find_background", description: "Place a real photo behind the story as a full-frame, moving background. Providers: unsplash (Unsplash License, commercial use, no attribution required) or pexels; a query is searched with UNSPLASH_ACCESS_KEY / PEXELS_API_KEY in the environment. Or pass url (an image URL) or file (a local image path). The image is embedded as a data URI and animated: motion kenburns | zoomin | zoomout | panleft | panright | drift | parallax | ripple | pulse, atmosphere sheen | rain | snow | dust | embers | bokeh | rays | fog | none, grade dark | warm | cool | violet | green | light | none. Motion and atmosphere are inferred from the query when omitted." },
     ToolSpec { name: "undo", description: "One undo step; expectLabel? refuses unless the step has this label." },
     ToolSpec { name: "redo", description: "One redo step." },
@@ -200,10 +200,49 @@ fn natural_gap(index: usize, prev: Option<&Turn>, this: &Turn) -> f64 {
     base + (h % 1000) as f64 / 1000.0 * 0.16 - 0.08
 }
 
+/// Bring a spoken clip to a common speech level: RMS over the frames that
+/// carry speech (20 ms, above 10% of the peak), so voices that the models
+/// render louder or softer sit at one loudness. The gain stays within
+/// -14 dB..+10 dB so a near-silent clip is not pumped into noise.
+fn level_speech(clip: &mut [f32], rate: u32, target_rms: f32) {
+    let win = (rate as usize / 50).max(1);
+    let peak = clip.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    if peak <= 1e-6 {
+        return;
+    }
+    let (mut sum, mut n) = (0.0f64, 0usize);
+    for frame in clip.chunks(win) {
+        let fp = frame.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        if fp > peak * 0.1 {
+            sum += frame.iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>();
+            n += frame.len();
+        }
+    }
+    if n == 0 {
+        return;
+    }
+    let rms = (sum / n as f64).sqrt() as f32;
+    let gain = (target_rms / rms.max(1e-6)).clamp(0.2, 3.16);
+    for s in clip.iter_mut() {
+        *s *= gain;
+    }
+}
+
+/// A soft knee above 0.8: overlapping voices sum without hard clipping.
+fn soft_limit(x: f32) -> f32 {
+    let a = x.abs();
+    if a <= 0.8 {
+        x
+    } else {
+        x.signum() * (0.8 + 0.2 * ((a - 0.8) / 0.2).tanh())
+    }
+}
+
 /// Speak each segment in its own voice and lay them on one track: the
-/// model's leading and trailing near-silence is trimmed, segments follow
-/// with their authored or natural gap, and an overlapping one (negative
-/// gap) is mixed over the previous voice. Returns each segment's
+/// model's leading and trailing near-silence is trimmed, every clip is
+/// levelled to one speech loudness, segments follow with their authored or
+/// natural gap, and an overlapping one (negative gap) is mixed over the
+/// previous voice through a soft limiter. Returns each segment's
 /// `(start, duration)` window like a chunked backend does.
 fn synthesize_turns(
     lang: &str,
@@ -226,7 +265,8 @@ fn synthesize_turns(
         let (a, b) = speech_span(&audio.samples, rate, 0.0, dur);
         let a = (a - 0.03).max(0.0);
         let b = (b + 0.06).min(dur);
-        let clip = &audio.samples[(a * r) as usize..((b * r) as usize).max((a * r) as usize)];
+        let mut clip = audio.samples[(a * r) as usize..((b * r) as usize).max((a * r) as usize)].to_vec();
+        level_speech(&mut clip, rate, 0.1);
         let gap = turn.gap.unwrap_or_else(|| natural_gap(i, i.checked_sub(1).map(|j| &turns[j]), turn));
         let start = if i == 0 { 0.0 } else { (cursor + gap).max(0.0) };
         let s0 = (start * r) as usize;
@@ -234,11 +274,14 @@ fn synthesize_turns(
             samples.resize(s0 + clip.len(), 0.0);
         }
         for (k, v) in clip.iter().enumerate() {
-            samples[s0 + k] = (samples[s0 + k] + v).clamp(-1.0, 1.0);
+            samples[s0 + k] += v;
         }
         let len = clip.len() as f64 / r;
         windows.push((start, len));
         cursor = cursor.max(start + len);
+    }
+    for s in samples.iter_mut() {
+        *s = soft_limit(*s);
     }
     Ok((crate::tts::Audio { samples, rate: rate.max(1) }, Some(windows)))
 }
@@ -421,6 +464,19 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
         "export_subtitles" => reads::export_subtitles(doc.project(), args),
         "get_history" => Ok(reads::get_history(doc, args.get("limit").and_then(Value::as_i64).map(|l| l as usize))),
         "list_components" => {
+            if let Some(id) = args.get("componentId").and_then(Value::as_str) {
+                if !crate::catalog::exists(id) {
+                    return Err(EditError::NotFound { path: "componentId".into(), message: crate::catalog::not_found_message(id) });
+                }
+                let mut r = Value::obj();
+                r.set("componentId", Value::str(id));
+                r.set("category", Value::str(crate::catalog::category_of(id).unwrap_or("code")));
+                r.set(
+                    "params",
+                    Value::str(crate::catalog::params_doc(id).unwrap_or("Common params: position {x, y} (0-1), colours as #RRGGBB, text fields, animate {in, out, duration}.")),
+                );
+                return Ok(r);
+            }
             let mut items = Vec::new();
             for id in crate::catalog::all_ids() {
                 let mut o = Value::obj();
@@ -433,6 +489,7 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
             }
             let mut r = Value::obj();
             r.set("components", Value::Array(items));
+            r.set("howTo", Value::str(crate::catalog::HOW_TO));
             Ok(r)
         }
         "author_transcript" => {
@@ -540,6 +597,18 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
                     path: "lang".into(),
                     message: "speech needs an on-disk project (screenwords app)".into(),
                 });
+            }
+            // bed: 'ambient' lays a quiet chord bed under the speech, ducked
+            // wherever someone talks (the player plays one audio track, so
+            // the bed is mixed into it).
+            let mut audio = audio;
+            if args.get("bed").and_then(Value::as_str) == Some("ambient") {
+                let tail = (audio.rate as f32 * 1.5) as usize;
+                audio.samples.extend(std::iter::repeat(0.0).take(tail));
+                let bed = crate::tts::bed::ambient(audio.samples.len() as f32 / audio.rate as f32, audio.rate, &audio.samples);
+                for (s, b) in audio.samples.iter_mut().zip(bed) {
+                    *s += b;
+                }
             }
             // The speech lives in the document, like the photo backgrounds:
             // a data URI, no sidecar file. A bundle opened anywhere (or copied
@@ -1394,6 +1463,56 @@ pub fn run_server(server: Arc<McpServer>, listener: std::net::TcpListener, mut r
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn voices_are_levelled_and_overlaps_limited_softly() {
+        // A quiet and a loud voice (1 s of 220 Hz at 0.05 and 0.6 peak,
+        // with a silent half second each side) come out at one speech level.
+        let rate = 24000u32;
+        let tone = |amp: f32| -> Vec<f32> {
+            let mut v = vec![0.0f32; rate as usize / 2];
+            v.extend((0..rate).map(|i| amp * (i as f32 * 220.0 * std::f32::consts::TAU / rate as f32).sin()));
+            v.extend(vec![0.0f32; rate as usize / 2]);
+            v
+        };
+        let rms = |v: &[f32]| {
+            let speech: Vec<f32> = v.iter().copied().filter(|s| s.abs() > 1e-4).collect();
+            (speech.iter().map(|s| s * s).sum::<f32>() / speech.len() as f32).sqrt()
+        };
+        let (mut quiet, mut loud) = (tone(0.05), tone(0.6));
+        level_speech(&mut quiet, rate, 0.1);
+        level_speech(&mut loud, rate, 0.1);
+        assert!((rms(&loud) - 0.1).abs() < 0.01, "loud voice at {}", rms(&loud));
+        // The quiet one is raised by at most +10 dB.
+        assert!(rms(&quiet) > 0.1 && rms(&quiet) < 0.12, "quiet voice at {}", rms(&quiet));
+        let mut silent = vec![0.0f32; 100];
+        level_speech(&mut silent, rate, 0.1);
+        assert!(silent.iter().all(|s| *s == 0.0));
+        // The limiter is transparent below the knee and never exceeds 1.
+        assert_eq!(soft_limit(0.5), 0.5);
+        assert!(soft_limit(1.7) < 1.0 && soft_limit(1.7) > 0.95 && soft_limit(-1.7) > -1.0);
+        assert!(soft_limit(0.9) < 0.9 && soft_limit(0.9) > soft_limit(0.85));
+    }
+
+    #[test]
+    fn list_components_teaches_characters_and_component_params() {
+        let (server, _) = McpServer::new(Document::new(blank_project("t", true)));
+        let mut doc = server.document.lock().unwrap();
+        let all = call_tool(&server, &mut doc, "list_components", &Value::obj()).unwrap();
+        let how = all.get("howTo").and_then(Value::as_str).unwrap();
+        for needle in ["cast", "kit: 'editorial'", "turns", "voices", "conversation"] {
+            assert!(how.contains(needle), "howTo misses {needle}");
+        }
+        let mut one = Value::obj();
+        one.set("componentId", Value::str("conversation"));
+        let conv = call_tool(&server, &mut doc, "list_components", &one).unwrap();
+        assert!(conv.get("params").and_then(Value::as_str).unwrap().contains("seats"));
+        one.set("componentId", Value::str("codeOverlay_presenter"));
+        let code = call_tool(&server, &mut doc, "list_components", &one).unwrap();
+        assert!(code.get("params").and_then(Value::as_str).unwrap().contains("sw.character"));
+        one.set("componentId", Value::str("noSuchThing"));
+        assert!(call_tool(&server, &mut doc, "list_components", &one).is_err());
+    }
 
     #[test]
     fn speech_span_trims_the_pause_around_a_sentence() {

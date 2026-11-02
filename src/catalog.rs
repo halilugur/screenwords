@@ -235,6 +235,21 @@ pub fn category_of(component_id: &str) -> Option<&'static str> {
         .map(|(cat, _)| *cat)
 }
 
+/// How to make characters and conversations — returned by list_components so
+/// an agent learns the workflow from the tool itself.
+pub const HOW_TO: &str = "Characters: decide them once per project with apply_edits [{tool: set_project_settings, arguments: {cast: {ada: {name: 'Ada', kit: 'editorial', hair: 'bob' | 'short' | 'long' | 'curly' | 'bun' | 'bald', beard?: 'full', outfit?: 'blazer' | 'hoodie' | 'tshirt', glasses?: true, skinColor, hairColor, jacketColor, shirtColor, pantsColor}}}}]; a member set to null leaves. Conversations (podcast, interview): 1) author_transcript {turns: [{speaker: 'ada', text, gap?}], language} — the speaker is a cast name, a negative gap overlaps the previous line; 2) synthesize_speech {lang, voices: {ada: 'F1', kaan: 'M1'}}; 3) add_component conversation {seats: [{cast, role?}], title?, subtitle?, liveLabel?} plus kineticWords for captions. Gestures, listening, looks, lower thirds and the camera edit come from the speakers. One character anywhere: a codeOverlay_<slug> whose params.code calls sw.character(ctx, {cast: 'ada', x, y, scale, pose, pointAt, emotion}). list_components {componentId} gives a component's params.";
+
+/// The params of the components whose shape an agent cannot guess.
+pub fn params_doc(component_id: &str) -> Option<&'static str> {
+    if component_id.starts_with("codeOverlay_") {
+        return Some("params.code: a JS function body run every frame as (ctx, W, H, time, localTime, params, words, sw). sw = SWDraw plus the frame (W, H, time, localTime, words, theme, safe, boxes, boxOf(id), cast, speakerAt(t)). sw.character(ctx, {cast?, kit?, x, y (px or 0..1), scale, pose: idle | present | point | wave | celebrate | think | explain | shrug | thumbsUp | hold | walk | 'auto' | [[t, pose], ...], emotion: neutral | happy | excited | thinking | surprised | focused | sad | confident, pointAt: {x, y} | component id, pointAmount, lookAt: {x, y} | component id | 'viewer' | 'speaker', headTurn, facing, seated, prop: 'mug' | 'phone' | 'tablet', label}) returns {fingertip, head, ...}. sw.svgLayers(ctx, layers, {viewBox, box}), sw.layout, sw.follow. Declarative alternatives: params.svgLayers + viewBox + box, params.scene (node list).");
+    }
+    match component_id {
+        "conversation" => Some("A podcast / interview studio acted by the project's cast and directed from a transcript authored with turns. params: seats [{cast (a settings.cast name, also the speaker id), role?, color? (#hex), name?}] (1-6), title?, subtitle?, liveLabel? (e.g. 'LIVE'), camera?: 'auto' (close-ups on long lines, wide on reactions) | 'wide', lowerThirds? (default true: name and role the first time a seat speaks), intro? (default true: the title band slides in). Seats lay out for portrait and landscape. Pair with kineticWords {speakerColors?: {cast: '#hex'}} for captions."),
+        _ => None,
+    }
+}
+
 /// The `notFound` message add_component produces, listing the known ids.
 pub fn not_found_message(component_id: &str) -> String {
     let mut ids = all_ids();

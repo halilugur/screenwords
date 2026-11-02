@@ -398,6 +398,40 @@ function swPartAt(ctx, pt, at, dx, dy, tokens, lt) {
   ctx.restore();
 }
 
+/* How far a seated figure's hips drop (local units) for a style's skeleton. */
+function swSeatDrop(S) {
+  const legLen = (170 - 8 - S.hipY) / 2;
+  return 170 - 8 - legLen * 1.3 - S.hipY;
+}
+SWDraw.seatDrop = style => swSeatDrop(SW_TOON[style] || SW_TOON.flat);
+
+/* Something held in the gesturing hand, in the hand's palm. */
+function swToonProp(ctx, prop, hand, accent, ink) {
+  const a = ecN(hand.angle, 0), L = ecN(hand.len, 30);
+  const px = hand.wrist.x + Math.cos(a) * L * 0.5, py = hand.wrist.y + Math.sin(a) * L * 0.5;
+  ctx.save();
+  ctx.translate(px, py);
+  if (prop === 'mug') {
+    /* Mugs stay upright whatever the wrist does. */
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.roundRect(-8, -12, 16, 19, 3); ctx.fill();
+    ctx.strokeStyle = accent; ctx.lineWidth = 2.6;
+    ctx.beginPath(); ctx.arc(9, -3, 4.5, -Math.PI / 2, Math.PI / 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.fillRect(-5, -10, 3, 14);
+    ctx.strokeStyle = 'rgba(248,250,252,0.35)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(-2, -16); ctx.quadraticCurveTo(-5, -20, -1, -24); ctx.stroke();
+  } else if (prop === 'phone' || prop === 'tablet') {
+    const w = prop === 'phone' ? 9 : 22, h = prop === 'phone' ? 17 : 16;
+    ctx.rotate(a + Math.PI / 2);
+    ctx.fillStyle = ink;
+    ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, 2.5); ctx.fill();
+    ctx.fillStyle = swMix(accent, '#0B1224', 0.35);
+    ctx.fillRect(-w / 2 + 1.4, -h / 2 + 1.6, w - 2.8, h - 3.2);
+  }
+  ctx.restore();
+}
+
 /* The whole figure in a given style; called by SWDraw.character. */
 function swToonCharacter(ctx, opts, styleName) {
   /* `rig` overrides proportions (head, sh, shW, hipY, hipW, arm, armW, ...)
@@ -434,6 +468,10 @@ function swToonCharacter(ctx, opts, styleName) {
     return { a: st[i - 1][1] || d, b, q: smooth(ecClamp((lt - ecN(st[i][0], 0)) / blendDur, 0, 1)) };
   };
   const poseT = track(opts.pose, 'idle');
+  /* How much the person is laughing now (from the emotion track): the
+     shoulders shake, the head tips back, the mouth opens in bursts. */
+  const laughT = opts.emotion ? track(opts.emotion, 'neutral') : { a: '', b: '', q: 1 };
+  const laughW = (norm(laughT.a) === 'laugh' ? 1 - laughT.q : 0) + (norm(laughT.b) === 'laugh' ? laughT.q : 0);
   const known = n => (SW_TOON_POSES[norm(n)] ? norm(n) : 'idle');
   const poseA = known(poseT.a), poseB = known(poseT.b), pq = poseT.q;
   const pose = pq < 0.5 ? poseA : poseB;
@@ -502,7 +540,7 @@ function swToonCharacter(ctx, opts, styleName) {
   const listenBeat = t => (others ? swBeat(others, t - 0.18 - rnd(2) * 0.12) : 0);
   const motion = t => ({
     shift: (1 - walkAmt) * Math.sin((t + rnd(1) * 10) * 0.55) * 0.8,
-    bob: walkAmt * (Math.abs(Math.sin(t * cad)) * 4 - 2) - celeW * Math.abs(Math.sin(t * 5.2)) * 7,
+    bob: walkAmt * (Math.abs(Math.sin(t * cad)) * 4 - 2) - celeW * Math.abs(Math.sin(t * 5.2)) * 7 - laughW * Math.abs(Math.sin(t * 13)) * 2.4,
     nod: Math.sin((t + rnd(1) * 10) * 1.3 + 0.6) * 0.025 + celeW * Math.sin(t * 5.2) * 0.05 + (beats ? swBeat(opts.words, t) * 0.06 : 0) + listenBeat(t) * 0.04
   });
   const m = motion(time);
@@ -513,9 +551,13 @@ function swToonCharacter(ctx, opts, styleName) {
 
   /* Skeleton (local frame, +x = facing direction). */
   const shrug = 7 * pw('shrug');
-  const hipX = m.shift, hipY = S.hipY + m.bob;
+  /* Seated: the hips drop onto a chair so the shins stand on the floor and
+     the thighs come toward the viewer. */
+  const seated = !!opts.seated;
+  const seatDrop = seated ? swSeatDrop(S) : 0;
+  const hipX = m.shift, hipY = S.hipY + m.bob + seatDrop;
   const tiltHip = m.shift * 0.012;
-  const shY = S.sh + m.bob - breathe * 0.8 - shrug;
+  const shY = S.sh + m.bob + seatDrop - breathe * 0.8 - shrug;
   const shW = S.shW * k, hipW = S.hipW * k;
   const chestX = hipX * 0.35;
   /* The shoulder joints sit under the deltoids at the outer edge of the
@@ -585,7 +627,6 @@ function swToonCharacter(ctx, opts, styleName) {
   if (opts.leftHandPose) hL = opts.leftHandPose;
   if (opts.rightHandPose || opts.handPose) hR = opts.rightHandPose || opts.handPose;
 
-  const lp2 = (a, b, q) => ({ x: a.x + (b.x - a.x) * q, y: a.y + (b.y - a.y) * q });
   /* Pointing */
   const u = S.armW * (geo ? 0.62 : 0.8) * S.hand;
   const tipLen = geo ? u * 2.7 : u * 2.51;
@@ -599,19 +640,31 @@ function swToonCharacter(ctx, opts, styleName) {
     if (dl < 1) { dx = Al.x - SR.x; dy = Al.y - SR.y; dl = Math.hypot(dx, dy) || 1; }
     dx /= dl; dy /= dl;
     const wT = { x: Fl.x - dx * tipLen, y: Fl.y - dy * tipLen };
-    tR = { x: tR.x + (wT.x - tR.x) * e, y: tR.y + (wT.y - tR.y) * e };
-    /* The pointing arm reaches by IK; its elbow eases over from the pose's. */
-    const ikE = swToonIK(SR, tR, S.arm[0], S.arm[1], elbowPick(1)).J;
-    eR = eR ? lp2(eR, ikE, e) : ikE;
+    /* The pointing arm reaches by IK. Raising it turns the upper arm and the
+       forearm from the pose's angles to the reach's along the short way —
+       blending positions instead would whip the forearm round whenever the
+       target passes near the elbow. */
+    const reach = swToonIK(SR, wT, S.arm[0], S.arm[1], elbowPick(1));
+    if (eR && e < 1) {
+      const turn = (a0, a1) => { const d = a1 - a0; return a0 + Math.atan2(Math.sin(d), Math.cos(d)) * e; };
+      const u = turn(Math.atan2(eR.y - SR.y, eR.x - SR.x), Math.atan2(reach.J.y - SR.y, reach.J.x - SR.x));
+      const f = turn(Math.atan2(tR.y - eR.y, tR.x - eR.x), Math.atan2(reach.E.y - reach.J.y, reach.E.x - reach.J.x));
+      eR = { x: SR.x + Math.cos(u) * S.arm[0], y: SR.y + Math.sin(u) * S.arm[0] };
+      tR = { x: eR.x + Math.cos(f) * S.arm[1], y: eR.y + Math.sin(f) * S.arm[1] };
+    } else {
+      eR = reach.J;
+      tR = reach.E;
+    }
     if (amt > 0.5) hR = 'point';
-    aR = { a: aR, b: Math.atan2(dy, dx), q: smooth(ecClamp((amt - 0.3) / 0.35, 0, 1)) };
+    /* The hand turns toward the target over most of the raise, not in a flick. */
+    aR = { a: aR, b: Math.atan2(dy, dx), q: smooth(ecClamp((amt - 0.15) / 0.65, 0, 1)) };
     dR *= 1 - e;
     pointL = { Fl, Al, amt };
   }
 
   /* Head turn and gaze */
   const ht = ecClamp(opts.headTurn != null ? ecN(opts.headTurn, 0.25) : (aim ? 0.45 : 0.25) + Math.sin(time * 0.9) * 0.05, -1, 1);
-  let headRot = -ecN(opts.headTilt, 0) * 0.2 + m.nod - 0.12 * pw('think') + 0.12 * pw('shrug');
+  let headRot = -ecN(opts.headTilt, 0) * 0.2 + m.nod - 0.12 * pw('think') + 0.12 * pw('shrug') - 0.07 * laughW;
   let gx = ht * 0.6, gy = 0;
   if (pointL && pointL.amt > 0.3) {
     const vx = pointL.Al.x - headC.x, vy = pointL.Al.y - headC.y, vl = Math.hypot(vx, vy) || 1;
@@ -641,6 +694,7 @@ function swToonCharacter(ctx, opts, styleName) {
   const speaking = opts.speaking !== false && Array.isArray(opts.words) && opts.words.length;
   if (typeof opts.mouth === 'number') vis = swVisBlend(SW_VIS.rest, SW_VIS.A, ecClamp(opts.mouth, 0, 1) * 0.85);
   else if (speaking) vis = SWDraw.viseme(opts.words, time);
+  if (laughW > 0.05 && vis.open < 0.1) vis = Object.assign(swVisBlend(SW_VIS.rest, SW_VIS.A, laughW * (0.3 + 0.4 * Math.abs(Math.sin(time * 13)))), { key: 'A' });
   const bp = 3.2 + rnd(4) * 1.6, ph = (time + rnd(5) * bp) % bp;
   const blink = ph > bp - 0.16 ? Math.abs((ph - (bp - 0.08)) / 0.08) : 1;
 
@@ -651,6 +705,16 @@ function swToonCharacter(ctx, opts, styleName) {
   /* Ground shadow */
   ctx.fillStyle = 'rgba(2,6,23,0.32)';
   ctx.beginPath(); ctx.ellipse(hipX * 0.5, GROUND + 1, 46 * S.shoe, 8, 0, 0, Math.PI * 2); ctx.fill();
+
+  /* The chair, behind everyone else. */
+  if (seated && opts.chair !== false) {
+    const chair = opts.chairColor || '#334155';
+    ctx.fillStyle = swShade(chair, -0.2);
+    for (const sx of [-1, 1]) ctx.fillRect(hipX + sx * (hipW + 8) - 2.5, hipY + 6, 5, GROUND - hipY - 6);
+    ctx.fillStyle = chair;
+    ctx.beginPath(); ctx.roundRect(chestX - shW - 7, shY - 2, 2 * shW + 14, hipY - shY + 8, 12); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(hipX - hipW - 16, hipY - 4, 2 * hipW + 32, 13, 6); ctx.fill();
+  }
 
   /* Legs: the weight leg (the back one) straight, the free leg relaxed and
      a little forward; walking swings both. */
@@ -667,12 +731,23 @@ function swToonCharacter(ctx, opts, styleName) {
   const knee = J => J.x;
   const legs = [[HL, foot(-1), true], [HR, foot(1), false]];
   const legLen = (ankleY - S.hipY) / 2;
+  /* The skeleton as drawn, in the figure's local frame (for checks). */
+  const joints = { ground: GROUND, ankleY, legLen, upper: S.arm[0], fore: S.arm[1], chestX, shW, hipY, seated, legs: [], arms: {} };
   for (const [Hj, F, back] of legs) {
-    const ik = swToonIK(Hj, F, legLen, legLen, knee);
+    /* Seated, the thigh points at the viewer (foreshortened) and the shin
+       drops to the floor. */
+    const ik = seated
+      ? { J: { x: Hj.x + (back ? -2 : 2), y: Hj.y + legLen * 0.3 }, E: { x: Hj.x + (back ? -2 : 2), y: ankleY } }
+      : walkAmt > 0.01
+        ? swToonIK(Hj, F, legLen, legLen, knee)
+        /* Standing, the leg spans exactly hip to ankle, so it stays straight
+           however the hips tilt with breathing. */
+        : (() => { const d = Math.hypot(F.x - Hj.x, F.y - Hj.y) / 2; return swToonIK(Hj, F, Math.max(d, 1), Math.max(d, 1) + 1e-3, knee); })();
+    joints.legs.push({ hip: Hj, knee: ik.J, ankle: ik.E, back });
     const pts = swToonLimb(Hj, ik.J, ik.E, S.curve ? 0.35 : 0);
     const col = back ? swShade(pants, -0.1) : pants;
     if (part('thigh') && part('shin')) {
-      drawPart(part('thigh'), Hj, ik.J, back);
+      if (!seated) drawPart(part('thigh'), Hj, ik.J, back);
       drawPart(part('shin'), ik.J, ik.E, back);
     } else swToonStroke(ctx, pts, S.legW, col);
     /* Shoe */
@@ -696,6 +771,21 @@ function swToonCharacter(ctx, opts, styleName) {
       ctx.fill();
       ctx.fillStyle = swShade(sh, -0.25);
       ctx.fillRect(sx - 9 * z, sy + 5.6 * z, 28 * z, 2.4 * z);
+    }
+  }
+  /* Seated: the lap. Thighs toward the viewer read as one rounded block,
+     lit on top, with the knees forward at its lower edge. */
+  if (seated) {
+    const lapY = hipY - 8, kneeY = hipY + legLen * 0.3;
+    ctx.fillStyle = pants;
+    ctx.beginPath(); ctx.roundRect(hipX - hipW - 5, lapY, 2 * hipW + 10, kneeY - lapY + 12, 12); ctx.fill();
+    ctx.fillStyle = swShade(pants, 0.12);
+    ctx.beginPath(); ctx.roundRect(hipX - hipW - 3, lapY + 2, 2 * hipW + 6, (kneeY - lapY) * 0.45, 9); ctx.fill();
+    ctx.strokeStyle = swShade(pants, -0.3); ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(hipX, lapY + 8); ctx.lineTo(hipX, kneeY + 10); ctx.stroke();
+    for (const kx of [-1, 1]) {
+      ctx.fillStyle = swShade(pants, 0.06);
+      ctx.beginPath(); ctx.ellipse(hipX + kx * hipW * 0.55, kneeY + 4, hipW * 0.5, 7, 0, 0, Math.PI * 2); ctx.fill();
     }
   }
   /* Pelvis */
@@ -792,11 +882,14 @@ function swToonCharacter(ctx, opts, styleName) {
       inner: () => {
         const eyes = part('eyes'), mouth = part('mouth'), brows = part('brows');
         if (eyes) {
-          const pick = blink < 0.4 && eyes.closed ? eyes.closed : emo.squint > 0.25 && eyes.squint ? eyes.squint : eyes.open;
+          /* Eyes stay open through a smile; only a real laugh squints them
+             shut, and a blink closes them for a beat. */
+          const pick = blink < 0.4 && eyes.closed ? eyes.closed : emo.squint > 0.6 && eyes.squint ? eyes.squint : eyes.open;
           const g = ecN(eyes.gaze, 2);
           swPartAt(ctx, pick, headPart.eyesAt, pick === eyes.open ? gx * g : 0, pick === eyes.open ? gy * g * 0.7 : 0, tokensFront, lt);
         }
         if (brows) swPartAt(ctx, brows, headPart.browsAt, 0, -emo.brow * ecN(brows.lift, 3), tokensFront, lt);
+        if (part('glasses')) swPartAt(ctx, part('glasses'), headPart.eyesAt, 0, 0, tokensFront, lt);
         if (mouth) {
           let key = vis.open > 0.06 || vis.press > 0.5 ? vis.key : 'rest';
           if (key === 'rest' && emo.smile > 0.5 && mouth.smile) key = 'smile';
@@ -898,17 +991,22 @@ function swToonCharacter(ctx, opts, styleName) {
       const L = ecN(handPart.length, tipLen) * grow;
       const B = { x: last[0] + c * L, y: last[1] + s * L };
       drawPart(handPart, { x: last[0], y: last[1] }, B, side < 0, { flipY: ts < 0 });
-      return { x: B.x, y: B.y, wrist: { x: last[0], y: last[1] } };
+      joints.arms[side < 0 ? 'l' : 'r'] = { shoulder: Sh, elbow: ik.J, wrist: { x: last[0], y: last[1] }, depth: ecN(depth, 0) };
+      return { x: B.x, y: B.y, wrist: { x: last[0], y: last[1] }, angle: a, len: L };
     }
     ctx.save();
     ctx.translate(last[0], last[1]);
     ctx.rotate(a);
     const tip = swToonHand(ctx, shape, u * grow, skin, skinSh, styleName, ts);
     ctx.restore();
-    return { x: last[0] + tip.x * c - tip.y * s, y: last[1] + tip.x * s + tip.y * c, wrist: { x: last[0], y: last[1] } };
+    joints.arms[side < 0 ? 'l' : 'r'] = { shoulder: Sh, elbow: ik.J, wrist: { x: last[0], y: last[1] }, depth: ecN(depth, 0) };
+    return { x: last[0] + tip.x * c - tip.y * s, y: last[1] + tip.x * s + tip.y * c, wrist: { x: last[0], y: last[1] }, angle: a, len: Math.hypot(tip.x, tip.y) };
   };
+  const prop = typeof opts.prop === 'string' ? opts.prop.toLowerCase() : null;
+  if (prop && !opts.rightHandPose && !opts.handPose && hR !== 'point') hR = 'hold';
   const nearTip = drawArm(SL, tL, -1, hL, aL, dL, eL);
   const farTip = drawArm(SR, tR, 1, hR, aR, dR, eR);
+  if (prop) swToonProp(ctx, prop, farTip, accent, ink);
 
   if (pointL && opts.showPointerRay !== false) {
     const gap = Math.hypot(pointL.Fl.x - farTip.x, pointL.Fl.y - farTip.y) * sc;
@@ -942,7 +1040,7 @@ function swToonCharacter(ctx, opts, styleName) {
     ctx.restore();
   }
   return {
-    facing, style: styleName,
+    facing, style: styleName, joints,
     fingertip: toWorld(farTip),
     nearHand: toWorld(nearTip),
     head: toWorld(headC),
@@ -950,8 +1048,8 @@ function swToonCharacter(ctx, opts, styleName) {
   };
 }
 
-/* style: 'flat' | 'cartoon' | 'geo' draws the stylised figure; anything else
-   (or no style) keeps the detailed anatomical rig. */
+/* style: 'flat' | 'cartoon' | 'geo' draws the stylised figure, 'detailed'
+   the anatomical rig; with no style (or parts / kit) the editorial kit. */
 /* A cast member's look under the call's own options: `cast` names a member
    of the project's cast (settings.cast, handed in as castTable). */
 function swCastResolve(opts) {
@@ -1000,7 +1098,14 @@ SWDraw.speakerAt = swSpeakerAt;
     const st = String((opts && opts.style) || '').toLowerCase();
     if (SW_TOON[st]) return swToonCharacter(ctx, opts, st);
     if (opts && opts.parts && typeof opts.parts === 'object') return swToonCharacter(ctx, opts, 'flat');
-    return detailed(ctx, opts);
+    if (st === 'detailed' || typeof swKitParts !== 'function') return detailed(ctx, opts);
+    /* No style: the editorial kit, the engine's finished character. The
+       older hairStyle names map onto the kit's hair. */
+    const HAIR = { modern: 'short', buzz: 'short', wavy: 'long', none: 'bald' };
+    const o = Object.assign({}, opts || {});
+    const hs = String(o.hair || o.hairStyle || '').toLowerCase();
+    if (hs) o.hair = HAIR[hs] || hs;
+    return swToonCharacter(ctx, Object.assign(o, { parts: swKitParts(o) }), 'flat');
   };
   SWDraw.characterStyles = ['detailed', ...Object.keys(SW_TOON)];
 })();

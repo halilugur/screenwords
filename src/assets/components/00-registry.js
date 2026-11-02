@@ -151,7 +151,9 @@ function sharedActivePhrase(words, time) {
   for (let i = 0; i < words.length; i++) {
     curr.push(words[i]);
     const txt = String(words[i].text || '').trim();
-    const end = /[.!?:]$/.test(txt) || txt.endsWith(',') || curr.length >= 3;
+    /* A phrase never spans two speakers. */
+    const next = words[i + 1];
+    const end = /[.!?:]$/.test(txt) || txt.endsWith(',') || curr.length >= 3 || (next && next.speaker !== words[i].speaker);
     if (end) {
       if (time >= curr[0].start && time <= curr[curr.length - 1].end) best = curr.slice();
       if (best) break;
@@ -227,7 +229,8 @@ function drawFallbackComponent(ctx, W, H, time, prog, c, p, GA, opts) {
         ecAlpha(ctx, GA, now ? 1 : 0.62);
         ctx.font = '900 ' + Math.round(size * (now ? 1.14 : 1)) + 'px ' + EC_FONT;
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = now ? (p.activeColor || theme.accent || '#38BDF8') : white;
+        const spk = p.speakerColors && w.speaker ? p.speakerColors[w.speaker] : null;
+        ctx.fillStyle = now ? (spk || p.activeColor || theme.accent || '#38BDF8') : white;
         ctx.fillText(w.text, cx, pos.y + (1 - q) * 0);
         cx += widths[i] + size * 0.28;
       }

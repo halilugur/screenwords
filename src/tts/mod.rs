@@ -16,6 +16,7 @@
 //! with `SCREENWORDS_TTS_MODELS`).
 
 pub mod align;
+pub mod bed;
 pub mod en_phonon;
 pub mod nfkd;
 pub mod s3;

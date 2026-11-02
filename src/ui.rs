@@ -673,7 +673,7 @@ fn route(ui: &Ui, request: &Request) -> Response {
                     )?;
                 }
                 let mut synth = Value::obj();
-                for key in ["lang", "voice", "voices", "seed"] {
+                for key in ["lang", "voice", "voices", "bed", "seed"] {
                     if let Some(v) = args.get(key) {
                         synth.set(key, v.clone());
                     }

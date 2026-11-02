@@ -470,7 +470,9 @@ callouts can attach to it.
 
 ### Characters in one line: kits
 
-A character does not need drawing. `kit: 'editorial'` gives a finished,
+A character does not need drawing, and it is the default: with no `style`
+`sw.character` draws the editorial kit (`style: 'detailed'` keeps the older
+anatomical rig). `kit: 'editorial'` gives a finished,
 anatomically checked illustration (blazer, shirt, trousers, sneakers; dot
 eyes, brows, visemes, hands for every pose) that takes the member's palette:
 
@@ -479,8 +481,12 @@ eyes, brows, visemes, hands for every pose) that takes the member's palette:
   "hairColor": "#7A3B1E", "jacketColor": "#EC4899", "shirtColor": "#FDF2F8" }
 ```
 
-`hair` is `bob`, `short`, `long`, `curly`, `bun` or `bald`; `beard: 'full'`
-adds a beard; `blush: false` drops the cheek blush (a beard drops it too).
+`hair` is `bob`, `short`, `long`, `curly`, `bun`, `hijab` (a headscarf in
+the hairColor) or `bald`; `beard: 'full'` adds a beard; `glasses: true`;
+`outfit` is `blazer` (jacketColor over shirtColor), `hoodie` or `tshirt`
+(both in shirtColor); `blush: false` drops the cheek blush (a beard drops it
+too). Any character can also sit (`seated: true`, on a chair unless
+`chair: false`) and hold a `prop`: `mug`, `phone` or `tablet`.
 Other colours: `skinColor`, `hairColor`, `eyeColor`, `pantsColor`,
 `shoeColor`, `accentColor`. `SWDraw.kits` lists what a kit offers.
 [`examples/cast/`](examples/cast/) holds four such members.
@@ -534,21 +540,33 @@ A conversation is data, and the engine directs it:
    a question quickly, other replies a little later.
 3. **Voices** — `synthesize_speech { lang, voices: { ada: 'F1', kaan: 'M1' } }`
    speaks each line in its speaker's voice (Supertonic M1-M5 / F1-F5), trims
-   the model's silences, mixes overlapping lines and aligns every word.
+   the model's silences, levels every voice to one speech loudness, mixes
+   overlapping lines through a soft limiter and aligns every word.
+   `bed: 'ambient'` lays a quiet chord bed under it, ducked while anyone
+   talks (mixed into the narration: the player plays one audio track).
 4. **Scene** — one `conversation` component:
-   `{ seats: [{ cast, role?, color? }], title?, subtitle?, liveLabel?, camera? }`.
+   `{ seats: [{ cast, role?, bio?, color? }], title?, subtitle?, liveLabel?,
+   camera?, lowerThirds?, intro?, seated? }`.
 
 From the speakers alone the scene then plays like an edited show: each
 person acts their own lines (`pose: 'auto'`: hello and goodbye wave,
 agreement is a thumbs-up, a short question looks surprised, a long line
-changes gesture clause by clause), lip-syncs only their own words, and
-while others talk listens — nods on the speaker's stressed words, warms
-up, looks at whoever speaks. Everyone keeps their own blink and breathing
-rhythm. The camera holds a close-up on every line of 2.5 s or more, cuts
-face to face between lines that meet, and plays reactions on the wide shot
-(`camera: 'wide'` keeps it wide). Seats lay out for portrait (two across)
-and landscape (a row), up to six. The live speaker's seat is lit with a level
-meter. Add `kineticWords` for captions.
+changes gesture clause by clause, a "haha" laughs — and the others laugh
+along a beat later), lip-syncs only their own words, opens the show and
+says hello and goodbye to the camera and otherwise talks round the table.
+While others talk they listen — nod on the speaker's stressed words, warm
+up, look at whoever speaks with the odd glance at another listener. Everyone
+keeps their own blink and breathing rhythm and sits at the desk. The
+camera holds a close-up on every line of 2.5 s or more (the neighbours fade
+out), cuts face to face between lines that meet, and plays reactions on
+the wide shot (`camera: 'wide'` keeps it wide). The title band slides in and
+the seats come up one by one (`intro: false` skips it); the first time a
+seat speaks, a lower third with name, role and bio slides over its desk
+(`lowerThirds: false`). Seats lay out for portrait (two across) and
+landscape (one row up to four), up to six; the live seat is lit with a
+level meter. Add `kineticWords` for captions — `speakerColors: { cast:
+'#hex' }` colours each speaker's words, `speakerLabels: true` names them,
+and a phrase never mixes two speakers.
 [`examples/podcast/build.mjs`](examples/podcast/build.mjs) is a complete
 four-speaker episode.
 
@@ -567,7 +585,12 @@ deterministic spring on any signal), `sw.parsePath`, `sw.pathLength`,
 
 A code overlay that throws skips its own drawing for that frame (with one
 console warning per code version); the rest of the frame still renders.
-`node tools/test-draw.mjs` (run by `cargo test`) checks this toolkit.
+`node tools/test-draw.mjs` (run by `cargo test`) checks this toolkit,
+including the anatomy rules every pose must keep (bone lengths, elbows
+that never fold back, relaxed arms beside the ribcage with the elbow at the
+waist, straight standing legs with the feet on the ground, seated knees over
+the ankles); the character returns its skeleton as `joints` for such
+checks.
 
 ## Verifying the catalog
 

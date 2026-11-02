@@ -16,15 +16,86 @@ const SW_KIT_BLUSH = [{"d":"M-20 9 a5.5 3.2 0 1 0 11 0 a5.5 3.2 0 1 0 -11 0 Z","
 const SW_KIT_HAIR = {"bob":{"back":[{"d":"M-35 -6 C-37 -33 -19 -46 1 -45 C24 -44 38 -31 35 -6 C34 8 36 20 33 29 C28 34 20 33 17 27 L-18 27 C-22 33 -31 34 -36 29 C-38 19 -34 8 -35 -6 Z","fill":"$hair"}],"front":[{"d":"M-32 -4 C-34 -31 -15 -43 3 -41 C23 -40 34 -28 32 -6 C27 -14 19 -21 9 -24 C2 -17 -10 -13 -23 -13 C-27 -11 -30 -8 -32 -4 Z","fill":"$hair"},{"d":"M-15 -35 C-5 -39 9 -38 18 -33","stroke":"$hairLight","lineWidth":3,"lineCap":"round","opacity":0.6}]},"short":{"back":null,"front":[{"d":"M-30 -2 C-32 -28 -16 -40 2 -39 C21 -38 32 -27 30 -4 C28 -13 23 -19 16 -22 C8 -25 -4 -25 -13 -21 C-21 -17 -26 -10 -30 -2 Z","fill":"$hair"},{"d":"M-30 -4 L-28.5 8 L-26 8 L-27 -4 Z M30 -4 L28.5 8 L26 8 L27 -4 Z","fill":"$hair"},{"d":"M-12 -33 C-2 -36 10 -35 18 -30","stroke":"$hairLight","lineWidth":2.6,"lineCap":"round","opacity":0.5}]},"long":{"back":[{"d":"M-35 -6 C-37 -33 -19 -46 1 -45 C24 -44 38 -31 35 -6 C35 20 39 48 33 62 C26 66 18 64 14 58 L-14 58 C-18 64 -27 66 -34 62 C-39 48 -35 20 -35 -6 Z","fill":"$hair"},{"d":"M-28 20 C-30 36 -28 50 -30 58 M28 20 C30 36 28 50 30 58","stroke":"$hairLight","lineWidth":2,"lineCap":"round","opacity":0.45}],"front":[{"d":"M-32 -2 C-34 -30 -16 -43 2 -42 C22 -41 34 -28 32 -4 C28 -20 17 -31 3 -33 C-11 -31 -24 -21 -32 -2 Z","fill":"$hair"},{"d":"M3 -33 C2 -37 2 -40 3 -42","stroke":"$skinShade","lineWidth":1.4,"opacity":0.6},{"d":"M-20 -34 C-10 -39 12 -39 22 -33","stroke":"$hairLight","lineWidth":2.6,"lineCap":"round","opacity":0.5}]},"curly":{"back":[{"d":"M-36 -6 C-40 -42 40 -42 36 -6 C36 4 31 8 28 2 L-28 2 C-31 8 -36 4 -36 -6 Z","fill":"$hair"}],"front":[{"d":"M-30 -4 C-30 -22 -16 -30 0 -30 C16 -30 30 -22 30 -4 C24 -14 12 -19 0 -19 C-12 -19 -24 -14 -30 -4 Z","fill":"$hair"},{"d":"M-35 -10 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0 Z M-33 -22 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 Z M-23.5 -31 a9.5 9.5 0 1 0 19.0 0 a9.5 9.5 0 1 0 -19.0 0 Z M-11 -35 a10 10 0 1 0 20 0 a10 10 0 1 0 -20 0 Z M2.5 -32 a9.5 9.5 0 1 0 19.0 0 a9.5 9.5 0 1 0 -19.0 0 Z M14 -23 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 Z M20 -11 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0 Z M-14 -24 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0 Z M0 -25 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0 Z","fill":"$hair"}]},"bun":{"back":[{"d":"M-11 -46 a11 10 0 1 0 22 0 a11 10 0 1 0 -22 0 Z","fill":"$hair"}],"front":[{"d":"M-31 -2 C-33 -30 -15 -42 2 -41 C21 -40 33 -29 31 -4 C27 -18 17 -27 3 -29 C-11 -27 -24 -18 -31 -2 Z","fill":"$hair"},{"d":"M-14 -35 C-4 -39 10 -38 18 -33","stroke":"$hairLight","lineWidth":2.6,"lineCap":"round","opacity":0.5}]},"bald":{"back":null,"front":null}};
 const SW_KIT_BEARDS = { full: {"d":"M-27 4 C-26 20 -15 31 0 34 C15 31 26 20 27 4 C24 12 18 15 12 14 C6 13 3 11 0 11 C-3 11 -6 13 -12 14 C-18 15 -24 12 -27 4 Z","fill":"$hair"} };
 
+/* A headscarf: draped behind the shoulders and framing the face (the face
+   opening is cut with evenodd), worn in the member's hairColor. */
+SW_KIT_HAIR.hijab = {
+  back: [{ d: 'M-38 -6 C-40 -42 40 -42 38 -6 C38 22 37 42 31 52 L-31 52 C-37 42 -38 22 -38 -6 Z', fill: '$hair' }],
+  front: [
+    { d: 'M-36 -4 C-38 -40 38 -40 36 -4 C36 16 32 32 22 40 L-22 40 C-32 32 -36 16 -36 -4 Z M-25 -8 C-25 -26 25 -26 25 -8 C25 10 17 26 0 29 C-17 26 -25 10 -25 -8 Z', fill: '$hair', fillRule: 'evenodd' },
+    { d: 'M-25 -8 C-25 -26 25 -26 25 -8', stroke: '$hairLight', lineWidth: 2, opacity: 0.5 },
+    { d: 'M14 30 Q24 38 20 50', stroke: '$hairLight', lineWidth: 1.6, opacity: 0.45 }
+  ]
+};
+
+/* Outfits: the blazer is the body above; the hoodie and the T-shirt are
+   cut from the same silhouette and worn in the member's shirtColor. */
+const SW_KIT_BODY = 'M-31 10 Q-31 0 -19 0 L19 0 Q31 0 31 10 Q31 19 24 23 Q23 56 22 92 Q21 99 14 99 L-14 99 Q-21 99 -22 92 Q-23 56 -24 23 Q-31 19 -31 10 Z';
+const SW_KIT_PANTS = { d: 'M-21 80 L21 80 Q23 96 21 104 L-21 104 Q-23 96 -21 80 Z', fill: '$pants' };
+const SW_KIT_SIDE = { d: 'M17 23 Q23 26 23.5 40 Q23 66 22 92 Q21 97 17 99 Q21 60 17 23 Z', fill: '#020617', opacity: 0.16 };
+const SW_KIT_OUTFITS = {
+  hoodie: {
+    torso: [SW_KIT_PANTS, { d: SW_KIT_BODY, fill: '$shirt' }, SW_KIT_SIDE,
+      { d: 'M-18 -1 Q-21 -11 -8 -13 L8 -13 Q21 -11 18 -1 Q9 7 0 7 Q-9 7 -18 -1 Z', fill: '$shirtDark' },
+      { d: 'M-5 6 L-6 30 M5 6 L6 30', stroke: '#F8FAFC', lineWidth: 1.5, opacity: 0.8 },
+      { d: 'M-16 62 L16 62 L20 82 L-20 82 Z', fill: '$shirtDark', opacity: 0.55 },
+      { d: 'M-21 92 L21 92', stroke: '$shirtDark', lineWidth: 3 }],
+    upperArm: [
+      { d: 'M-9 -1 Q-9.5 26 -7.5 52 L7.5 52 Q9.5 26 9 -1 Q0 -9 -9 -1 Z', fill: '$shirt' },
+      { d: 'M-7.5 52 a7.5 7.5 0 1 0 15 0 a7.5 7.5 0 1 0 -15 0 Z', fill: '$shirt' },
+      { d: 'M5 2 Q8 26 6 50 L7.5 52 Q9.5 26 9 -1 Z', fill: '#020617', opacity: 0.14 },
+      { d: 'M-9 -1 Q-9.5 26 -7.5 52 M9 -1 Q9.5 26 7.5 52 M-7.5 52 A7.5 7.5 0 0 0 7.5 52', stroke: '$shirtDark', lineWidth: 1.7 }],
+    forearm: [
+      { d: 'M-4.6 38 L4.6 38 L4.4 50 L-4.4 50 Z', fill: '$skin' },
+      { d: 'M-7.5 -3 Q-7.2 20 -6.6 39 L6.6 39 Q7.2 20 7.5 -3 Z', fill: '$shirt' },
+      { d: 'M-7.5 -3 Q-7.2 20 -6.6 39 M7.5 -3 Q7.2 20 6.6 39', stroke: '$shirtDark', lineWidth: 1.7 },
+      { d: 'M-6.4 36 L6.4 36 L6 42 L-6 42 Z', fill: '$shirtDark' }]
+  },
+  tshirt: {
+    torso: [SW_KIT_PANTS, { d: SW_KIT_BODY, fill: '$shirt' }, SW_KIT_SIDE,
+      { d: 'M-10 -1 Q0 11 10 -1 Z', fill: '$skinShade' },
+      { d: 'M-10 -1 Q0 11 10 -1', stroke: '$shirtDark', lineWidth: 2.4 },
+      { d: 'M-22 96 L22 96', stroke: '$shirtDark', lineWidth: 1.6, opacity: 0.7 }],
+    upperArm: [
+      { d: 'M-7 -1 Q-7.6 26 -6 52 L6 52 Q7.6 26 7 -1 Z', fill: '$skin' },
+      { d: 'M-6 52 a6 6 0 1 0 12 0 a6 6 0 1 0 -12 0 Z', fill: '$skin' },
+      { d: 'M-7 -1 Q-7.6 26 -6 52 M7 -1 Q7.6 26 6 52', stroke: '$skinShade', lineWidth: 1.2, opacity: 0.8 },
+      { d: 'M-9.8 -1 Q-10.4 11 -9.8 23 L9.8 23 Q10.4 11 9.8 -1 Q0 -9 -9.8 -1 Z', fill: '$shirt' },
+      { d: 'M-9.8 -1 Q-10.4 11 -9.8 23 L9.8 23 Q10.4 11 9.8 -1', stroke: '$shirtDark', lineWidth: 1.7 }],
+    forearm: [
+      { d: 'M-6 -3 Q-5.8 20 -4.6 50 L4.6 50 Q5.8 20 6 -3 Z', fill: '$skin' },
+      { d: 'M-6 -3 Q-5.8 20 -4.6 50 M6 -3 Q5.8 20 4.6 50', stroke: '$skinShade', lineWidth: 1.2, opacity: 0.8 }]
+  }
+};
+const SW_KIT_OUTFIT_OF = { blazer: 'blazer', jacket: 'blazer', suit: 'blazer', hoodie: 'hoodie', tshirt: 'tshirt', 't-shirt': 'tshirt', tee: 'tshirt' };
+
+/* Glasses, drawn at the head's eye anchor. */
+const SW_KIT_GLASSES = {
+  pivot: [0, 0],
+  layers: [
+    { d: 'M-17.5 -5 H-5 Q-3.5 -5 -3.5 -3.5 V2.5 Q-3.5 5 -6 5 H-16 Q-18.5 5 -18.5 2.5 V-3.5 Q-18.5 -5 -17.5 -5 Z M5 -5 H17.5 Q18.5 -5 18.5 -3.5 V2.5 Q18.5 5 16 5 H6 Q3.5 5 3.5 2.5 V-3.5 Q3.5 -5 5 -5 Z', fill: 'rgba(255,255,255,0.10)', stroke: '$ink', lineWidth: 1.7 },
+    { d: 'M-3.5 -1.5 Q0 -3.5 3.5 -1.5 M-18.5 -2 L-28 -4 M18.5 -2 L28 -4', stroke: '$ink', lineWidth: 1.6 }
+  ]
+};
+
 const swKitCache = new Map();
-/* The parts of a kit member: the body, the chosen hair, beard and blush. */
+/* The parts of a kit member: the body in its outfit, the chosen hair,
+   beard, glasses and blush. */
 function swKitParts(opts) {
   const hair = SW_KIT_HAIR[String(opts.hair || opts.hairStyle || 'bob').toLowerCase()] ? String(opts.hair || opts.hairStyle || 'bob').toLowerCase() : 'bob';
   const beard = SW_KIT_BEARDS[String(opts.beard || '').toLowerCase()] ? String(opts.beard).toLowerCase() : '';
   const blush = opts.blush !== false && !beard;
-  const key = hair + '|' + beard + '|' + blush;
+  const outfit = SW_KIT_OUTFIT_OF[String(opts.outfit || 'blazer').toLowerCase()] || 'blazer';
+  const glasses = !!opts.glasses;
+  const key = [hair, beard, blush, outfit, glasses].join('|');
   if (swKitCache.has(key)) return swKitCache.get(key);
   const parts = Object.assign({}, SW_KIT_EDITORIAL);
+  if (outfit !== 'blazer') {
+    const O = SW_KIT_OUTFITS[outfit];
+    parts.torso = Object.assign({}, SW_KIT_EDITORIAL.torso, { layers: O.torso });
+    parts.upperArm = Object.assign({}, SW_KIT_EDITORIAL.upperArm, { layers: O.upperArm });
+    parts.forearm = Object.assign({}, SW_KIT_EDITORIAL.forearm, { layers: O.forearm });
+  }
+  if (glasses) parts.glasses = SW_KIT_GLASSES;
   const head = Object.assign({}, SW_KIT_EDITORIAL.head);
   head.layers = SW_KIT_EDITORIAL.head.layers.slice(0, 4).concat(blush ? SW_KIT_BLUSH : [], SW_KIT_EDITORIAL.head.layers.slice(4), beard ? [SW_KIT_BEARDS[beard]] : []);
   parts.head = head;
@@ -34,4 +105,4 @@ function swKitParts(opts) {
   swKitCache.set(key, parts);
   return parts;
 }
-SWDraw.kits = { editorial: { hair: Object.keys(SW_KIT_HAIR), beard: ['none'].concat(Object.keys(SW_KIT_BEARDS)) } };
+SWDraw.kits = { editorial: { hair: Object.keys(SW_KIT_HAIR), beard: ['none'].concat(Object.keys(SW_KIT_BEARDS)), outfit: ['blazer', 'hoodie', 'tshirt'], glasses: [false, true] } };

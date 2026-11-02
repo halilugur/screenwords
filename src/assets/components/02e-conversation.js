@@ -33,6 +33,7 @@ const SW_CONV_GREET = /^(merhaba|selam|hoş ?bulduk|hello|hi|hey|welcome|hola|bo
 const SW_CONV_BYE = /(görüşmek|hoşça|bay bay|goodbye|bye|see you|adiós|au revoir|tschüss|ciao)/i;
 const SW_CONV_AGREE = /^(aynen|kesinlikle|evet|tabii|exactly|absolutely|yes|yeah|right|totally|sí|oui|ja|genau)/i;
 const SW_CONV_THINK = /^(bence|aslında|sanırım|bir de|i think|actually|well|honestly)/i;
+const SW_CONV_LAUGH = /\b(a?ha(ha)+|he(he)+|hı(hı)+|lol)\b/i;
 
 const swPlanCache = new WeakMap();
 function swConversationPlan(words) {
@@ -43,10 +44,20 @@ function swConversationPlan(words) {
   const poses = {}, emotions = {};
   const track = (map, id) => (map[id] = map[id] || [[0, map === poses ? 'idle' : 'happy']]);
   const reaction = l => l.end - l.start < 1.8;
+  const ids = Array.from(new Set(lines.map(l => l.id)));
   lines.forEach((l, n) => {
     const text = l.words.map(w => String(w.text || '')).join(' ').trim();
     const P = track(poses, l.id), E = track(emotions, l.id);
     const back = l.end + 0.35;
+    /* A laugh is catching: the speaker laughs through it, the others join
+       a beat later and settle back into a smile. */
+    if (SW_CONV_LAUGH.test(text)) {
+      const w = l.words.find(x => SW_CONV_LAUGH.test(String(x.text || ''))) || l.words[0];
+      E.push([w.start - 0.1, 'laugh'], [w.end + 0.9, 'happy']);
+      for (const other of ids) {
+        if (other !== l.id) track(emotions, other).push([w.start + 0.25, 'laugh'], [w.end + 1.2, 'happy']);
+      }
+    }
     if (reaction(l) && (SW_CONV_GREET.test(text) || SW_CONV_BYE.test(text))) {
       P.push([l.start - 0.15, 'wave'], [back + 0.4, 'idle']);
     } else if (reaction(l) && SW_CONV_AGREE.test(text)) {
@@ -77,6 +88,8 @@ function swConversationPlan(words) {
       A.b = mid; B.a = mid; A.cutOut = true; B.cutIn = true;
     }
   }
+  /* Keyframes must run in time order once laughs are added across lines. */
+  for (const map of [poses, emotions]) for (const id in map) map[id].sort((a, b) => a[0] - b[0]);
   const plan = { lines, poses, emotions, shots };
   swPlanCache.set(words, plan);
   return plan;
@@ -97,9 +110,32 @@ function swAutoDirect(opts) {
     if (out.emotion == null && plan && plan.emotions[who]) out.emotion = plan.emotions[who];
   }
   if (lookSpeaker) {
-    const now = SWDraw.speakerAt(opts.words, ecN(opts.time, 0));
+    const t = ecN(opts.time, 0);
+    const now = SWDraw.speakerAt(opts.words, t);
     const heads = opts.seatHeads || {};
-    out.lookAt = now && now !== who && heads[now] ? heads[now] : now === who ? 'viewer' : undefined;
+    const plan = swConversationPlan(opts.words);
+    const line = plan && plan.lines.find(l => l.id === who && t >= l.start - 0.2 && t <= l.end + 0.3);
+    const text = line ? line.words.map(w => String(w.text || '')).join(' ') : '';
+    if (now === who) {
+      /* Speaking: the opening line and hellos and goodbyes go to the camera;
+         the rest of the talk goes round the table. */
+      const toViewer = line && (line === plan.lines[0] || SW_CONV_GREET.test(text) || SW_CONV_BYE.test(text));
+      const others = Object.keys(heads).filter(k => k !== who);
+      if (toViewer || !others.length) out.lookAt = 'viewer';
+      else {
+        const k = Math.floor((t - (line ? line.start : 0)) / 2.6);
+        out.lookAt = heads[others[(k + others.length) % others.length]];
+      }
+    } else {
+      /* Listening: on whoever speaks, with now and then a short glance at
+         another listener (about one second in seven). */
+      let seed = 0;
+      for (const ch of String(who)) seed = (seed * 31 + ch.charCodeAt(0)) % 997;
+      const period = 7, phase = (t + seed * 0.37) % period, slot = Math.floor((t + seed * 0.37) / period);
+      const others = Object.keys(heads).filter(k => k !== who && k !== now);
+      if (phase < 0.9 && others.length) out.lookAt = heads[others[(slot + seed) % others.length]];
+      else out.lookAt = now && heads[now] ? heads[now] : undefined;
+    }
   }
   return out;
 }
@@ -108,7 +144,7 @@ function swAutoDirect(opts) {
    landscape (up to four), centred under the title band. */
 function swConversationLayout(n, W, H, top) {
   const portrait = H >= W;
-  const cols = n <= 1 ? 1 : portrait ? 2 : Math.min(n, n === 4 ? 2 : 3);
+  const cols = n <= 1 ? 1 : portrait ? 2 : n <= 4 ? n : 3;
   const rows = Math.ceil(n / cols);
   const M = W * 0.037, GAP = W * 0.026;
   const bottom = portrait ? H * 0.2 : H * 0.17;
@@ -127,11 +163,14 @@ function swConversationLayout(n, W, H, top) {
     const x = x0 + off + col * (tw + GAP), y = y0 + row * (th + GAP);
     tiles.push({ x, y, w: tw, h: th, cx: x + tw / 2 });
   }
-  return { tiles, grid: { x: x0, y: y0, w: gridW, h: gridH } };
+  /* Close-ups fill the whole stage below the title, not just the grid. */
+  const stage = { x: M, y: top, w: W - 2 * M, h: H - top - bottom };
+  return { tiles, grid: { x: x0, y: y0, w: gridW, h: gridH }, stage };
 }
 
-/* The studio. opts: W, H, time, words, castTable, seats [{cast, role?,
-   color?, name?}], title?, subtitle?, liveLabel?, camera ('auto' | 'wide').
+/* The studio. opts: W, H, time, localTime, words, castTable, seats [{cast,
+   role?, bio?, color?, name?}], title?, subtitle?, liveLabel?, camera
+   ('auto' | 'wide'), lowerThirds (default on), intro (default on).
    A seat's colour defaults to the member's seatColor, then a palette. */
 function swConversation(ctx, opts) {
   const W = ecN(opts.W, 1080), H = ecN(opts.H, 1920), time = ecN(opts.time, 0);
@@ -147,42 +186,51 @@ function swConversation(ctx, opts) {
   const speaking = SWDraw.speakerAt(words, time);
   const portrait = H >= W;
   const hasHead = opts.title || opts.subtitle || opts.liveLabel;
-  const top = hasHead ? (portrait ? H * 0.135 : H * 0.17) : H * 0.05;
+  const top = hasHead ? Math.min(W, H) * 0.24 : H * 0.05;
+  const lt = ecN(opts.localTime, time);
+  const ease0 = q => { q = ecClamp(q, 0, 1); return q * q * (3 - 2 * q); };
+  /* Intro: the title band slides down and the seats come up one by one. */
+  const intro = opts.intro === false ? () => 1 : (delay, len) => ease0((lt - delay) / len);
 
   /* Title band */
   ctx.save();
+  const headQ = intro(0, 0.7);
+  ctx.globalAlpha *= headQ;
+  ctx.translate(0, -(1 - headQ) * top * 0.35);
   ctx.textAlign = 'center';
+  /* Sizes come from the short side, so portrait and landscape match. */
+  const U = Math.min(W, H);
   if (opts.liveLabel) {
     const pulse = 0.55 + 0.45 * Math.abs(Math.sin(time * 2.4));
-    ctx.font = '700 ' + Math.round(W * 0.02) + 'px ' + font;
-    const lw = ctx.measureText(String(opts.liveLabel)).width + W * 0.07;
-    const ly = top * 0.2;
+    ctx.font = '700 ' + Math.round(U * 0.02) + 'px ' + font;
+    const lw = ctx.measureText(String(opts.liveLabel)).width + U * 0.07;
+    const lh = U * 0.041, ly = top * 0.2 - lh * 0.5;
     ctx.fillStyle = 'rgba(239,68,68,0.16)';
-    ctx.beginPath(); ctx.roundRect(W / 2 - lw / 2, ly, lw, W * 0.041, W * 0.02); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(W / 2 - lw / 2, ly, lw, lh, lh / 2); ctx.fill();
     ctx.fillStyle = 'rgba(239,68,68,' + pulse.toFixed(3) + ')';
-    ctx.beginPath(); ctx.arc(W / 2 - lw / 2 + W * 0.026, ly + W * 0.0205, W * 0.0075, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(W / 2 - lw / 2 + U * 0.026, ly + lh / 2, U * 0.0075, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#FCA5A5';
     ctx.textAlign = 'left';
-    ctx.fillText(String(opts.liveLabel), W / 2 - lw / 2 + W * 0.045, ly + W * 0.028);
+    ctx.fillText(String(opts.liveLabel), W / 2 - lw / 2 + U * 0.045, ly + lh * 0.68);
     ctx.textAlign = 'center';
   }
   if (opts.title) {
     ctx.fillStyle = ink;
-    ctx.font = '700 ' + Math.round(W * (portrait ? 0.059 : 0.034)) + 'px ' + font;
-    ctx.fillText(String(opts.title), W / 2, top * 0.62);
+    ctx.font = '700 ' + Math.round(U * 0.059) + 'px ' + font;
+    ctx.fillText(String(opts.title), W / 2, top * 0.64);
   }
   if (opts.subtitle) {
     ctx.fillStyle = swMix(ink, '#0B1224', 0.3);
-    ctx.font = '500 ' + Math.round(W * (portrait ? 0.028 : 0.016)) + 'px ' + font;
-    ctx.fillText(String(opts.subtitle), W / 2, top * 0.83);
+    ctx.font = '500 ' + Math.round(U * 0.028) + 'px ' + font;
+    ctx.fillText(String(opts.subtitle), W / 2, top * 0.87);
   }
   ctx.restore();
 
-  const { tiles, grid } = swConversationLayout(seats.length, W, H, top);
+  const { tiles, grid, stage } = swConversationLayout(seats.length, W, H, top);
   seats.forEach((s, i) => {
     const member = castTable[s.cast] || {};
     Object.assign(tiles[i], {
-      id: s.cast, name: s.name || member.name || s.cast, role: s.role || '',
+      id: s.cast, name: s.name || member.name || s.cast, role: s.role || '', bio: s.bio || '', seat: i,
       color: s.color || member.seatColor || palette[i % palette.length],
       facing: tiles.length > 1 ? (tiles[i].cx < W / 2 ? 1 : tiles[i].cx > W / 2 + 1 ? -1 : 1) : 1
     });
@@ -206,12 +254,12 @@ function swConversation(ctx, opts) {
     }
   }
   ctx.save();
-  ctx.beginPath(); ctx.rect(0, grid.y - 12, W, grid.h + 24); ctx.clip();
+  ctx.beginPath(); ctx.rect(0, stage.y - 12, W, stage.h + 24); ctx.clip();
   if (focus && zoom > 0) {
-    const k = Math.min(grid.w / focus.w, grid.h / focus.h);
+    const k = Math.min(stage.w / focus.w, stage.h / focus.h);
     const s = 1 + (k - 1) * zoom;
     const fcy = focus.y + focus.h / 2;
-    ctx.translate(focus.cx + (grid.x + grid.w / 2 - focus.cx) * zoom, fcy + (grid.y + grid.h / 2 - fcy) * zoom);
+    ctx.translate(focus.cx + (stage.x + stage.w / 2 - focus.cx) * zoom, fcy + (stage.y + stage.h / 2 - fcy) * zoom);
     ctx.scale(s, s);
     ctx.translate(-focus.cx, -fcy);
   }
@@ -219,6 +267,15 @@ function swConversation(ctx, opts) {
   for (const t of order) {
     const f = fig(t), k = f.k;
     const live = speaking === t.id;
+    const enter = intro(0.25 + t.seat * 0.12, 0.5);
+    if (enter <= 0.001) continue;
+    ctx.save();
+    /* In a close-up the neighbours fade away rather than peek in. */
+    ctx.globalAlpha *= enter * (focus && t !== focus ? 1 - zoom : 1);
+    if (enter < 1) {
+      const s = 0.92 + 0.08 * enter;
+      ctx.translate(t.cx, t.y + t.h / 2); ctx.scale(s, s); ctx.translate(-t.cx, -(t.y + t.h / 2));
+    }
     const glow = SWDraw.follow(tm => (SWDraw.speakerAt(words, tm) === t.id ? 1 : 0), time, { freq: 3, damping: 0.9, window: 0.8, steps: 24 });
     ctx.save();
     ctx.beginPath(); ctx.roundRect(t.x, t.y, t.w, t.h, 28 * k);
@@ -238,9 +295,12 @@ function swConversation(ctx, opts) {
       const px = t.facing > 0 ? t.x + 26 * k + q * 34 * k : t.x + t.w - 26 * k - 24 * k - q * 34 * k;
       ctx.beginPath(); ctx.roundRect(px, t.y + 40 * k, 24 * k, 150 * k, 8 * k); ctx.fill();
     }
+    /* Seated at the desk: lifted by the seat drop so the head stays put. */
+    const member = castTable[t.id] || {};
+    const drop = SWDraw.seatDrop(member.style || 'flat') * f.scale;
     SWDraw.character(ctx, {
       cast: t.id, castTable, words, W, H, time, localTime: opts.localTime,
-      x: f.x, y: f.y, scale: f.scale, facing: t.facing,
+      x: f.x, y: f.y - drop, scale: f.scale, facing: t.facing, seated: opts.seated !== false,
       pose: 'auto', lookAt: 'speaker', seatHeads: heads,
       headTurn: speaking ? undefined : 0.15
     });
@@ -267,6 +327,11 @@ function swConversation(ctx, opts) {
     ctx.fillRect(-17, 14, 34, 5);
     ctx.restore();
     const plateY = t.y + t.h - 110 * k;
+    const first = plan.lines && plan.lines.find(l => l.id === t.id);
+    const lowerQ = opts.lowerThirds !== false && first
+      ? Math.min(ease0((time - first.start) / 0.35), ease0((2.8 - (time - first.start)) / 0.35)) : 0;
+    ctx.save();
+    ctx.globalAlpha *= 1 - lowerQ;
     ctx.fillStyle = 'rgba(2,6,23,0.55)';
     ctx.beginPath(); ctx.roundRect(t.cx - 120 * k, plateY, 240 * k, (t.role ? 74 : 56) * k, 16 * k); ctx.fill();
     ctx.textAlign = 'center';
@@ -278,6 +343,7 @@ function swConversation(ctx, opts) {
       ctx.font = '700 ' + Math.round(17 * k) + 'px ' + font;
       ctx.fillText(String(t.role), t.cx, plateY + 66 * k);
     }
+    ctx.restore();
     if (glow > 0.02) {
       const v = SWDraw.viseme(words.filter(w => w && w.speaker === t.id), time);
       ctx.globalAlpha *= glow;
@@ -293,6 +359,32 @@ function swConversation(ctx, opts) {
     ctx.strokeStyle = swMix('#1E293B', t.color, glow);
     if (glow > 0.05) { ctx.shadowColor = t.color; ctx.shadowBlur = 28 * glow * k; }
     ctx.beginPath(); ctx.roundRect(t.x, t.y, t.w, t.h, 28 * k); ctx.stroke();
+    ctx.restore();
+    /* Lower third: name, role and bio slide in over the desk the first time
+       this seat speaks (the name plate steps aside), then slide away. */
+    if (lowerQ > 0.001) {
+      const q = lowerQ;
+      {
+        ctx.save();
+        ctx.beginPath(); ctx.roundRect(t.x, t.y, t.w, t.h, 28 * k); ctx.clip();
+        const bw = t.w * 0.84, bh = (t.bio ? 74 : 56) * k;
+        const bx = t.cx - bw / 2 - (1 - q) * (bw + 30 * k), by = plateY - 6 * k;
+        ctx.globalAlpha *= q;
+        ctx.fillStyle = 'rgba(2,6,23,0.82)';
+        ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 12 * k); ctx.fill();
+        ctx.fillStyle = t.color;
+        ctx.fillRect(bx, by, 6 * k, bh);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = ink;
+        ctx.font = '700 ' + Math.round(26 * k) + 'px ' + font;
+        ctx.fillText(String(t.name), bx + 22 * k, by + 33 * k);
+        ctx.fillStyle = t.color;
+        ctx.font = '700 ' + Math.round(16 * k) + 'px ' + font;
+        const sub = [t.role, t.bio].filter(Boolean).join(' · ');
+        if (sub) ctx.fillText(sub, bx + 22 * k, by + (t.bio ? 58 : 50) * k);
+        ctx.restore();
+      }
+    }
     ctx.restore();
   }
   ctx.restore();

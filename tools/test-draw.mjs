@@ -70,8 +70,8 @@ for (const op of [...PATH_OPS, 'beginPath', 'fill', 'stroke', 'clip', 'fillRect'
 }
 
 const ctx = vm.createContext({ console, Math, Map, Array, Object, String, Number, JSON, isFinite, parseFloat, parseInt, Path2D, DOMMatrix });
-vm.runInContext(src + '\n;globalThis.__sw = { SWDraw, swParsePath, swTrim, swBox, swBeat };', ctx);
-const { SWDraw, swParsePath, swTrim, swBeat } = ctx.__sw;
+vm.runInContext(src + '\n;globalThis.__sw = { SWDraw, swParsePath, swTrim, swBox, swBeat, swAutoDirect };', ctx);
+const { SWDraw, swParsePath, swTrim, swBeat, swAutoDirect } = ctx.__sw;
 
 let failed = 0;
 const near = (a, b, eps) => Math.abs(a - b) <= (eps ?? 1e-6);
@@ -299,7 +299,7 @@ function check(name, ok, detail) {
   const override = SWDraw.character(new MockCtx(), Object.assign({}, env, { cast: 'kaan', castTable, style: 'geo', time: 1 }));
   check('call options override the cast member', override.style === 'geo', override.style);
   const unknown = SWDraw.character(new MockCtx(), Object.assign({}, env, { cast: 'nobody', castTable, time: 1 }));
-  check('an unknown cast name falls back to the call', unknown.style === undefined && Number.isFinite(unknown.fingertip.x));
+  check('an unknown cast name falls back to the default kit', unknown.style === 'flat' && Number.isFinite(unknown.fingertip.x), unknown.style);
   // Illustrated parts: every pose, hand shape and viseme draws finite geometry.
   for (const pose of poses) for (const handPose of [undefined, ...hands]) {
     draw({ cast: 'ada', castTable, pose, handPose, time: 0.9, words, pointAt: pose === 'point' ? 'card' : null }, `ada/${pose}/${handPose}`);
@@ -385,6 +385,68 @@ function check(name, ok, detail) {
   const tiles = (W, H, n) => { const c = new MockCtx(); SWDraw.conversation(c, { W, H, time: 0, words: [], castTable, seats: ids.slice(0, n).map(cast => ({ cast })) }); return c; };
   check('conversation tolerates junk seats', (() => { try { const c = new MockCtx(); SWDraw.conversation(c, { seats: [null, { cast: 5 }, {}], words: null }); return c.depth === 0; } catch (e) { return false; } })());
   tiles(1080, 1920, 4);
+}
+
+// Anatomy, as rules a figure drawing obeys, for every pose of the default
+// (kit) character: bones keep their length, the elbow never folds onto
+// itself, a relaxed arm hangs beside the ribcage with the elbow at the
+// waist, a standing leg is straight with the foot on the ground, and a
+// seated one has its knee over its ankle.
+{
+  const relaxedArms = { idle: ['l', 'r'], walk: [], present: ['l'], point: ['l'], wave: ['l'], thumbsup: ['l'] };
+  const poses = ['idle', 'present', 'point', 'wave', 'celebrate', 'think', 'explain', 'shrug', 'thumbsUp', 'hold', 'walk'];
+  const angleAt = (a, o, b) => {
+    const u = [a.x - o.x, a.y - o.y], v = [b.x - o.x, b.y - o.y];
+    return Math.acos(Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1]) / (Math.hypot(...u) * Math.hypot(...v) || 1)))) * 180 / Math.PI;
+  };
+  for (const seated of [false, true]) for (const pose of poses) for (const t of [0.4, 1.7, 2.9]) {
+    if (seated && pose === 'walk') continue;
+    const r = SWDraw.character(new MockCtx(), { pose, seated, time: t, localTime: t, W: 1080, H: 1920 });
+    const J = r.joints, tag = `${seated ? 'seated ' : ''}${pose}@${t}`;
+    for (const side of ['l', 'r']) {
+      const A = J.arms[side];
+      const up = Math.hypot(A.elbow.x - A.shoulder.x, A.elbow.y - A.shoulder.y);
+      const fore = Math.hypot(A.wrist.x - A.elbow.x, A.wrist.y - A.elbow.y);
+      if (Math.abs(up - J.upper) > 0.5) check(`${tag}: ${side} upper arm keeps its length`, false, up.toFixed(1));
+      if (fore > J.fore + 0.5 || fore < J.fore * 0.45) check(`${tag}: ${side} forearm length (foreshortened at most by half)`, false, fore.toFixed(1));
+      const bend = angleAt(A.shoulder, A.elbow, A.wrist);
+      if (bend < 25) check(`${tag}: ${side} elbow folds onto itself`, false, bend.toFixed(0) + '°');
+      if ((relaxedArms[pose.toLowerCase()] || []).includes(side)) {
+        const dy = A.elbow.y - A.shoulder.y;
+        if (dy < J.upper * 0.85) check(`${tag}: ${side} relaxed elbow hangs to the waist`, false, dy.toFixed(1));
+        if (Math.abs(A.elbow.x - J.chestX) < J.shW - 12) check(`${tag}: ${side} relaxed arm hangs beside the ribcage, not over it`, false, (A.elbow.x - J.chestX).toFixed(1));
+      }
+    }
+    for (const L of J.legs) {
+      /* Celebrating hops; walking lifts the feet. */
+      if (Math.abs(L.ankle.y - J.ankleY) > 0.5 && pose !== 'walk' && pose !== 'celebrate') check(`${tag}: foot on the ground`, false, L.ankle.y.toFixed(1));
+      if (seated) {
+        if (Math.abs(L.knee.x - L.ankle.x) > 3 || L.knee.y >= L.ankle.y) check(`${tag}: seated knee over the ankle`, false, JSON.stringify(L));
+      } else if (pose !== 'walk') {
+        const hx = L.ankle.x - L.hip.x, hy = L.ankle.y - L.hip.y, hl = Math.hypot(hx, hy);
+        const off = Math.abs((L.knee.x - L.hip.x) * hy - (L.knee.y - L.hip.y) * hx) / hl;
+        if (off > 1.5) check(`${tag}: standing leg is straight`, false, off.toFixed(2));
+      }
+    }
+  }
+}
+
+// Laughter is catching; listeners glance about; openings go to camera.
+{
+  const W2 = (speaker, text, start, end) => ({ speaker, text, start, end });
+  const words = [W2('ada', 'Merhaba', 0, 0.5), W2('ada', 'herkese,', 0.5, 1.0), W2('ada', 'hoş', 1.0, 1.3), W2('ada', 'geldiniz!', 1.3, 2.8),
+    W2('kaan', 'Hahaha,', 3.0, 3.8), W2('kaan', 'çok', 3.8, 4.2), W2('kaan', 'komik', 4.2, 5.0), W2('kaan', 'bu.', 5.0, 6.2)];
+  const plan = SWDraw.conversationPlan(words);
+  check('laughing speaker laughs', plan.emotions.kaan.some(k => k[1] === 'laugh'));
+  check('laughter spreads to the listener', plan.emotions.ada.some(k => k[1] === 'laugh' && k[0] > 3));
+  check('emotion tracks stay in time order', Object.values(plan.emotions).every(tr => tr.every((k, i) => i === 0 || tr[i - 1][0] <= k[0])));
+  const heads = { ada: { x: 100, y: 100 }, kaan: { x: 900, y: 100 }, elif: { x: 500, y: 900 } };
+  const look = (cast, t) => swAutoDirect({ cast, words, time: t, lookAt: 'speaker', seatHeads: heads }).lookAt;
+  check('the opening line goes to the camera', look('ada', 1.0) === 'viewer', JSON.stringify(look('ada', 1.0)));
+  check('a listener watches the speaker', JSON.stringify(look('elif', 4.5)) === JSON.stringify(heads.kaan) || JSON.stringify(look('elif', 4.5)) === JSON.stringify(heads.ada));
+  let glances = 0;
+  for (let t = 3.0; t < 6.2; t += 0.05) if (JSON.stringify(look('elif', t)) === JSON.stringify(heads.ada)) glances++;
+  check('listeners only glance away briefly', glances < 40, glances);
 }
 
 // Word-stress beats: on at a word's start, off 0.4 s later, stronger when

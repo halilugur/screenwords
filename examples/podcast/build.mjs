@@ -37,10 +37,10 @@ async function get(path) {
 }
 
 const SEATS = [
-  { cast: 'ada', role: 'SUNUCU', voice: 'F1' },
-  { cast: 'kaan', role: 'KONUK', voice: 'M1' },
-  { cast: 'elif', role: 'KONUK', voice: 'F3' },
-  { cast: 'mert', role: 'KONUK', voice: 'M2' }
+  { cast: 'ada', role: 'SUNUCU', voice: 'F1', color: '#38BDF8' },
+  { cast: 'kaan', role: 'KONUK', bio: 'Video kurgucusu', voice: 'M1', color: '#10B981' },
+  { cast: 'elif', role: 'KONUK', bio: 'Ses tasarımcısı', voice: 'F3', color: '#EC4899' },
+  { cast: 'mert', role: 'KONUK', bio: 'Animatör', voice: 'M2', color: '#A78BFA' }
 ];
 
 /* [speaker, text, gap?]: gap is the pause before the line in seconds;
@@ -56,7 +56,7 @@ const TURNS = [
   ['kaan', 'Aslında tamamen tesadüf. Bir sunum için kısa bir video lazımdı, kurgu programını açtım ve tam üç gün kaybettim.'],
   ['elif', 'Üç gün mü?', -0.25],
   ['kaan', 'Üç gün, evet! Altyazıları tek tek elle hizaladım.', 0.12],
-  ['mert', 'Evet evet, o acıyı çok iyi bilirim.', -0.3],
+  ['mert', 'Hahaha, o acıyı çok iyi bilirim.', -0.3],
   ['elif', 'Şimdi ise metni yazıyorsun, seslendirme birkaç dakikada hazır. Hem de tamamen kendi bilgisayarında, buluta hiç gitmeden.'],
   ['ada', 'Mert, sence asıl fark nerede?'],
   ['mert', 'Bence zamanlamada. Her kelime milisaniyesine kadar sesle eşleşiyor. Yani altyazı, animasyon, hatta ağız hareketleri konuşmayla birlikte akıyor.'],
@@ -99,7 +99,7 @@ async function main() {
       tool: 'author_transcript',
       arguments: { turns: TURNS.map(([speaker, text, gap]) => (gap == null ? { speaker, text } : { speaker, text, gap })), language: 'tr', replace: true }
     });
-    const synth = await post('/api/synthesize', { lang: 'tr', voice: 'F1', voices: Object.fromEntries(SEATS.map(s => [s.cast, s.voice])) });
+    const synth = await post('/api/synthesize', { lang: 'tr', voice: 'F1', voices: Object.fromEntries(SEATS.map(s => [s.cast, s.voice])), bed: 'ambient' });
     console.log('   speech:', synth.durationSeconds.toFixed(2) + 's');
     const words = (await get('/api/words')).words || [];
     const total = Math.ceil(Math.max(...words.map(w => w.end)) + 1.2);
@@ -114,7 +114,7 @@ async function main() {
           arguments: {
             componentId: 'conversation', start: 0, end: total, zIndex: 10,
             params: {
-              seats: SEATS.map(({ cast, role }) => ({ cast, role })),
+              seats: SEATS.map(({ cast, role, bio, color }) => ({ cast, role, bio, color })),
               title: 'EKRAN SOHBETLERİ',
               subtitle: 'Bölüm 1 · Yapay zekâ ile video üretimi',
               liveLabel: 'CANLI'
@@ -129,6 +129,7 @@ async function main() {
             params: {
               fontFamily: "'Space Grotesk', sans-serif",
               activeColor: '#38BDF8', emphasisColor: '#F59E0B',
+              speakerColors: Object.fromEntries(SEATS.map(s => [s.cast, s.color])),
               emphasis: ['yapay', 'zekâyla', 'milisaniyesine', 'buluta', 'kesinlikle']
             }
           }

@@ -104,6 +104,20 @@ button { font: inherit; }
 }
 #kinetic.long span { font-size: calc(var(--kin-long-size, 1.42rem) * var(--sx)); -webkit-text-stroke: calc(3.5px * var(--sx)) var(--vid-stroke); }
 #kinetic.long span.now { transform: scale(1.1) translateY(-2px); }
+#kinetic span.kw-speaker {
+  font-size: calc(0.8rem * var(--sx));
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+  color: var(--vid-accent-ink);
+  background: var(--kw-active-color, var(--vid-accent-hot));
+  border-radius: 999px;
+  padding: calc(3px * var(--sx)) calc(10px * var(--sx));
+  align-self: center;
+  transform: none;
+}
 #kinetic span.said {
   color: var(--vid-dim);
   transform: none;
@@ -419,6 +433,8 @@ if (words.length > 0) {
     const isMajor = /[.!?:]$/.test(txt);
     const isComma = txt.endsWith(',');
     const isLast = (i === words.length - 1);
+    /* A phrase never spans two speakers (overlapping lines in a conversation). */
+    const speakerChange = i + 1 < words.length && words[i + 1].speaker !== w.speaker;
 
     let nextIsSoloEnder = false;
     if (i + 1 < words.length) {
@@ -426,7 +442,7 @@ if (words.length > 0) {
       if (/[.!?:]$/.test(nextTxt)) nextIsSoloEnder = true;
     }
 
-    const shouldBreak = isMajor
+    const shouldBreak = isMajor || speakerChange
       || (isComma && curr.length >= 2)
       || (curr.length >= 3 && !nextIsSoloEnder)
       || isLast;
@@ -624,6 +640,18 @@ function draw() {
   if (pIdx !== curPhraseIdx) {
     curPhraseIdx = pIdx;
     kin.innerHTML = '';
+    /* Conversations: the active colour follows the speaker (speakerColors),
+       and speakerLabels puts the speaker's name before the phrase. */
+    const spk = activePhrase && activePhrase.words[0].speaker;
+    const spkColor = spk && kinP.speakerColors && kinP.speakerColors[spk];
+    kin.style.setProperty('--kw-active-color', spkColor || activeColor);
+    if (activePhrase && spk && kinP.speakerLabels) {
+      const tag = document.createElement('span');
+      tag.className = 'kw-speaker';
+      tag.textContent = ((D.cast || {})[spk] && D.cast[spk].name) || spk;
+      if (spkColor) tag.style.background = spkColor;
+      kin.appendChild(tag);
+    }
     if (activePhrase) {
       activePhrase.words.forEach(w => {
         const el = document.createElement('span');
@@ -648,7 +676,7 @@ function draw() {
   /* Highlight words in active phrase */
   let activeWord = null;
   if (activePhrase) {
-    const spans = [...kin.children];
+    const spans = [...kin.children].filter(el => !el.classList.contains('kw-speaker'));
     activePhrase.words.forEach((w, idx) => {
       const el = spans[idx];
       if (el) {
