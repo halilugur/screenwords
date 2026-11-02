@@ -108,6 +108,9 @@ const SCENES = [
     set: { theme: 'sand', frame: true, pieces: [
       { part: 'house', x: 0.12, layer: 'far' }, { part: 'house', x: 0.86, layer: 'far' }, { part: 'dome', x: 0.5, layer: 'far' },
       { part: 'stall', x: 0.3, layer: 'mid' }, { part: 'stall', x: 0.7, layer: 'mid', color: '#2F5D9B' }, { part: 'well', x: 0.52, layer: 'mid' },
+      { part: 'sack', x: 0.2, layer: 'mid' }, { part: 'sack', x: 0.235, layer: 'mid', h: 0.09, color: '#C9B48A' }, { part: 'basket', x: 0.39, layer: 'mid' },
+      { part: 'watermelon', x: 0.62, layer: 'mid' }, { part: 'barrel', x: 0.8, layer: 'mid' }, { part: 'crate', x: 0.84, layer: 'mid' },
+      { part: 'samovar', on: 'crate' }, { part: 'pomegranate', on: 'basket', x: 0.385 }, { part: 'lemon', on: 'basket', x: 0.4 },
       { part: 'palm', x: 0.96, layer: 'front' }] },
     crowd: { count: 9, walkers: 0.45, outfits: ['robe', 'dress', 'tshirt'], hats: ['turban', 'fez', 'cap', 'none'] },
     cast: [{ cast: 'master', x: 0.28 }, { cast: 'traveller', x: 0.42, bag: true }, { cast: 'child', x: 0.68, enter: 'right', bag: true }],

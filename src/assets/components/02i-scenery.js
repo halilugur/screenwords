@@ -568,6 +568,9 @@ Object.assign(SW_SCENERY_PIECES, {
   }
 });
 
+/* Pieces that hang on a wall and stand behind the rest unless placed. */
+const SW_SCENERY_WALL = new Set();
+
 /* Default sizes [w, h] (0..1 of the short side) where a piece's own differ. */
 const SW_SCENERY_SIZE = { flowers: [0.14, 0.08], well: [0.14, 0.16], lamp: [0.1, 0.3], rug: [0.4, 0.05],
   vase: [0.07, 0.13], chair: [0.13, 0.3], plant: [0.12, 0.26], bowl: [0.1, 0.045], lantern: [0.05, 0.11], candle: [0.04, 0.08],
@@ -580,7 +583,7 @@ function swScenery(ctx, spec, o) {
   const night = !!(o.night || spec.night);
   const fy = ecClamp(ecN(spec.floor, 0.8), 0.3, 0.98) * H;
   const c = swSceneryPalette(spec, night);
-  const opt = { time, night };
+  const opt = { time, night, W, H, inside: !!spec.inside };
   const pieces = (Array.isArray(spec.pieces) ? spec.pieces : []).filter(p => p && SW_SCENERY_PIECES[p.part]);
   const fu = v => (Math.abs(v) <= 1.5 ? v * U : v);
   /* a piece's own colours follow the night like the palette does */
@@ -609,7 +612,7 @@ function swScenery(ctx, spec, o) {
   };
   /* a piece stands in its support's layer and is drawn after it */
   pieces.sort((a, b) => (support(a) ? 1 : 0) - (support(b) ? 1 : 0));
-  const layerOf = p => p.layer || (support(p) ? layerOf(support(p)) : p.part === 'flowers' ? 'front' : 'mid');
+  const layerOf = p => p.layer || (support(p) ? layerOf(support(p)) : p.part === 'flowers' ? 'front' : SW_SCENERY_WALL.has(p.part) ? 'far' : 'mid');
   ctx.save();
   if (o.layer !== 'front') {
     if (spec.inside) {

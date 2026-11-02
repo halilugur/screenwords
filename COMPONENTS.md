@@ -662,6 +662,25 @@ another piece with `on` (a part name — the nearest one — or an index into
   "flowerColors": ["#C0392B", "#F1C40F"], "color": "#2F5D9B", "pattern": "band" }
 ```
 
+A library of 145 more objects is drawn from data and placed the same way. Each is drawn at its
+real proportions at the default size, and `w` / `h` stretch it (a wider `w` is a fatter jar). `color` and
+`color2` recolour its body and trim, and `flip: true` mirrors it. Wall things (window, picture, kilim,
+wallclock, map, hangingscroll, shelfwall, bell, kite) hang from `top` (0..1 of the height) on the back
+wall, and the chandelier and hanging lantern hang from the ceiling. Lights (candles, lamps, fires) glow and
+brighten at night, and everything else dims with the scene.
+
+| kind | objects |
+|---|---|
+| kitchen and food | cauldron, pan, kettle, samovar, coffeepot, jar, basket, bread, ringbread, cheese, watermelon, grapes, pomegranate, apple, pear, lemon, orange, fishplate, plate, tray, bottle, honeypot, sack, pumpkin, cake, mortar |
+| furniture | bed, cradle, wardrobe, cupboard, desk, lowtable, cushion, bench, armchair, sofa, throne, screen, mirror, coatstand, grandfatherclock, wallclock, picture, lectern, shelfwall |
+| lights and decoration | candlestick, oillamp, chandelier, hanginglantern, kilim, globe, hourglass, birdcage, parasol, window, door, fireplace, stove, brazier, bust, trophy, crown, coins, key, vaseflowers |
+| tools and crafts | anvil, hammer, chopblock, shovel, rake, pitchfork, broom, bucket, barrel, crate, ladder, wheelbarrow, spinningwheel, scales, rope, saw, toolbox, wateringcan, loom |
+| learning and writing | scroll, hangingscroll, inkwell, openbook, telescope, map, abacus, chalkboard, easel, astrolabe |
+| music | drum, oud, framedrum, harp, trumpet, bell, gramophone, piano |
+| outdoors | fountain, signpost, lamppost, fence, haystack, cart, wheel, rock, bush, stump, logpile, mailbox, birdhouse, scarecrow, tent, campfire, rowboat, anchor, sunflower, beehive, doghouse, wellhouse |
+| toys | ball, kite, top, doll, rockinghorse, blocks |
+| modern things | laptop, tv, radio, monitor, desklamp, fridge, washingmachine, bicycle, suitcase, trashcan, floorlamp, phone, clock, guitar, umbrellastand |
+
 `bubbles: true` (on a scene or the story) shows the sentence being spoken
 in a bubble over the speaker with their name. `crowd: { count, walkers,
 outfits, hats, colors, scale, seed, view }` fills the scene with extras

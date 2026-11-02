@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'assets', 'components');
-const src = ['00-registry.js', '01-catalog.js', '02-helpers.js', '02a-vector.js', '02b-figure.js', '02c-toon.js', '02d-kit.js', '02e-conversation.js', '02f-sets.js', '02g-story.js', '02h-fx.js', '02i-scenery.js', '02j-profile.js']
+const src = ['00-registry.js', '01-catalog.js', '02-helpers.js', '02a-vector.js', '02b-figure.js', '02c-toon.js', '02d-kit.js', '02e-conversation.js', '02f-sets.js', '02g-story.js', '02h-fx.js', '02i-scenery.js', '02j-profile.js', '02k-objects.js']
   .map(f => readFileSync(join(dir, f), 'utf8')).join('\n');
 /* A recording stand-in for the canvas: every coordinate handed to it must
    be finite (canvas silently drops NaN geometry, so a NaN shows up as a
@@ -70,8 +70,8 @@ for (const op of [...PATH_OPS, 'beginPath', 'fill', 'stroke', 'clip', 'fillRect'
 }
 
 const ctx = vm.createContext({ console, Math, Map, Array, Object, String, Number, JSON, isFinite, parseFloat, parseInt, Path2D, DOMMatrix });
-vm.runInContext(src + '\n;globalThis.__sw = { SWDraw, swParsePath, swTrim, swBox, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES, swKitParts, SW_KIT_HATS };', ctx);
-const { SWDraw, swParsePath, swTrim, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES, swKitParts, SW_KIT_HATS } = ctx.__sw;
+vm.runInContext(src + '\n;globalThis.__sw = { SWDraw, swParsePath, swTrim, swBox, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES, swKitParts, SW_KIT_HATS, SW_OBJECTS };', ctx);
+const { SWDraw, swParsePath, swTrim, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES, swKitParts, SW_KIT_HATS, SW_OBJECTS } = ctx.__sw;
 
 let failed = 0;
 const near = (a, b, eps) => Math.abs(a - b) <= (eps ?? 1e-6);
@@ -597,6 +597,49 @@ function check(name, ok, detail) {
   const night = new MockCtx(); const seen = []; night.fill = () => seen.push(night.fillStyle);
   SWDraw.set(night, { inside: true, night: true, pieces: [front({ part: 'vase', color: '#ff0000', color2: '#00ff00' })] }, { W: 1920, H: 1080, layer: 'front' });
   check('furnishings: night dims their own colours', !seen.includes('#ff0000') && !seen.includes('#00ff00'), seen.join(' '));
+}
+
+// The object library: over a hundred things, every one drawn in every
+// mode; its box stretches to w × h, colours and flip apply, wall things
+// hang behind the rest and lights glow.
+{
+  check('objects: at least a hundred', SWDraw.objects.length >= 100, SWDraw.objects.length);
+  check('objects: every one is a scenery piece', SWDraw.objects.every(n => SWDraw.sceneryPieces.includes(n)));
+  const b0 = bad.length;
+  for (const name of SWDraw.objects) {
+    const d = SW_OBJECTS[name];
+    const tokens = new Set(['c', 'cd', 'cl', 'c2', 'c2d', 'c2l', 'wood', 'woodd', 'woodl', 'leaf', 'leafd', 'metal', 'metald', 'ink', 'dark', 'white', 'cream', 'parchment', 'parchmentd', 'glass', 'mirror', 'sky', 'sun', 'gold', 'red', 'blue', 'brown', 'skin', 'wax', 'stone', 'coal', 'water', 'straw', 'sack', 'shade', 'hi', 'fire', 'flame', 'glow', 'screen']);
+    const unknown = d.layers.find(L => !tokens.has(L[1]));
+    if (unknown) check(`object ${name}: known colour tokens`, false, unknown[1]);
+    if (!(d.s[0] > 0 && d.s[1] > 0)) check(`object ${name}: has a size`, false, d.s);
+    for (const [night, inside, flip] of [[false, true, false], [true, false, true], [true, true, false]]) {
+      const c = new MockCtx(); let fills = 0; c.fill = () => fills++; c.stroke = () => fills++;
+      SWDraw.set(c, { inside, night, pieces: [{ part: name, x: 0.5, layer: 'front', flip, color: '#123456' }] }, { W: 1920, H: 1080, time: 1, layer: 'front' });
+      if (c.depth !== 0 || !fills) { check(`object ${name} draws`, false, `${c.depth} / ${fills}`); break; }
+    }
+  }
+  check('objects draw finite geometry', bad.length === b0, bad.slice(b0, b0 + 3).join('; '));
+  /* the box maps to the piece: scale = w px / box width */
+  const scaleOf = p => { const c = new MockCtx(), sc = []; c.scale = (x, y) => sc.push([x, y]); c.translate = (x, y) => sc.push(['t', x, y]);
+    SWDraw.set(c, { inside: true, pieces: [Object.assign({ part: 'jar', x: 0.5, layer: 'front' }, p)] }, { W: 1920, H: 1080, layer: 'front' }); return sc; };
+  const plain = scaleOf({}).find(v => v[0] !== 't'), fat = scaleOf({ w: 0.1 }).find(v => v[0] !== 't');
+  check('objects: the default size draws the box 1:1 per thousandth of the short side', Math.abs(plain[0] - 1.08) < 1e-9 && Math.abs(plain[1] - 1.08) < 1e-9, plain);
+  check('objects: a wider w makes it fatter, not taller', Math.abs(fat[0] - 2.16) < 1e-9 && Math.abs(fat[1] - 1.08) < 1e-9, fat);
+  const flipped = scaleOf({ flip: true }).find(v => v[0] !== 't');
+  check('objects: flip mirrors', flipped[0] < 0 && flipped[1] > 0, flipped);
+  const fillsOf = (p, o) => { const c = new MockCtx(), f = []; c.fill = () => f.push(c.fillStyle);
+    SWDraw.set(c, Object.assign({ inside: true, pieces: [Object.assign({ x: 0.5, layer: 'front' }, p)] }, o), { W: 1920, H: 1080, layer: 'front' }); return f; };
+  check('objects: color and color2 tint them', fillsOf({ part: 'drum', color: '#123456', color2: '#654321' }).includes('#123456') && fillsOf({ part: 'drum', color2: '#654321' }).includes('#654321'));
+  /* hanging things take top, and stand on the back wall unless placed */
+  const ys = []; const hc = new MockCtx(); hc.translate = (x, y) => ys.push(y);
+  SWDraw.set(hc, { inside: true, pieces: [{ part: 'picture', x: 0.5, top: 0.1 }] }, { W: 1920, H: 1080, layer: 'back' });
+  check('objects: a picture hangs from its top and on the back wall', ys.some(y => Math.abs(y - 108) < 1e-6), ys.join(' '));
+  const none = new MockCtx(); let nf = 0; none.fill = () => nf++;
+  SWDraw.set(none, { inside: true, pieces: [{ part: 'picture', x: 0.5 }] }, { W: 1920, H: 1080, layer: 'front' });
+  check('objects: wall things are not in the front layer', nf === 0, nf);
+  let grads = 0; const gl = new MockCtx(); gl.createRadialGradient = () => { grads++; return { addColorStop() {} }; };
+  SWDraw.set(gl, { inside: true, night: true, pieces: [{ part: 'lamppost', x: 0.5, layer: 'front' }] }, { W: 1920, H: 1080, layer: 'front' });
+  check('objects: a lamp post glows', grads === 1, grads);
 }
 
 // Effects draw cleanly with junk, and ink grows with its progress.
