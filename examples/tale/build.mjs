@@ -124,7 +124,11 @@ const SCENES = [
       { part: 'arch', x: 0.18, layer: 'far' }, { part: 'arch', x: 0.82, layer: 'far' },
       { part: 'shelf', x: 0.4, layer: 'far' }, { part: 'shelf', x: 0.6, layer: 'far' },
       { part: 'column', x: 0.05, layer: 'mid' }, { part: 'column', x: 0.95, layer: 'mid' },
-      { part: 'rug', x: 0.5, layer: 'mid' }, { part: 'lamp', x: 0.5, layer: 'mid' }] },
+      { part: 'rug', x: 0.5, layer: 'mid' }, { part: 'lamp', x: 0.5, layer: 'mid' },
+      { part: 'table', x: 0.15, w: 0.16, h: 0.17, legs: 4, legStyle: 'turned', layer: 'mid' },
+      { part: 'books', on: 'table', x: 0.12, count: 3 }, { part: 'lantern', on: 'table', x: 0.18 },
+      { part: 'table', x: 0.86, w: 0.1, h: 0.2, legs: 1, shape: 'round', cloth: '#E8D9B5', color2: '#8C2F39', layer: 'mid' },
+      { part: 'vase', on: 'table', x: 0.86, shape: 'fat', flowers: 5, flowerShape: 'tulip', flowerColors: ['#B23A2E', '#E0A43A'], color: '#2F5D9B', color2: '#E8E5DE' }] },
     cast: [{ cast: 'master', x: 0.3 }, { cast: 'traveller', x: 0.7, enter: 'right' }],
     effects: [
       { type: 'rays', start: 0, x: 0.18, y: 0.2, angle: 62, spread: 24, count: 5, length: 1.2, layer: 'back' },

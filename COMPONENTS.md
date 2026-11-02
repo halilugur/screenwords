@@ -637,6 +637,31 @@ well, banner; indoor parts: arch, column, divan, rug, lamp, shelf, table,
 curtain. `x` is the centre (0..1), `w` / `h` are 0..1 of the short side,
 `layer` is `far`, `mid` or `front` (in front of the people).
 
+Furnishings take `color` / `color2` and a shape of their own, and stand on
+another piece with `on` (a part name — the nearest one — or an index into
+`pieces`; they take its layer and `x` unless given) or move their base with
+`y` (negative is up):
+
+| part | options |
+|---|---|
+| table | `legs` 1 (a pedestal) – 8, `shape` rect / round, `legStyle` straight / turned / curved, `cloth` (a colour, `color2` its border) |
+| chair | `back` true / false (a stool) / `'high'`, `legs` 2–4, `facing` 1 / -1, `color2` a cushion |
+| vase | `shape` classic / slim / fat / amphora / jug / bottle / cylinder, `pattern` band / stripes / dots / zigzag / none, `flowers` (count), `flowerColors`, `flowerShape` daisy / tulip / round |
+| plant | `kind` leafy / cactus / tree / flowering, `color` the pot, `color2` a band, `colors` [leaf, bloom] |
+| bowl | `fruit` (count), `fruitColors`, `pattern` |
+| lantern | `color` the metal, `color2` the glow (brighter at night) |
+| candle | `count`, `color` the wax, `color2` the holder |
+| chest | `shape` flat / round lid, `color2` the bands |
+| books | `count`, `colors` |
+| teapot | `color2` lid and knob, `pattern` |
+| cup | `shape` tulip (a tea glass on a saucer) / mug / cup, `color` the drink or body, `color2` the saucer |
+
+```json
+{ "part": "table", "x": 0.3, "legs": 6, "legStyle": "turned", "cloth": "#F4EBD6" },
+{ "part": "vase", "on": "table", "shape": "fat", "flowers": 5, "flowerShape": "tulip",
+  "flowerColors": ["#C0392B", "#F1C40F"], "color": "#2F5D9B", "pattern": "band" }
+```
+
 `bubbles: true` (on a scene or the story) shows the sentence being spoken
 in a bubble over the speaker with their name. `crowd: { count, walkers,
 outfits, hats, colors, scale, seed, view }` fills the scene with extras

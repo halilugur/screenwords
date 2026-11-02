@@ -548,6 +548,57 @@ function check(name, ok, detail) {
   check('a described set has its floor', Math.abs(SWDraw.setFloor({ floor: 0.75 }, 1000) - 750) < 1e-9 && Math.abs(SWDraw.setFloor('park', 1000) - 820) < 1e-9);
 }
 
+// Furnishings: legs, shapes, colours, junk shape names, and standing one
+// piece on another. Points are recorded from the canvas and from paths.
+{
+  const drawFront = pieces => {
+    const pts = [], fills = [], rects = [], shape = [];
+    const c = new MockCtx();
+    const rec = (x, y) => { if (typeof x === 'number' && typeof y === 'number') pts.push([x, y]); };
+    const saved = {};
+    for (const op of ['moveTo', 'lineTo', 'quadraticCurveTo', 'bezierCurveTo']) {
+      saved[op] = Path2D.prototype[op];
+      Path2D.prototype[op] = function (...a) { for (let i = 0; i + 1 < a.length; i += 2) { rec(a[i], a[i + 1]); shape.push(a[i]); } };
+      c[op] = (...a) => { for (let i = 0; i + 1 < a.length; i += 2) rec(a[i], a[i + 1]); };
+    }
+    c.roundRect = (x, y, w, h) => { rects.push([x, y, w, h]); rec(x, y); rec(x + w, y + h); };
+    c.fill = () => fills.push(c.fillStyle);
+    try { SWDraw.set(c, { inside: true, pieces }, { W: 1920, H: 1080, time: 1, layer: 'front' }); }
+    finally { for (const op in saved) Path2D.prototype[op] = saved[op]; }
+    return { pts, fills, rects, shape, depth: c.depth };
+  };
+  const front = p => Object.assign({ layer: 'front', x: 0.5 }, p);
+  const legs = n => drawFront([front({ part: 'table', legs: n })]).rects.length;
+  check('table: six legs are four more than two', legs(6) - legs(2) === 4, `${legs(2)} / ${legs(6)}`);
+  check('table: legs clamp to 1..8', legs(40) === legs(8) && legs(-3) === legs(1));
+  const span = sh => { const xs = drawFront([front({ part: 'vase', shape: sh, w: 0.1, h: 0.15 })]).shape; return Math.max(...xs) - Math.min(...xs); };
+  check('vase: a fat vase is wider than a slim one', span('fat') > span('slim') * 1.2, `${span('fat')} vs ${span('slim')}`);
+  check('vase: an unknown shape falls back to the classic one', span('nope') === span('classic'));
+  const col = drawFront([front({ part: 'vase', color: '#123456', color2: '#654321', pattern: 'stripes' })]).fills;
+  check('vase: its colours are used', col.includes('#123456') && col.includes('#654321'), col.join(' '));
+  /* the front layer stands on H - (H - 0.8H) * 0.1; a table 0.2 high puts its top 216 px up */
+  const base = 1080 - (1080 - 864) * 0.1, top = base - 0.2 * 1080;
+  const alone = drawFront([front({ part: 'table', h: 0.2 })]).pts.length;
+  const both = drawFront([{ part: 'vase', on: 'table' }, front({ part: 'table', h: 0.2, x: 0.3 })]);
+  const vase = both.pts.slice(alone), low = Math.max(...vase.map(q => q[1])), xs = vase.map(q => q[0]);
+  check('on: a vase stands on the table top', Math.abs(low - top) < 1.5, `${low} vs ${top}`);
+  check('on: it stands where the table is', Math.abs((Math.min(...xs) + Math.max(...xs)) / 2 - 0.3 * 1920) < 2, (Math.min(...xs) + Math.max(...xs)) / 2);
+  const idx = drawFront([front({ part: 'table', h: 0.2, x: 0.3 }), { part: 'bowl', on: 0 }]).pts.slice(alone);
+  check('on: a piece index works too', Math.abs(Math.max(...idx.map(q => q[1])) - top) < 1.5);
+  const b0 = bad.length;
+  for (const part of ['table', 'chair', 'vase', 'plant', 'bowl', 'lantern', 'candle', 'chest', 'books', 'teapot', 'cup']) {
+    for (const extra of [{}, { shape: 'round', legs: 1, back: false, kind: 'cactus', flowers: 7, count: 3, fruit: 9, cloth: '#fff', color2: '#000', legStyle: 'curved', pattern: 'dots' },
+      { shape: 'tulip', kind: 'tree', back: 'high', facing: -1, flowerShape: 'round', legStyle: 'turned', pattern: 'zigzag', on: 'nothing', y: -0.1 }]) {
+      const r = drawFront([front(Object.assign({ part }, extra))]);
+      if (r.depth !== 0 || !r.pts.length) check(`furnishing ${part} ${JSON.stringify(extra)}`, false, r.depth);
+    }
+  }
+  check('furnishings draw finite geometry', bad.length === b0, bad.slice(b0, b0 + 3).join('; '));
+  const night = new MockCtx(); const seen = []; night.fill = () => seen.push(night.fillStyle);
+  SWDraw.set(night, { inside: true, night: true, pieces: [front({ part: 'vase', color: '#ff0000', color2: '#00ff00' })] }, { W: 1920, H: 1080, layer: 'front' });
+  check('furnishings: night dims their own colours', !seen.includes('#ff0000') && !seen.includes('#00ff00'), seen.join(' '));
+}
+
 // Effects draw cleanly with junk, and ink grows with its progress.
 {
   const b0 = bad.length;
