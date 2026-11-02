@@ -440,6 +440,8 @@ const SW_SETS = {
 /* Draw a set. Unknown names fall back to the studio. */
 function swSet(ctx, name, o) {
   o = o || {};
+  /* a described place (theme + pieces) rather than a named set */
+  if (name && typeof name === 'object' && typeof swScenery === 'function') return swScenery(ctx, name, o);
   const key = SW_SETS[String(name || '').toLowerCase()] ? String(name).toLowerCase() : 'studio';
   const W = ecN(o.W, 1080), H = ecN(o.H, 1920);
   const fy = ecClamp(ecN(o.floor, SW_SET_FLOOR[key]), 0.3, 0.98) * H;
@@ -454,4 +456,4 @@ function swSet(ctx, name, o) {
 }
 SWDraw.set = swSet;
 SWDraw.sets = Object.keys(SW_SETS);
-SWDraw.setFloor = (name, H) => ecN(SW_SET_FLOOR[String(name || '').toLowerCase()], 0.8) * ecN(H, 1);
+SWDraw.setFloor = (name, H) => (name && typeof name === 'object' ? ecClamp(ecN(name.floor, 0.8), 0.3, 0.98) : ecN(SW_SET_FLOOR[String(name || '').toLowerCase()], 0.8)) * ecN(H, 1);

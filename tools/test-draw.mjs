@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'assets', 'components');
-const src = ['00-registry.js', '01-catalog.js', '02-helpers.js', '02a-vector.js', '02b-figure.js', '02c-toon.js', '02d-kit.js', '02e-conversation.js', '02f-sets.js', '02g-story.js', '02h-fx.js']
+const src = ['00-registry.js', '01-catalog.js', '02-helpers.js', '02a-vector.js', '02b-figure.js', '02c-toon.js', '02d-kit.js', '02e-conversation.js', '02f-sets.js', '02g-story.js', '02h-fx.js', '02i-scenery.js']
   .map(f => readFileSync(join(dir, f), 'utf8')).join('\n');
 /* A recording stand-in for the canvas: every coordinate handed to it must
    be finite (canvas silently drops NaN geometry, so a NaN shows up as a
@@ -530,6 +530,22 @@ function check(name, ok, detail) {
     SWDraw.set(c, set, { W: 1080, H: 1920, time: 3, night, camX: 40 });
     if (c.depth !== 0 || bad.length !== b0) check(`set ${set}${night ? ' night' : ''} draws cleanly`, false, bad.slice(b0, b0 + 2).join('; '));
   }
+}
+
+// Scenery from parts: every piece and theme, day and night, inside and
+// out, draws cleanly; a described set gives the story its floor.
+{
+  const b0 = bad.length;
+  for (const theme of SWDraw.sceneryThemes) for (const inside of [false, true]) for (const night of [false, true]) {
+    const c = new MockCtx();
+    const spec = { theme, inside, night, frame: true, pieces: SWDraw.sceneryPieces.map((part, i) => ({ part, x: (i + 0.5) / SWDraw.sceneryPieces.length, w: 0.12, h: 0.3, layer: ['far', 'mid', 'front'][i % 3] })) };
+    try { const r = SWDraw.set(c, spec, { W: 1920, H: 1080, time: 2, camX: 30 }); if (c.depth !== 0 || !(r.floor > 0)) check(`scenery ${theme} ${inside} ${night}`, false, c.depth); }
+    catch (e) { check(`scenery ${theme} throws`, false, String(e)); }
+  }
+  const c = new MockCtx();
+  SWDraw.set(c, { pieces: [null, { part: 'nope' }, { part: 'dome', x: 'a', w: NaN }], theme: 'unknown', floor: 7 }, { W: 1080, H: 1920 });
+  check('scenery draws finite geometry and tolerates junk', bad.length === b0 && c.depth === 0, bad.slice(b0, b0 + 3).join('; '));
+  check('a described set has its floor', Math.abs(SWDraw.setFloor({ floor: 0.75 }, 1000) - 750) < 1e-9 && Math.abs(SWDraw.setFloor('park', 1000) - 820) < 1e-9);
 }
 
 // Effects draw cleanly with junk, and ink grows with its progress.
