@@ -16,6 +16,10 @@
      title?                          a card shown as the scene opens
      camera?                         'auto' (eases toward whoever speaks)
                                      | 'wide'
+     view?                           'front' (default) | 'side' (profile) |
+                                     'auto' (profile while walking or
+                                     acting together); also per cast
+                                     member and on the story params
    }]
    A speaker with no character in the scene is a narrator: heard and
    captioned, never drawn. Characters act their own lines (pose 'auto'),
@@ -54,7 +58,7 @@ function swStoryScenes(scenes, lines, words, end) {
 /* Where each cast member stands at time t (px) and whether they walk:
    entrances, moves, exits and the approaches actions need, each a walk at a
    steady pace. Returns { x, walking, vx } per cast id. */
-function swStoryBlocking(sc, a, b, W, s, lines, words) {
+function swStoryBlocking(sc, a, b, W, s, lines, words, view) {
   const pace = 260 * s;
   const people = (sc.cast || []).filter(m => m && typeof m.cast === 'string');
   const plans = {};
@@ -111,7 +115,9 @@ function swStoryBlocking(sc, a, b, W, s, lines, words) {
     if (!PA || !PB) continue;
     const xa = PA.legs.length ? PA.legs[PA.legs.length - 1].x1 : PA.start;
     const xb = PB.legs.length ? PB.legs[PB.legs.length - 1].x1 : PB.start;
-    const gap = (act.type === 'hug' ? 27 : act.type === 'give' ? 56 : 60) * s, side = xa <= xb ? 1 : -1;
+    /* in profile two people embrace face to face, a little closer */
+    const prof = id => { const mm = people.find(m => m.cast === id) || {}; return /^(side|auto)$/.test(String(mm.view || sc.view || view || '')); };
+    const gap = (act.type === 'hug' ? (prof(act.a) && prof(act.b) ? 31 : 27) : act.type === 'give' ? 56 : 60) * s, side = xa <= xb ? 1 : -1;
     /* A seated person stays put and the other comes to them — except for a
        hug, where the one sitting gets up and goes to the other. */
     const hug = act.type === 'hug';
@@ -224,7 +230,7 @@ function swStoryEffects(ctx, list, layer, time, a, b, lines, words, W, H) {
 const SW_CROWD_SKIN = ['#F2C4A2', '#E8B48F', '#D9A27A', '#C68642', '#A86B45', '#8D5A3B', '#6B4226'];
 const SW_CROWD_HAIR = ['#1A1110', '#2B2233', '#3B2416', '#5A3A22', '#7A3B1E', '#C8C6C2'];
 const SW_CROWD_CLOTH = ['#2E4A8B', '#2F6B4F', '#7A2E2E', '#5B3A29', '#8E6E3B', '#4B4E7A', '#7A6A4F', '#2A6F77', '#8E3B5A', '#B5653A'];
-function swStoryCrowd(ctx, crowd, people, time, W, H, floorY, s, words, heads, speaking) {
+function swStoryCrowd(ctx, crowd, people, time, W, H, floorY, s, words, heads, speaking, view) {
   if (!crowd || typeof crowd !== 'object') return;
   const n = Math.max(0, Math.min(24, Math.round(ecN(crowd.count, 6))));
   const rnd = swFxRand(ecN(crowd.seed, 17));
@@ -263,7 +269,8 @@ function swStoryCrowd(ctx, crowd, people, time, W, H, floorY, s, words, heads, s
       walkAmount: e.walking ? 1 : 0, vx: e.walking ? e.dir * e.pace : 0,
       pose: e.walking ? 'walk' : ['idle', 'idle', 'hold', 'think'][Math.floor(e.row * 4)],
       lookAt: !e.walking && speaking && heads[speaking] ? heads[speaking] : undefined,
-      speaking: false, gestures: false
+      speaking: false, gestures: false,
+      view: view === 'side' || (view === 'auto' && e.walking) ? 'side' : undefined
     }));
   }
 }
@@ -305,7 +312,7 @@ function swStory(ctx, opts) {
   const s = (portrait ? U / 520 : U / 640) * ecN(sc.scale, 1);
   const font = opts.fontFamily || '"Space Grotesk", sans-serif';
   const floorY = SWDraw.setFloor(sc.set, H);
-  const { plans, items, solo } = swStoryBlocking(sc, a, b, W, s, lines, words);
+  const { plans, items, solo } = swStoryBlocking(sc, a, b, W, s, lines, words, opts.view);
   const actions = swStoryActions(sc, lines, words, a);
   const people = (sc.cast || []).filter(m => m && typeof m.cast === 'string');
   const pos = {};
@@ -373,7 +380,7 @@ function swStory(ctx, opts) {
   /* People, back to front by x so overlaps read left to right. */
   const order = people.slice().sort((p, q) => pos[p.cast].x - pos[q.cast].x);
   swStoryEffects(ctx, sc.effects, 'back', time, a, b, lines, words, W, H);
-  swStoryCrowd(ctx, sc.crowd, people, time, W, H, floorY, s, words, heads, speaking);
+  swStoryCrowd(ctx, sc.crowd, people, time, W, H, floorY, s, words, heads, speaking, String((sc.crowd && sc.crowd.view) || sc.view || opts.view || "").toLowerCase());
   const hugHands = [];
   /* Things on the floor, and things falling to it. */
   for (const it of items) {
@@ -419,6 +426,14 @@ function swStory(ctx, opts) {
     };
     let hugging = false;
     o.bag = m.bag;
+    /* Profile view: always, or ('auto') while walking, picking something
+       up or acting with someone. */
+    const viewOf = mm => String(mm.view || sc.view || opts.view || 'front').toLowerCase();
+    const busy = cid => actions.some(x => (x.a === cid || x.b === cid) && time - x.t > -0.5 && time - x.t < 2.4)
+      || solo.some(x => x.a === cid && x.type === 'pickup' && time - x.t > -0.35 && time - x.t < 1.1);
+    const sideFor = (mm, cid) => { const v = viewOf(mm); return v === 'side' || (v === 'auto' && (pos[cid].walking > 0.05 || busy(cid))); };
+    const side = sideFor(m, id);
+    if (side) o.view = 'side';
     /* Picking something up: crouch, reach the floor, rise holding it. */
     for (const act of solo) {
       if (act.a !== id || act.type !== 'pickup' || act.x == null) continue;
@@ -466,6 +481,23 @@ function swStory(ctx, opts) {
         const giver = act.a === id;
         o.rightHand = { x: lerp(rest.x, meetX - toward * (giver ? 16 : 6) * ms), y: lerp(rest.y, meetY + (giver ? 0 : 8 * ms)) };
         o.rightHandPose = giver ? 'hold' : 'open';
+      } else if (act.type === 'hug' && side && sideFor(pm, partner)) {
+        /* Face to face: each wraps the near arm round the other's back —
+           one over the shoulder, one at the waist — with the hand shown on
+           the back (laid on afterwards, over both). */
+        const high = pos[id].x < pos[partner].x || (pos[id].x === pos[partner].x && id < partner);
+        const back = { x: px + toward * 14 * pk, y: floorY - (high ? 214 : 172) * pk };
+        const rest = { x: p.x + toward * 20 * ms, y: floorY - 120 * ms };
+        o.rightHand = { x: lerp(rest.x, back.x), y: lerp(rest.y, back.y) };
+        o.rightHandPose = 'relaxed';
+        if (q > 0.2) hugHands.push({ x: back.x, y: back.y, angle: Math.PI / 2 - toward * 0.6, s: ms, skin: (castTable[id] && castTable[id].skinColor) || '#F2C4A2', q });
+        /* the one in front lays a cheek on the other's shoulder, the other
+           looks over it, so the faces never collide */
+        o.headTilt = (high ? 0.1 : 0.75) * q;
+        o.seated = false;
+        o.prop = null;
+        hugging = true;
+        o.emotion = q > 0.5 ? 'content' : 'happy';
       } else if (act.type === 'hug') {
         /* A side hug — the embrace that reads with figures facing the
            camera: shoulder to shoulder, heads leaning together, eyes closed,

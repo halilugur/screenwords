@@ -382,6 +382,7 @@ pub const COMPONENTS: &str = concat!(
     include_str!("assets/components/02g-story.js"),
     include_str!("assets/components/02h-fx.js"),
     include_str!("assets/components/02i-scenery.js"),
+    include_str!("assets/components/02j-profile.js"),
     include_str!("assets/components/03-extras.js"),
     include_str!("assets/components/04-backdrop.js"),
     include_str!("assets/components/05-common.js"),

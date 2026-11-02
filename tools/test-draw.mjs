@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'assets', 'components');
-const src = ['00-registry.js', '01-catalog.js', '02-helpers.js', '02a-vector.js', '02b-figure.js', '02c-toon.js', '02d-kit.js', '02e-conversation.js', '02f-sets.js', '02g-story.js', '02h-fx.js', '02i-scenery.js']
+const src = ['00-registry.js', '01-catalog.js', '02-helpers.js', '02a-vector.js', '02b-figure.js', '02c-toon.js', '02d-kit.js', '02e-conversation.js', '02f-sets.js', '02g-story.js', '02h-fx.js', '02i-scenery.js', '02j-profile.js']
   .map(f => readFileSync(join(dir, f), 'utf8')).join('\n');
 /* A recording stand-in for the canvas: every coordinate handed to it must
    be finite (canvas silently drops NaN geometry, so a NaN shows up as a
@@ -70,8 +70,8 @@ for (const op of [...PATH_OPS, 'beginPath', 'fill', 'stroke', 'clip', 'fillRect'
 }
 
 const ctx = vm.createContext({ console, Math, Map, Array, Object, String, Number, JSON, isFinite, parseFloat, parseInt, Path2D, DOMMatrix });
-vm.runInContext(src + '\n;globalThis.__sw = { SWDraw, swParsePath, swTrim, swBox, swBeat, swAutoDirect, swStoryBlocking, swStoryAt };', ctx);
-const { SWDraw, swParsePath, swTrim, swBeat, swAutoDirect, swStoryBlocking, swStoryAt } = ctx.__sw;
+vm.runInContext(src + '\n;globalThis.__sw = { SWDraw, swParsePath, swTrim, swBox, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES };', ctx);
+const { SWDraw, swParsePath, swTrim, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES } = ctx.__sw;
 
 let failed = 0;
 const near = (a, b, eps) => Math.abs(a - b) <= (eps ?? 1e-6);
@@ -592,6 +592,97 @@ function check(name, ok, detail) {
   } catch (e) {
     check('svgLayers tolerates malformed layers', false, e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : String(e));
   }
+}
+
+// Profile view: every look and pose draws cleanly side-on; standing legs
+// are straight with the feet on the floor, a walk bends the knees forward,
+// elbows never fold back behind the body; stories turn people side-on when
+// asked ('auto': while walking or acting together) and embrace face to face.
+{
+  const b0 = bad.length;
+  const looks = [{}, { hair: 'long', outfit: 'dress' }, { hair: 'bald', beard: 'long', hat: 'turban', outfit: 'robe', age: 'elder' },
+    { hair: 'hijab', outfit: 'robe' }, { hair: 'curly', outfit: 'hoodie', bag: true }, { hair: 'bun', outfit: 'tshirt', age: 'child', prop: 'book' },
+    { hair: 'short', hat: 'fez', glasses: true, shoes: 'boot' }, { hair: 'bob', hat: 'cap', beard: 'full', shoes: 'slipper' }];
+  const poses = Object.keys(SW_SIDE_POSES);
+  let legsOk = true, kneesOk = true, elbowsOk = true, views = true, legD = '', kneeD = '', elbowD = '';
+  for (const look of looks) for (const pose of poses) for (const facing of [1, -1]) for (const extra of [{}, { seated: true }, { crouch: 0.8 }, { walkAmount: 1 }]) {
+    const c = new MockCtx();
+    try {
+      const r = SWDraw.character(c, Object.assign({ view: 'side', x: 500, y: 600, scale: 1.2, time: 1.3, W: 1080, H: 1920, facing, pose, emotion: 'happy', words: [{ text: 'hey', start: 1, end: 1.6 }] }, look, extra));
+      if (c.depth !== 0) check(`profile ${pose} leaves save() open`, false, c.depth);
+      if (!r || r.view !== 'side') views = false;
+      const J = r.joints;
+      if (!extra.seated && !extra.crouch && !extra.walkAmount && pose !== 'walk') {
+        for (const L of J.legs) {
+          if (Math.abs(L.ankle.y - J.ankleY) > 1e-6) { legsOk = false; legD = `${pose} ankle ${L.ankle.y}`; }
+          const cross = (L.knee.x - L.hip.x) * (L.ankle.y - L.hip.y) - (L.knee.y - L.hip.y) * (L.ankle.x - L.hip.x);
+          if (Math.abs(cross) > 1e-3 * Math.hypot(L.ankle.x - L.hip.x, L.ankle.y - L.hip.y) ** 2) { legsOk = false; legD = `${pose} bent standing leg`; }
+        }
+      }
+      if (extra.walkAmount || extra.crouch) for (const L of J.legs) {
+        const mid = (L.hip.x + L.ankle.x) / 2;
+        if (L.knee.x < mid - 1e-6) { kneesOk = false; kneeD = `${pose} knee back`; }
+      }
+      for (const k of ['r', 'l']) {
+        /* the elbow sits behind the shoulder-to-wrist line: the forearm
+           folds forward, never back */
+        const A = J.arms[k];
+        if (!A) continue;
+        const vx = A.wrist.x - A.shoulder.x, vy = A.wrist.y - A.shoulder.y, jx = A.elbow.x - A.shoulder.x, jy = A.elbow.y - A.shoulder.y;
+        if (vx * jy - vy * jx < -1e-6 * (vx * vx + vy * vy)) { elbowsOk = false; elbowD = `${pose} ${k} ${JSON.stringify(extra)} elbow folds back`; }
+      }
+    } catch (e) { check(`profile ${pose} throws`, false, e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : String(e)); }
+  }
+  check('profile: every look and pose draws finite geometry', bad.length === b0, bad.slice(b0, b0 + 3).join('; '));
+  check('profile: the side view answers for itself', views);
+  check('profile: standing legs are straight, feet on the floor', legsOk, legD);
+  check('profile: knees bend forward in a walk or a crouch', kneesOk, kneeD);
+  check('profile: elbows point back, forearms fold forward', elbowsOk, elbowD);
+  const c = new MockCtx();
+  const adult = SWDraw.character(c, { view: 'side', x: 0, y: 0, scale: 1, W: 1080, H: 1920 });
+  const kid = SWDraw.character(c, { view: 'side', x: 0, y: 0, scale: 1, W: 1080, H: 1920, age: 'child' });
+  check('profile: a child is shorter, feet on the same floor', kid.head.y > adult.head.y + 30, `${kid.head.y} ${adult.head.y}`);
+  const right = SWDraw.character(c, { view: 'side', x: 500, y: 0, W: 1080, H: 1920, facing: 1 }), left = SWDraw.character(c, { view: 'side', x: 500, y: 0, W: 1080, H: 1920, facing: -1 });
+  check('profile: facing turns the figure', right.head.x > 500 && left.head.x < 500 && Math.abs((right.head.x - 500) + (left.head.x - 500)) < 1e-6);
+
+  const L = (speaker, text, start, end) => text.split(' ').map((t, i, a) => ({ id: speaker + start + i, speaker, text: t, start: start + (end - start) * i / a.length, end: start + (end - start) * (i + 1) / a.length }));
+  const words = [].concat(L('a', 'Hello there old friend.', 0.5, 3), L('b', 'It has been so long!', 3.5, 6), L('a', 'Take this, it is yours.', 9, 11));
+  const lines = SWDraw.conversationPlan(words).lines;
+  const castTable = { a: { kit: 'editorial', outfit: 'robe', hat: 'turban', beard: 'long' }, b: { kit: 'editorial', hair: 'long', outfit: 'dress' } };
+  const scene = view => ({ set: { theme: 'sand', pieces: [{ part: 'wall', x: 0.5 }] }, view, crowd: { count: 5, walkers: 1 },
+    cast: [{ cast: 'a', x: 0.25, enter: 'left' }, { cast: 'b', x: 0.75 }],
+    actions: [{ line: 1, type: 'hug', a: 'a', b: 'b' }, { line: 2, type: 'give', a: 'a', b: 'b', prop: 'book' }] });
+  const hugT = lines[1].start;
+  const gapOf = view => { const B = swStoryBlocking(Object.assign(scene(view), { cast: [{ cast: 'a', x: 0.25 }, { cast: 'b', x: 0.75 }] }), 0, 14, 1920, 1, lines, words); return Math.abs(swStoryAt(B.plans.a, hugT).x - swStoryAt(B.plans.b, hugT).x); };
+    check('profile: a face-to-face embrace stands a touch further apart than a side hug', gapOf('side') > gapOf('front') && gapOf('side') < 70, `${gapOf('side')} ${gapOf('front')}`);
+  const seen = [];
+  const orig = SWDraw.character;
+  SWDraw.character = (ctx, o) => { seen.push({ cast: o.cast, view: o.view, walk: o.walkAmount, hand: o.rightHand, t: o.time }); return orig(ctx, o); };
+  const b1 = bad.length;
+  try {
+    for (const view of ['auto', 'side', 'front']) for (let t = 0; t < 14; t += 0.29) {
+      const cc = new MockCtx();
+      seen.length = 0;
+      SWDraw.story(cc, { W: 1920, H: 1080, time: t, words, castTable, scenes: [scene(view)], duration: 14 });
+      if (cc.depth !== 0) check(`profile story ${view}@${t.toFixed(2)} leaves save() open`, false, cc.depth);
+      const cast = seen.filter(x => x.cast === 'a' || x.cast === 'b');
+      if (view === 'side' && cast.some(x => x.view !== 'side')) check(`profile story: side keeps everyone side-on @${t.toFixed(2)}`, false);
+      if (view === 'front' && seen.some(x => x.view === 'side')) check(`profile story: front draws nobody side-on @${t.toFixed(2)}`, false);
+      if (view === 'auto') {
+        for (const x of cast) if (x.walk > 0.05 && x.view !== 'side') check(`profile story: auto walks side-on @${t.toFixed(2)}`, false);
+        if (t > 0.5 && t < 2.5 && seen.some(x => x.cast !== 'a' && x.cast !== 'b' && x.walk > 0.5 && x.view !== 'side')) check('profile story: crowd walkers turn side-on', false);
+      }
+      if (view === 'side' && Math.abs(t - (hugT + 0.6)) < 0.15) {
+        const hands = cast.map(x => x.hand).filter(Boolean);
+        check('profile story: both reach round the other in a face-to-face hug', hands.length === 2, JSON.stringify(cast));
+      }
+    }
+    const cc = new MockCtx(); seen.length = 0;
+    SWDraw.story(cc, { W: 1920, H: 1080, time: 1.2, words, castTable, scenes: [Object.assign(scene('auto'), { actions: [] })], duration: 14 });
+    check('profile story: auto stands still facing front', seen.filter(x => x.cast === 'b').every(x => x.view !== 'side'));
+  } catch (e) { check('profile story throws', false, e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : String(e)); }
+  SWDraw.character = orig;
+  check('profile story: finite geometry throughout', bad.length === b1, bad.slice(b1, b1 + 3).join('; '));
 }
 
 if (failed) {

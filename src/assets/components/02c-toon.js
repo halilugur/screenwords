@@ -1183,6 +1183,13 @@ SWDraw.speakerAt = swSpeakerAt;
     if (typeof swAutoDirect === 'function') opts = swAutoDirect(opts);
     opts = swOwnWords(opts);
     const st = String((opts && opts.style) || '').toLowerCase();
+    if (opts && String(opts.view || '').toLowerCase() === 'side' && typeof swProfileCharacter === 'function') {
+      const o = Object.assign({}, opts);
+      const HAIR = { modern: 'short', buzz: 'short', wavy: 'long', none: 'bald' };
+      const hs = String(o.hair || o.hairStyle || '').toLowerCase();
+      if (hs) o.hair = HAIR[hs] || hs;
+      return swProfileCharacter(ctx, o);
+    }
     if (SW_TOON[st]) return swToonCharacter(ctx, opts, st);
     if (opts && opts.parts && typeof opts.parts === 'object') return swToonCharacter(ctx, opts, 'flat');
     if (st === 'detailed' || typeof swKitParts !== 'function') return detailed(ctx, opts);
