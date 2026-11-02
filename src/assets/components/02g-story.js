@@ -266,9 +266,12 @@ function swStoryCrowd(ctx, crowd, people, time, W, H, floorY, s, words, heads, s
     list.push({ look, walking, x, dir, pace, row: rnd() });
   }
   list.sort((p, q) => p.row - q.row);
-  /* a little paler than the cast, so the eye finds the story first */
+  /* a little paler than the cast, so the eye finds the story first — by
+     mixing their colours toward a grey, not with ctx.filter, which costs a
+     GPU filter pass per figure */
+  const pale = c => (typeof c === 'string' && c[0] === '#' ? swMix(c, '#A7A39A', 0.22) : c);
+  for (const e of list) for (const k of ['skinColor', 'hairColor', 'jacketColor', 'shirtColor', 'accentColor', 'hatColor']) e.look[k] = pale(e.look[k]);
   ctx.save();
-  if ('filter' in ctx) ctx.filter = 'saturate(0.7) brightness(1.04)';
   for (const e of list) {
     const k = ks * (0.94 + 0.06 * e.row), yFeet = floorY - depth * (1 - e.row * 0.5);
     SWDraw.character(ctx, Object.assign({}, e.look, {
@@ -645,6 +648,7 @@ function swStory(ctx, opts) {
       ctx.restore();
     }
   }
+  return { camera: { zoom, x: zoom > 1.001 ? fx : W / 2, y: zoom > 1.001 ? fy : H / 2 } };
 }
 SWDraw.story = swStory;
 SWDraw.storyScenes = swStoryScenes;

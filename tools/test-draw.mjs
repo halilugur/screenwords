@@ -685,6 +685,47 @@ function check(name, ok, detail) {
   check('profile story: finite geometry throughout', bad.length === b1, bad.slice(b1, b1 + 3).join('; '));
 }
 
+// The spring follower is smooth in time: a camera easing to a new shot
+// moves one way only, with no frame-to-frame wobble (its sample grid must
+// not slide with the frame time).
+{
+  const step = t => (t < 1 ? 0 : 1000);
+  let back = 0, rough = 0, prev = null, prevD = null;
+  for (let f = 0; f <= 120; f++) {
+    const x = SWDraw.follow(step, f / 30, { freq: 0.9, damping: 1, window: 2.4, steps: 48 });
+    if (prev != null) {
+      const d = x - prev;
+      if (d < -1e-6) back++;
+      if (prevD != null) rough = Math.max(rough, Math.abs(d - prevD));
+      prevD = d;
+    }
+    prev = x;
+  }
+  check('follow: a step is approached one way only', back === 0, back);
+  check('follow: no frame-to-frame wobble', rough < 45, rough.toFixed(2));
+}
+
+// The story camera eases between shots without jitter: within a scene its
+// frame-to-frame motion changes gently (no back-and-forth shake).
+{
+  const L = (speaker, text, start, end) => text.split(' ').map((t, i, a) => ({ id: speaker + start + i, speaker, text: t, start: start + (end - start) * i / a.length, end: start + (end - start) * (i + 1) / a.length }));
+  const words = [].concat(L('a', 'This is a long line that earns a close shot for sure.', 0.5, 5), L('b', 'And this one answers it at length as well, slowly.', 5.5, 10));
+  const castTable = { a: { kit: 'editorial' }, b: { kit: 'editorial', hair: 'long' } };
+  const scenes = [{ set: 'park', cast: [{ cast: 'a', x: 0.3 }, { cast: 'b', x: 0.7 }] }];
+  let prev = null, prevD = null, worst = 0, flips = 0;
+  for (let f = 0; f < 330; f++) {
+    const r = SWDraw.story(new MockCtx(), { W: 1920, H: 1080, time: f / 30, words, castTable, scenes, duration: 11 });
+    const x = r.camera.x, z = r.camera.zoom;
+    if (prev) {
+      const d = x - prev.x;
+      if (prevD != null) { worst = Math.max(worst, Math.abs(d - prevD)); if (Math.abs(d) > 0.05 && Math.abs(prevD) > 0.05 && Math.sign(d) !== Math.sign(prevD)) flips++; }
+      prevD = d;
+    }
+    prev = { x, z };
+  }
+  check('story camera: no frame-to-frame shake', flips <= 2 && worst < 40, `flips ${flips}, jerk ${worst.toFixed(2)}`);
+}
+
 if (failed) {
   console.error(`${failed} drawing check(s) failed`);
   process.exit(1);

@@ -438,14 +438,24 @@ Object.assign(SWDraw, {
     o = o || {};
     const f = ecN(o.freq, 2.2), z = ecN(o.damping, 0.32), win = ecN(o.window, 1.4), n = ecN(o.steps, 56);
     const w = Math.PI * 2 * f, k = w * w, c = 2 * z * w, dt = win / n;
-    let t = time - win, x = signal(t), v = 0;
-    for (let i = 0; i < n; i++) {
-      t += dt;
-      const a = k * (signal(t) - x) - c * v;
-      v += a * dt;
-      x += v * dt;
-    }
-    return x;
+    /* The spring runs on a time grid fixed to multiples of dt, not one that
+       slides with the frame time: a sliding grid samples a sudden change
+       (a cut to a new shot) at a different phase every frame, and the
+       result wobbles. Between grid points the two runs are blended. */
+    const run = end => {
+      let t = end - win, x = signal(t), v = 0;
+      for (let i = 0; i < n; i++) {
+        t += dt;
+        const a = k * (signal(t) - x) - c * v;
+        v += a * dt;
+        x += v * dt;
+      }
+      return x;
+    };
+    const g = Math.floor(time / dt), q = time / dt - g;
+    if (q < 1e-9) return run(g * dt);
+    const x0 = run(g * dt), x1 = run((g + 1) * dt);
+    return x0 + (x1 - x0) * q;
   },
   /* The follower's lag behind the signal: the overshoot that drives hair
      tips, coat hems and antennae. */
