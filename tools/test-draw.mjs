@@ -70,8 +70,8 @@ for (const op of [...PATH_OPS, 'beginPath', 'fill', 'stroke', 'clip', 'fillRect'
 }
 
 const ctx = vm.createContext({ console, Math, Map, Array, Object, String, Number, JSON, isFinite, parseFloat, parseInt, Path2D, DOMMatrix });
-vm.runInContext(src + '\n;globalThis.__sw = { SWDraw, swParsePath, swTrim, swBox, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES };', ctx);
-const { SWDraw, swParsePath, swTrim, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES } = ctx.__sw;
+vm.runInContext(src + '\n;globalThis.__sw = { SWDraw, swParsePath, swTrim, swBox, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES, swKitParts, SW_KIT_HATS };', ctx);
+const { SWDraw, swParsePath, swTrim, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES, swKitParts, SW_KIT_HATS } = ctx.__sw;
 
 let failed = 0;
 const near = (a, b, eps) => Math.abs(a - b) <= (eps ?? 1e-6);
@@ -777,6 +777,58 @@ function check(name, ok, detail) {
   check('crowd: dresses only on women (no beard, no hat)', seen.filter(o => o.outfit === 'dress').every(o => (o.beard === 'none' || !o.beard) && (o.hat === 'none' || !o.hat)));
   const reds = seen.filter(o => o.hat === 'fez').map(o => (String(o.hatColor).match(/\d+/g) || []).map(Number));
   check('crowd: a fez is red', reds.length > 0 && reds.every(c => c.length === 3 && c[0] > c[1] + 60 && c[0] > c[2] + 60), JSON.stringify(reds.slice(0, 3)));
+}
+
+// (kit) under a fez or a cap no hair shows above or around the rim, only
+// below it: every hair point left inside the clip sits under the hat's
+// lower edge, and some hair still shows at the sides.
+{
+  const inside = (pts, x, y) => {
+    let c = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, yi] = pts[i], [xj, yj] = pts[j];
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  };
+  for (const hat of ['fez', 'cap']) {
+    const sil = swParsePath(SW_KIT_HATS[hat][0].d)[0].pts;
+    const xs = sil.map(p => p[0]), x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const bottom = x => Math.max(...sil.filter(p => Math.abs(p[0] - Math.max(x0, Math.min(x1, x))) <= 2).map(p => p[1]));
+    for (const hair of ['curly', 'short', 'bob', 'long', 'bun']) {
+      const parts = swKitParts({ hair, hat, age: 'child' });
+      let shown = 0, above = null;
+      for (const key of ['hairBack', 'hairFront']) {
+        if (!parts[key]) continue;
+        for (const g of parts[key].layers) {
+          if (typeof g.clip !== 'string') { above = `${key} layer not clipped`; continue; }
+          const clip = swParsePath(g.clip)[0].pts;
+          for (const L of g.layers) {
+            if (!L.d) continue;
+            for (const sp of swParsePath(L.d)) for (let k = 0; k < sp.pts.length; k++) {
+              const [a, b] = [sp.pts[k], sp.pts[(k + 1) % sp.pts.length]];
+              for (const t of [0, 0.25, 0.5, 0.75]) {
+                const x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t;
+                if (!inside(clip, x, y)) continue;
+                shown++;
+                if (y < bottom(x) - 0.5 && !above) above = `${key} (${x.toFixed(1)}, ${y.toFixed(1)}) above the rim at ${bottom(x).toFixed(1)}`;
+              }
+            }
+          }
+        }
+      }
+      check(`kit: ${hair} hair under a ${hat} shows only below the rim`, !above, above);
+      check(`kit: ${hair} hair under a ${hat} still shows at the sides`, shown > 0, shown);
+    }
+  }
+  const bare = swKitParts({ hair: 'curly', age: 'child' });
+  check('kit: hair without a hat is not clipped', bare.hairFront.layers.every(L => !L.clip));
+  const scarf = swKitParts({ hair: 'hijab', hat: 'cap' });
+  check('kit: a headscarf is not cut by a hat rim', scarf.hairFront.layers.every(L => !L.clip));
+  let clips = 0;
+  const c = new MockCtx(); c.clip = () => { clips++; };
+  SWDraw.character(c, { kit: 'editorial', hair: 'curly', hat: 'cap', age: 'child', time: 1, W: 1080, H: 1920 });
+  check('kit: a capped head draws its hair through a clip', clips > 0, clips);
 }
 
 if (failed) {

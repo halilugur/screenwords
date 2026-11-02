@@ -137,6 +137,14 @@ const SW_KIT_HATS = {
     { d: 'M-21 -27 h3 M-8 -31 h3 M5 -31 h3 M18 -27 h3', stroke: '$hatDark', lineWidth: 2.2, lineCap: 'round' }]
 };
 
+/* Under a fez or a cap only the hair below the rim shows: hair layers are
+   cut to the region under the hat's lower edge, which past its sides
+   rounds down along the skull, so nothing sticks out above or around it. */
+const SW_KIT_HAT_RIM = {
+  fez: 'M-120 8 L-41 6 C-38 -6 -33 -13 -27 -16 C-14 -21 14 -21 27 -16 C33 -13 38 -6 41 6 L120 8 L120 160 L-120 160 Z',
+  cap: 'M-120 8 L-41 6 C-39 -2 -37 -8 -33 -11 C-20 -17 20 -17 33 -11 C37 -8 39 -2 41 6 L120 8 L120 160 L-120 160 Z'
+};
+
 /* Glasses, drawn at the head's eye anchor. */
 const SW_KIT_GLASSES = {
   pivot: [0, 0],
@@ -175,8 +183,10 @@ function swKitParts(opts) {
   head.layers = SW_KIT_EDITORIAL.head.layers.slice(0, 4).concat(blush ? SW_KIT_BLUSH : [], SW_KIT_EDITORIAL.head.layers.slice(4), beard ? [SW_KIT_BEARDS[beard]] : []);
   parts.head = head;
   const H = SW_KIT_HAIR[hair];
-  if (H.back) parts.hairBack = { pivot: [0, 33], tip: [0, -33], layers: H.back };
-  if (H.front) parts.hairFront = { pivot: [0, 33], tip: [0, -33], layers: H.front };
+  const rim = hair !== 'hijab' && SW_KIT_HAT_RIM[hat];
+  const under = L => rim ? [{ clip: rim, layers: L }] : L;
+  if (H.back) parts.hairBack = { pivot: [0, 33], tip: [0, -33], layers: under(H.back) };
+  if (H.front) parts.hairFront = { pivot: [0, 33], tip: [0, -33], layers: under(H.front) };
   swKitCache.set(key, parts);
   return parts;
 }

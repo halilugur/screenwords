@@ -333,7 +333,8 @@ Object.assign(SWDraw, {
      layers: [{ d, fill, stroke, lineWidth, gradient, strokeGradient, shadow,
                 transform: {x, y, scale, scaleX, scaleY, rotate, origin},
                 opacity, trimStart, trimEnd, morphTo, morph, dash, lineCap,
-                lineJoin, fillRule, blend, nonScalingStroke, layers: [...] }]
+                lineJoin, fillRule, blend, nonScalingStroke, layers: [...],
+                clip }]  (clip: a path the group's children are cut to)
      opts: { viewBox, box: {x, y, width, height}, preserveAspectRatio,
              W, H, localTime }. Any numeric field may be keyframed as
      [[t, v], ...] over localTime. */
@@ -369,6 +370,7 @@ Object.assign(SWDraw, {
         ctx.translate(-o[0], -o[1]);
       }
       if (Array.isArray(L.layers)) {
+        if (typeof L.clip === 'string' && L.clip) ctx.clip(new Path2D(L.clip));
         for (const child of L.layers) drawLayer(child, s);
         ctx.restore();
         return;
