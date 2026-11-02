@@ -84,8 +84,8 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
         const q = Math.min(1, Math.max(0, (c.end - time) / adur));
         const k = 1 - q;
         GA *= q;
-        if (AN.out === 'sink') gdy = -k * 90;
-        else if (AN.out === 'rise') gdy = k * 90;
+        if (AN.out === 'sink') gdy = k * 90;
+        else if (AN.out === 'rise') gdy = -k * 90;
         else if (AN.out === 'shrink') gsc *= 1 - 0.25 * k;
         else if (AN.out === 'slideOut') gdx = -k * 420;
       }
@@ -539,9 +539,9 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
     } else if (c.componentId === 'gaugeMeter') {
       const x = (p.position?.x ?? 0.5) * W, y = (p.position?.y ?? 0.5) * H;
       const rad = p.radius || 115;
-      const fromVal = p.from ?? p.min ?? 0;
-      const toVal = p.to ?? p.value ?? 100;
-      const maxVal = p.max ?? Math.max(toVal, 100);
+      const fromVal = ecN(Number(p.from ?? p.min ?? 0), 0);
+      const toVal = ecN(Number(p.to ?? p.value ?? 100), 100);
+      const maxVal = ecN(Number(p.max ?? Math.max(toVal, 100)), Math.max(toVal, 100));
       const animP = 1 - Math.pow(1 - Math.min(1, prog * 1.35), 3);
       const curVal = fromVal + (toVal - fromVal) * animP;
       const fillFrac = ecClamp((curVal - fromVal) / Math.max(1e-6, maxVal - fromVal), 0, 1);
@@ -598,7 +598,7 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
     // 8. iconPop
     } else if (c.componentId === 'iconPop') {
       const x = (p.position?.x ?? 0.5) * W, y = (p.position?.y ?? 0.5) * H;
-      const size = p.size || 64;
+      const size = ecN(Number(p.size), 0) || 64;
       const col = p.color || T.accent;
       const bounce = Math.sin(time * 3) * 6;
 
@@ -666,7 +666,6 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
       const gap = Math.max(0, p.gap == null ? 12 : p.gap);
       const leftCol = p.leftColor || p.color || T.accent;
       const rightCol = p.rightColor || p.secondaryColor || T.accent2;
-      const radius = p.borderRadius || 14;
       const vertical = dir !== 'horizontal';
       const paneW = vertical ? (W - gap) / 2 : W;
       const paneH = vertical ? H : (H - gap) / 2;
@@ -674,8 +673,7 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
       ctx.save();
       ctx.globalAlpha = GA * tint;
       ctx.fillStyle = leftCol;
-      if (vertical) ctx.fillRect(0, 0, paneW, paneH);
-      else ctx.fillRect(0, 0, paneW, paneH);
+      ctx.fillRect(0, 0, paneW, paneH);
       ctx.fillStyle = rightCol;
       if (vertical) ctx.fillRect(paneW + gap, 0, paneW, paneH);
       else ctx.fillRect(0, paneH + gap, paneW, paneH);
@@ -954,7 +952,7 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
     // 12d. brandLogo
     } else if (c.componentId === 'brandLogo') {
       const x = (p.position?.x ?? 0.12) * W, y = (p.position?.y ?? 0.06) * H;
-      const size = p.size || 120;
+      const size = ecN(Number(p.size), 0) || 120;
       const img = getImage(p.url || p.src);
       ctx.save();
       ctx.globalAlpha = GA * (p.opacity ?? 0.9) * easeOut;
@@ -1194,7 +1192,7 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
     } else if (c.componentId === 'progressRing') {
       const pos = pointOf(p.position, 0.5, 0.45);
       const x = pos.x * W, y = pos.y * H, col = p.color || T.accent;
-      const val = p.value == null ? prog : Math.max(0, Math.min(1, Number(p.value)));
+      const val = p.value == null ? prog : ecClamp(ecN(Number(p.value), prog), 0, 1);
       const rad = p.radius || 110;
       ctx.save();
       ctx.strokeStyle = p.trackColor || T.ink;
@@ -1378,7 +1376,7 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
       const inP = easeOut;
       ctx.save();
       if (c.componentId === 'lottieCountdown') {
-        const from = p.from ?? 3;
+        const from = ecN(Number(p.from), 0) > 0 ? Number(p.from) : 3;
         const remain = Math.max(0.2, from * (1 - prog));
         ctx.strokeStyle = col; ctx.lineWidth = 12; ctx.lineCap = 'round';
         ctx.shadowColor = col; ctx.shadowBlur = 18;

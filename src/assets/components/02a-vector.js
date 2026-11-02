@@ -200,15 +200,6 @@ function swTrim(subs, t0, t1) {
   }
   return out;
 }
-function swTrace(ctx, subs) {
-  ctx.beginPath();
-  for (const s of subs) {
-    if (!s.pts.length) continue;
-    ctx.moveTo(s.pts[0][0], s.pts[0][1]);
-    for (let k = 1; k < s.pts.length; k++) ctx.lineTo(s.pts[k][0], s.pts[k][1]);
-    if (s.closed) ctx.closePath();
-  }
-}
 /* Interpolate a numeric param that may be keyframed: [[t, v], [t, v], ...]
    (t in seconds of the component's local time), eased in-out between stops. */
 function swAnim(v, t, d) {

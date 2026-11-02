@@ -1,7 +1,6 @@
 /* Third pack: full-frame background plates (25). */
 function p3Background(ctx, W, H, el, prog, id, p, GA, col, acc) {
   const base = p3Base(p);
-  const e = icEase(prog);
   const t = el;
   ctx.save();
   ctx.fillStyle = base;

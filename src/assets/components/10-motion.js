@@ -3,7 +3,6 @@ function p3Motion(ctx, W, H, el, prog, id, p, GA, col, acc) {
   const a = ecXY(p, W, H, 0.5, 0.5);
   const x = a.x, y = a.y;
   const rad = ecN(p.radius, 120);
-  const e = icEase(prog);
   const white = '#F4F8FF';
   const t = el * (ecN(p.speed, 1) || 1);
 

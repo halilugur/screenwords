@@ -185,7 +185,6 @@ function swConversation(ctx, opts) {
   const palette = ['#38BDF8', '#10B981', '#EC4899', '#A78BFA', '#F59E0B', '#F97316'];
   const plan = swConversationPlan(words) || { shots: [] };
   const speaking = SWDraw.speakerAt(words, time);
-  const portrait = H >= W;
   const hasHead = opts.title || opts.subtitle || opts.liveLabel;
   const top = hasHead ? Math.min(W, H) * 0.24 : H * 0.05;
   const lt = ecN(opts.localTime, time);

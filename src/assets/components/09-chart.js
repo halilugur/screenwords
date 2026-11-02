@@ -11,7 +11,6 @@ function p3Chart(ctx, W, H, el, prog, id, p, GA, col, acc) {
   const maxOf = arr => Math.max(1, ...arr.map(o => Math.abs(ecN(o.value, 1))));
   const white = '#F4F8FF';
   const axis = 'rgba(255,255,255,0.22)';
-  const label = p3TextOf(p);
 
   if (id === 'areaStackChart') {
     const data = it(5), mx = maxOf(data);

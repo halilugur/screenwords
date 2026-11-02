@@ -186,26 +186,18 @@ struct Chunk {
     frames_after_eos: usize,
 }
 
-#[allow(dead_code)]
-const MAX_TOKENS_PER_CHUNK: usize = 50;
-
 fn plan(tk: &Tokenizer, text: &str) -> Vec<Chunk> {
-    const SPACE: char = '\u{2581}';
     let mut chunks = Vec::new();
-    // split into sentences, then pack into <= 50-token chunks
-    let mut current = String::new();
-    let flush = |current: &mut String, chunks: &mut Vec<Chunk>| {
-        let trimmed = current.trim();
-        if trimmed.is_empty() {
-            current.clear();
-            return;
+    let flush = |sentence: &mut String, chunks: &mut Vec<Chunk>| {
+        let trimmed = sentence.trim();
+        if !trimmed.is_empty() {
+            let tokens = tk.encode(trimmed);
+            let words = trimmed.split_whitespace().count();
+            let frames_after_eos = if words <= 4 { 3 } else { 1 };
+            let budget = (((tokens.len() as f64 / 3.0) + 2.0) * 12.5).ceil() as usize;
+            chunks.push(Chunk { tokens, frame_budget: budget, frames_after_eos });
         }
-        let tokens = tk.encode(trimmed);
-        let words = trimmed.split_whitespace().count();
-        let frames_after_eos = if words <= 4 { 3 } else { 1 };
-        let budget = (((tokens.len() as f64 / 3.0) + 2.0) * 12.5).ceil() as usize;
-        chunks.push(Chunk { tokens, frame_budget: budget, frames_after_eos });
-        current.clear();
+        sentence.clear();
     };
     // One chunk per sentence: the audio window of each chunk then maps 1:1
     // to a transcript segment, which is what exact caption re-timing needs.
@@ -213,14 +205,10 @@ fn plan(tk: &Tokenizer, text: &str) -> Vec<Chunk> {
     for ch in text.chars() {
         sentence.push(ch);
         if ch == '.' || ch == '!' || ch == '?' || ch == '\n' {
-            current.push_str(&sentence);
-            flush(&mut current, &mut chunks);
-            sentence.clear();
+            flush(&mut sentence, &mut chunks);
         }
     }
-    current.push_str(&sentence);
-    flush(&mut current, &mut chunks);
-    let _ = SPACE;
+    flush(&mut sentence, &mut chunks);
     chunks
 }
 

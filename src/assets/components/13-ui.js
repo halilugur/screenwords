@@ -136,7 +136,7 @@ function p3Ui(ctx, W, H, el, prog, id, p, GA, col, acc) {
   } else if (id === 'fileBrowser') {
     ecAlpha(ctx, GA, e);
     ecPanel(ctx, bx, by, fw * 0.82, fh * 0.8, 14, panel, border, 1.5);
-    ecPanel(ctx, bx + 1, by + 1, fw * 0.22, fh * 0.8 - 2, 'rgba(255,255,255,0.05)', null, 0);
+    ecPanel(ctx, bx + 1, by + 1, fw * 0.22, fh * 0.8 - 2, 13, 'rgba(255,255,255,0.05)', null, 0);
     for (let i = 0; i < 5; i++) ecText(ctx, i === 0 ? 'Documents' : rl(i), bx + 20, by + 34 + i * 34, 15, i === 0 ? acc : 'rgba(255,255,255,0.7)', 'left', 500);
     for (let i = 0; i < 6; i++) {
       const gx = bx + fw * 0.3 + (i % 3) * (fw * 0.16);
@@ -165,7 +165,7 @@ function p3Ui(ctx, W, H, el, prog, id, p, GA, col, acc) {
 
   } else if (id === 'kanbanCard') {
     ecAlpha(ctx, GA, e);
-    const cols = 2, cw = fw * 0.42, ch = fh * 0.34;
+    const cw = fw * 0.42, ch = fh * 0.34;
     for (let i = 0; i < 2; i++) {
       const gx = x - cw - 12 + i * (cw + 24);
       ecPanel(ctx, gx, by, cw, ch, 12, panel, border, 1.5);

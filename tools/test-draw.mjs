@@ -9,10 +9,11 @@
  * layout, the spring follower, two-bone IK, visemes, word beats, and draws
  * the character and SVG layers on a recording mock canvas in every look and
  * with malformed input (no NaN geometry, balanced save/restore, no snaps
- * between keyframed poses). Exits non-zero
+ * between keyframed poses), then draws every catalog id through the shared
+ * chain with default, typical and malformed params. Exits non-zero
  * with the failing check's message.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
@@ -946,6 +947,49 @@ function check(name, ok, detail) {
     c3.bezierCurveTo = function (...a) { if (this.fillStyle === '#123456') front = Math.max(front, a[4]); };
     SWDraw.character(c3, { kit: 'editorial', view: 'side', hair: 'curly', hat: 'cap', hatColor: '#123456', age: 'child', time: 1, W: 1080, H: 1920 });
     check('profile: the cap covers the forehead', front >= 25, front);
+  }
+}
+
+// The whole catalog through the shared chain, every module loaded as the
+// pages load it: no id may throw, warn, paint NaN geometry or leave a save
+// open, with default, typical or malformed params, in both orientations.
+{
+  const all = readdirSync(dir).filter(f => f.endsWith('.js')).sort().map(f => readFileSync(join(dir, f), 'utf8')).join('\n');
+  const host = `const T = { accent: '#38BDF8', accent2: '#F59E0B', accentInk: '#04121F', ink: '#F8FAFC', paper: '#0B1220' };
+function getImage() { return null; }
+function initialsOf(v) { return String(v || '').slice(0, 2).toUpperCase(); }
+function hash01(n) { const v = Math.sin(n * 12.9898) * 43758.5453; return v - Math.floor(v); }
+function pointOf(v, fx, fy) { return v && typeof v === 'object' && Number.isFinite(v.x) && Number.isFinite(v.y) ? { x: v.x, y: v.y } : { x: fx, y: fy }; }
+`;
+  const warns = [];
+  const page = vm.createContext({ console: { log() {}, error() {}, warn: (...a) => warns.push(a.map(String).join(' ')) }, Math, Map, Set, Array, Object, String, Number, JSON, isFinite, isNaN, parseFloat, parseInt, Path2D, DOMMatrix, Uint8ClampedArray });
+  vm.runInContext(host + all + '\n;globalThis.__page = { ids: Array.from(new Set([].concat(RENDERED_IDS, EXTRA_COMPONENT_IDS, SW_SCENE_IDS))), draw: drawSharedComponents };', page);
+  const { ids, draw } = page.__page;
+  MockCtx.prototype.getTransform = function () { return new DOMMatrix(); };
+  const paramSets = [
+    {},
+    { text: 'Hello world again', title: 'Title', subtitle: 'Sub', value: 42, label: 'L', items: [{ label: 'a', value: 3 }, { label: 'b', value: 7 }] },
+    { position: { x: 0.2, y: 0.8 }, color: '#FF0000', size: 0, width: 0, height: 0, value: -5, max: 0, from: 0 },
+    { text: '', items: [], position: 'bad', size: 'x', value: 'abc', from: 'abc', max: 'abc' }
+  ];
+  const words = [{ id: 'w1', text: 'hello', start: 0, end: 1 }, { id: 'w2', text: 'world', start: 1, end: 2 }];
+  const failedIds = new Set();
+  for (const [W, H] of [[1080, 1920], [1920, 1080]]) for (const id of ids) for (const [k, params] of paramSets.entries()) for (const t of [0, 0.05, 1.3, 3]) {
+    if (failedIds.has(id)) continue;
+    const c = new MockCtx();
+    bad.length = 0; warns.length = 0;
+    try { draw(c, W, H, t, [{ id: 'c1', componentId: id, start: 0, end: 3, params: JSON.parse(JSON.stringify(params)) }], { words }); }
+    catch (err) { warns.push(String(err)); }
+    const why = warns[0] || bad[0] || (c.depth ? 'save() left open' : '');
+    if (why) { failedIds.add(id); check(`catalog: ${id} draws cleanly (params ${k}, ${W}x${H}, t ${t})`, false, why.slice(0, 200)); }
+  }
+  check('catalog: every id was drawn', ids.length > 500, ids.length);
+  // animate out: sink moves down, rise moves up
+  for (const [out, down] of [['sink', true], ['rise', false]]) {
+    const c = new MockCtx(), ys = [];
+    c.translate = (x, y) => ys.push(y);
+    draw(c, 1080, 1920, 2.9, [{ id: 'c1', componentId: 'circleShape', start: 0, end: 3, params: { animate: { out } } }], {});
+    check(`animate out ${out} moves ${down ? 'down' : 'up'}`, ys.length && (down ? ys[0] > 960 : ys[0] < 960), ys.join(', '));
   }
 }
 

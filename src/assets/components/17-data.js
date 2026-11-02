@@ -195,10 +195,8 @@ function p3Data(ctx, W, H, el, prog, id, p, GA, col, acc) {
     }
 
   } else if (id === 'dataTrafficLights') {
-    const states = [0.8, 0.4, 0.65];
     for (let i = 0; i < 3; i++) {
       const gx = x + (i - 1) * sz * 2.4;
-      const on = ecHash(i + 2) > 0.4;
       ecPanel(ctx, gx - sz * 0.6, y - sz * 2.4, sz * 1.2, sz * 4.8, sz * 0.5, 'rgba(255,255,255,0.08)', border(), 1);
       ['#F87171', '#FBBF24', '#34D399'].forEach((c, k) => {
         ecDot(ctx, gx, y - sz * 1.5 + k * sz * 1.5, sz * 0.28, k === i ? c : 'rgba(255,255,255,0.14)');

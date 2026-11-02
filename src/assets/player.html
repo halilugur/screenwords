@@ -259,7 +259,7 @@ const T = Object.assign(
   rs.setProperty('--vid-accent-ink', T.accentInk);
 }
 const $ = s => document.querySelector(s);
-const stageBox = $('#stage-box'), stage = $('#stage'), zoomer = $('#zoomer');
+const stageBox = $('#stage-box');
 
 /* Sizing and aspect ratio */
 const pWidth = D.width || 1080, pHeight = D.height || 1920;
@@ -751,8 +751,7 @@ function draw() {
     if (tp.titleColor || tp.color) h2.style.color = tp.titleColor || tp.color;
     if (tp.subtitleColor) p.style.color = tp.subtitleColor;
     // shrink-to-fit: no title may spill past the stage edges
-    const stageBoxEl = document.querySelector('#stage-box');
-    for (let i = 0; i < 24 && h2.scrollWidth > stageBoxEl.clientWidth - 28; i++) {
+    for (let i = 0; i < 24 && h2.scrollWidth > stageBox.clientWidth - 28; i++) {
       h2.style.fontSize = (parseFloat(getComputedStyle(h2).fontSize) * 0.9) + 'px';
     }
   } else {
