@@ -520,7 +520,9 @@ function swToonCharacter(ctx, opts, styleName) {
   const part = name => (P && P[name] && typeof P[name] === 'object' ? P[name] : null);
   const tokensFront = {
     skin, skinShade: skinSh, hair: hairC, hairLight: swShade(hairC, 0.18), shirt, shirtDark: swShade(shirt, -0.2),
-    jacket, jacketDark: swShade(jacket, -0.25), pants, pantsDark: swShade(pants, -0.2), shoe, accent, ink, eye: eyeColor
+    jacket, jacketDark: swShade(jacket, -0.25), pants, pantsDark: swShade(pants, -0.2), shoe, accent, ink, eye: eyeColor,
+    hat: opts.hatColor || '#F5F0E6', hatDark: swShade(opts.hatColor || '#F5F0E6', -0.2),
+    leather: opts.shoeColor || '#6D4C41', leatherDark: swShade(opts.shoeColor || '#6D4C41', -0.25)
   };
   const tokensBack = {};
   for (const key in tokensFront) tokensBack[key] = swShade(tokensFront[key], -0.09);
@@ -583,20 +585,22 @@ function swToonCharacter(ctx, opts, styleName) {
   /* crouch (0..1): knees bend outward and the hips drop, to reach the
      floor (picking something up). */
   const crouch = seated ? 0 : ecClamp(ecN(opts.crouch, 0), 0, 1);
+  /* stoop (elders): the chest and head carried a little forward */
+  const stoop = ecClamp(ecN(opts.stoop, 0), 0, 1);
   const crouchDrop = crouch * (170 - 8 - S.hipY) / 2 * 1.0;
   const hipX = m.shift, hipY = S.hipY + m.bob + seatDrop + crouchDrop;
   const tiltHip = m.shift * 0.012;
   /* crouching also bends the back: the chest and head lean over the knees */
-  const shY = S.sh + m.bob + seatDrop + crouchDrop * 1.25 - breathe * 0.8 - shrug;
+  const shY = S.sh + m.bob + seatDrop + crouchDrop * 1.25 + stoop * 4 - breathe * 0.8 - shrug;
   const shW = S.shW * k, hipW = S.hipW * k;
-  const chestX = hipX * 0.35 + crouch * 16;
+  const chestX = hipX * 0.35 + crouch * 16 + stoop * 6;
   /* The shoulder joints sit under the deltoids at the outer edge of the
      shoulders; the ribcage below is narrower, so hanging arms run beside
      the body, not over it. */
   const SR = { x: chestX + shW - 5, y: shY + 8 - tiltHip * 20 }, SL = { x: chestX - shW + 5, y: shY + 8 + tiltHip * 20 };
   const HR = { x: hipX + hipW * 0.55, y: hipY - tiltHip * 18 }, HL = { x: hipX - hipW * 0.55, y: hipY + tiltHip * 18 };
   const [hrx, hry] = S.head;
-  const headC = { x: chestX + 1, y: shY - S.headGap - hry * (styleName === 'cartoon' ? 0.92 : 0.96) + breathe * 0.3 };
+  const headC = { x: chestX + 1 + stoop * 5, y: shY - S.headGap - hry * (styleName === 'cartoon' ? 0.92 : 0.96) + breathe * 0.3 };
   const armL = S.arm[0] + S.arm[1];
 
   /* Emotion */
@@ -957,6 +961,7 @@ function swToonCharacter(ctx, opts, styleName) {
       swToonFace(ctx, S, styleName, { rx: hrx, ry: hry, ht, gx, gy, emo, vis, blink, skin, ink, eyeColor, browColor: swMix(hairC, ink, 0.3) });
     }
     if (part('hairFront')) drawPart(part('hairFront'), headA, headB);
+    if (part('headwear')) drawPart(part('headwear'), headA, headB);
   }
   if (!headPart) {
   if (S.ears) {
@@ -1125,6 +1130,20 @@ function swCastResolve(opts) {
   for (const key in opts) if (opts[key] !== undefined) out[key] = opts[key];
   return out;
 }
+/* age: 'child' (smaller, with a larger head for the body) or 'elder'
+   (greying unless a hairColor is given, a slight stoop). */
+function swAge(opts) {
+  if (!opts || !opts.age) return opts;
+  const age = String(opts.age).toLowerCase();
+  if (age === 'child') {
+    return Object.assign({}, opts, { scale: ecN(opts.scale, 1) * 0.68, rig: Object.assign({ head: [35, 38] }, opts.rig || {}) });
+  }
+  if (age === 'elder') {
+    return Object.assign({ hairColor: '#C8C6C2' }, opts, { stoop: ecN(opts.stoop, 1) });
+  }
+  return opts;
+}
+
 /* In a conversation each word carries its speaker; a character only lip-
    syncs and gestures on its own words. The speaker id defaults to the cast
    name, so turns written for 'ada' drive cast member 'ada'. */
@@ -1152,7 +1171,7 @@ SWDraw.speakerAt = swSpeakerAt;
 (() => {
   const detailed = SWDraw.character;
   SWDraw.character = (ctx, opts) => {
-    opts = swCastResolve(opts);
+    opts = swAge(swCastResolve(opts));
     /* A kit member: the kit's illustrated parts under the flat skeleton. */
     if (opts && opts.kit && !opts.parts && typeof swKitParts === 'function') {
       opts = Object.assign({}, opts, { parts: swKitParts(opts), style: opts.style || 'flat' });

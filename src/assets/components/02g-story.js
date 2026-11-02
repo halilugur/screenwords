@@ -217,6 +217,57 @@ function swStoryEffects(ctx, list, layer, time, a, b, lines, words, W, H) {
   }
 }
 
+/* Extras: people who fill a scene without lines — some standing about,
+   some walking through — each with a look drawn from a seed, a little
+   behind and smaller than the cast. crowd: { count, walkers (0..1 of
+   them), outfits, hats, colors, scale, seed }. */
+const SW_CROWD_SKIN = ['#F2C4A2', '#E8B48F', '#D9A27A', '#C68642', '#A86B45', '#8D5A3B', '#6B4226'];
+const SW_CROWD_HAIR = ['#1A1110', '#2B2233', '#3B2416', '#5A3A22', '#7A3B1E', '#C8C6C2'];
+const SW_CROWD_CLOTH = ['#2E4A8B', '#2F6B4F', '#7A2E2E', '#5B3A29', '#8E6E3B', '#4B4E7A', '#7A6A4F', '#2A6F77', '#8E3B5A', '#B5653A'];
+function swStoryCrowd(ctx, crowd, people, time, W, H, floorY, s, words, heads, speaking) {
+  if (!crowd || typeof crowd !== 'object') return;
+  const n = Math.max(0, Math.min(24, Math.round(ecN(crowd.count, 6))));
+  const rnd = swFxRand(ecN(crowd.seed, 17));
+  const outfits = Array.isArray(crowd.outfits) && crowd.outfits.length ? crowd.outfits : ['tshirt', 'hoodie', 'blazer', 'dress'];
+  const hats = Array.isArray(crowd.hats) && crowd.hats.length ? crowd.hats : ['none'];
+  const cloth = Array.isArray(crowd.colors) && crowd.colors.length ? crowd.colors : SW_CROWD_CLOTH;
+  const walkers = ecClamp(ecN(crowd.walkers, 0.3), 0, 1);
+  const ks = s * ecN(crowd.scale, 0.84), depth = Math.min(W, H) * ecN(crowd.depth, 0.035);
+  const list = [];
+  for (let i = 0; i < n; i++) {
+    const outfit = outfits[Math.floor(rnd() * outfits.length)];
+    const female = outfit === 'dress' || rnd() < 0.4;
+    const look = {
+      kit: 'editorial', outfit,
+      hair: female ? ['long', 'bun', 'bob', 'hijab'][Math.floor(rnd() * 4)] : ['short', 'curly', 'bald'][Math.floor(rnd() * 3)],
+      beard: !female && rnd() < 0.45 ? (rnd() < 0.3 ? 'long' : 'full') : 'none',
+      hat: female ? 'none' : String(hats[Math.floor(rnd() * hats.length)]),
+      skinColor: SW_CROWD_SKIN[Math.floor(rnd() * SW_CROWD_SKIN.length)],
+      hairColor: SW_CROWD_HAIR[Math.floor(rnd() * SW_CROWD_HAIR.length)],
+      jacketColor: cloth[Math.floor(rnd() * cloth.length)], shirtColor: cloth[Math.floor(rnd() * cloth.length)],
+      accentColor: cloth[Math.floor(rnd() * cloth.length)], hatColor: rnd() < 0.6 ? '#F3EEE2' : cloth[Math.floor(rnd() * cloth.length)],
+      age: rnd() < 0.15 ? 'elder' : rnd() < 0.1 ? 'child' : 'adult'
+    };
+    const walking = rnd() < walkers;
+    const x0 = (i + 0.5 + (rnd() - 0.5) * 0.6) / n * W, dir = rnd() < 0.5 ? -1 : 1, pace = (200 + rnd() * 80) * ks;
+    const span = W * 1.3;
+    const x = walking ? ((x0 + dir * pace * time) % span + span) % span - W * 0.15 : x0;
+    list.push({ look, walking, x, dir, pace, row: rnd() });
+  }
+  list.sort((p, q) => p.row - q.row);
+  for (const e of list) {
+    const k = ks * (0.94 + 0.06 * e.row), yFeet = floorY - depth * (1 - e.row * 0.5);
+    SWDraw.character(ctx, Object.assign({}, e.look, {
+      W, H, time, localTime: time, x: e.x, y: yFeet - 170 * k, scale: k,
+      facing: e.walking ? e.dir : (speaking && heads[speaking] ? (heads[speaking].x >= e.x ? 1 : -1) : (e.x < W / 2 ? 1 : -1)),
+      walkAmount: e.walking ? 1 : 0, vx: e.walking ? e.dir * e.pace : 0,
+      pose: e.walking ? 'walk' : ['idle', 'idle', 'hold', 'think'][Math.floor(e.row * 4)],
+      lookAt: !e.walking && speaking && heads[speaking] ? heads[speaking] : undefined,
+      speaking: false, gestures: false
+    }));
+  }
+}
+
 /* A small round café table with a cup, standing on the floor at x. */
 function swStoryTable(ctx, x, floorY, s, night) {
   const top = floorY - 128 * s;
@@ -322,6 +373,7 @@ function swStory(ctx, opts) {
   /* People, back to front by x so overlaps read left to right. */
   const order = people.slice().sort((p, q) => pos[p.cast].x - pos[q.cast].x);
   swStoryEffects(ctx, sc.effects, 'back', time, a, b, lines, words, W, H);
+  swStoryCrowd(ctx, sc.crowd, people, time, W, H, floorY, s, words, heads, speaking);
   const hugHands = [];
   /* Things on the floor, and things falling to it. */
   for (const it of items) {

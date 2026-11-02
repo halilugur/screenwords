@@ -14,7 +14,7 @@ const SW_KIT_EDITORIAL = {"head":{"pivot":[0,33],"tip":[0,-33],"eyesAt":[1,-2],"
 const SW_KIT_BLUSH = [{"d":"M-20 9 a5.5 3.2 0 1 0 11 0 a5.5 3.2 0 1 0 -11 0 Z","fill":"#F06C82","opacity":0.28},{"d":"M11 9 a5.5 3.2 0 1 0 11 0 a5.5 3.2 0 1 0 -11 0 Z","fill":"#F06C82","opacity":0.28}];
 /* Hair as back (behind the head) and front (over it) layers in head space. */
 const SW_KIT_HAIR = {"bob":{"back":[{"d":"M-35 -6 C-37 -33 -19 -46 1 -45 C24 -44 38 -31 35 -6 C34 8 36 20 33 29 C28 34 20 33 17 27 L-18 27 C-22 33 -31 34 -36 29 C-38 19 -34 8 -35 -6 Z","fill":"$hair"}],"front":[{"d":"M-32 -4 C-34 -31 -15 -43 3 -41 C23 -40 34 -28 32 -6 C27 -14 19 -21 9 -24 C2 -17 -10 -13 -23 -13 C-27 -11 -30 -8 -32 -4 Z","fill":"$hair"},{"d":"M-15 -35 C-5 -39 9 -38 18 -33","stroke":"$hairLight","lineWidth":3,"lineCap":"round","opacity":0.6}]},"short":{"back":null,"front":[{"d":"M-30 -2 C-32 -28 -16 -40 2 -39 C21 -38 32 -27 30 -4 C28 -13 23 -19 16 -22 C8 -25 -4 -25 -13 -21 C-21 -17 -26 -10 -30 -2 Z","fill":"$hair"},{"d":"M-30 -4 L-28.5 8 L-26 8 L-27 -4 Z M30 -4 L28.5 8 L26 8 L27 -4 Z","fill":"$hair"},{"d":"M-12 -33 C-2 -36 10 -35 18 -30","stroke":"$hairLight","lineWidth":2.6,"lineCap":"round","opacity":0.5}]},"long":{"back":[{"d":"M-35 -6 C-37 -33 -19 -46 1 -45 C24 -44 38 -31 35 -6 C35 20 39 48 33 62 C26 66 18 64 14 58 L-14 58 C-18 64 -27 66 -34 62 C-39 48 -35 20 -35 -6 Z","fill":"$hair"},{"d":"M-28 20 C-30 36 -28 50 -30 58 M28 20 C30 36 28 50 30 58","stroke":"$hairLight","lineWidth":2,"lineCap":"round","opacity":0.45}],"front":[{"d":"M-32 -2 C-34 -30 -16 -43 2 -42 C22 -41 34 -28 32 -4 C28 -20 17 -31 3 -33 C-11 -31 -24 -21 -32 -2 Z","fill":"$hair"},{"d":"M3 -33 C2 -37 2 -40 3 -42","stroke":"$skinShade","lineWidth":1.4,"opacity":0.6},{"d":"M-20 -34 C-10 -39 12 -39 22 -33","stroke":"$hairLight","lineWidth":2.6,"lineCap":"round","opacity":0.5}]},"curly":{"back":[{"d":"M-36 -6 C-40 -42 40 -42 36 -6 C36 4 31 8 28 2 L-28 2 C-31 8 -36 4 -36 -6 Z","fill":"$hair"}],"front":[{"d":"M-30 -4 C-30 -22 -16 -30 0 -30 C16 -30 30 -22 30 -4 C24 -14 12 -19 0 -19 C-12 -19 -24 -14 -30 -4 Z","fill":"$hair"},{"d":"M-35 -10 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0 Z M-33 -22 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 Z M-23.5 -31 a9.5 9.5 0 1 0 19.0 0 a9.5 9.5 0 1 0 -19.0 0 Z M-11 -35 a10 10 0 1 0 20 0 a10 10 0 1 0 -20 0 Z M2.5 -32 a9.5 9.5 0 1 0 19.0 0 a9.5 9.5 0 1 0 -19.0 0 Z M14 -23 a9 9 0 1 0 18 0 a9 9 0 1 0 -18 0 Z M20 -11 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0 Z M-14 -24 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0 Z M0 -25 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0 Z","fill":"$hair"}]},"bun":{"back":[{"d":"M-11 -46 a11 10 0 1 0 22 0 a11 10 0 1 0 -22 0 Z","fill":"$hair"}],"front":[{"d":"M-31 -2 C-33 -30 -15 -42 2 -41 C21 -40 33 -29 31 -4 C27 -18 17 -27 3 -29 C-11 -27 -24 -18 -31 -2 Z","fill":"$hair"},{"d":"M-14 -35 C-4 -39 10 -38 18 -33","stroke":"$hairLight","lineWidth":2.6,"lineCap":"round","opacity":0.5}]},"bald":{"back":null,"front":null}};
-const SW_KIT_BEARDS = { full: {"d":"M-27 4 C-26 20 -15 31 0 34 C15 31 26 20 27 4 C24 12 18 15 12 14 C6 13 3 11 0 11 C-3 11 -6 13 -12 14 C-18 15 -24 12 -27 4 Z","fill":"$hair"} };
+const SW_KIT_BEARDS = { long: {"d":"M-27 4 C-28 28 -17 58 0 66 C17 58 28 28 27 4 C24 12 18 15 12 14 C6 13 3 11 0 11 C-3 11 -6 13 -12 14 C-18 15 -24 12 -27 4 Z M-8 30 Q-6 46 -4 56 M6 32 Q6 46 4 58","fill":"$hair"}, full: {"d":"M-27 4 C-26 20 -15 31 0 34 C15 31 26 20 27 4 C24 12 18 15 12 14 C6 13 3 11 0 11 C-3 11 -6 13 -12 14 C-18 15 -24 12 -27 4 Z","fill":"$hair"} };
 
 /* A headscarf: draped behind the shoulders and framing the face (the face
    opening is cut with evenodd), worn in the member's hairColor. */
@@ -66,7 +66,75 @@ const SW_KIT_OUTFITS = {
       { d: 'M-6 -3 Q-5.8 20 -4.6 50 M6 -3 Q5.8 20 4.6 50', stroke: '$skinShade', lineWidth: 1.2, opacity: 0.8 }]
   }
 };
-const SW_KIT_OUTFIT_OF = { blazer: 'blazer', jacket: 'blazer', suit: 'blazer', hoodie: 'hoodie', tshirt: 'tshirt', 't-shirt': 'tshirt', tee: 'tshirt' };
+/* Long garments, worn over the legs (the torso part runs past the hip to
+   just above the ankles): a robe open over an inner garment with a sash
+   and bell sleeves (in jacketColor over shirtColor, sash in accentColor),
+   and a long dress fitted to the waist with a flared skirt (shirtColor). */
+const SW_KIT_ROBE_SLEEVES = {
+  upperArm: [
+    { d: 'M-11 -1 Q-12 26 -10 52 L10 52 Q12 26 11 -1 Q0 -10 -11 -1 Z', fill: '$jacket' },
+    { d: 'M-10 52 a10 10 0 1 0 20 0 a10 10 0 1 0 -20 0 Z', fill: '$jacket' },
+    { d: 'M-11 -1 Q-12 26 -10 52 M11 -1 Q12 26 10 52', stroke: '$jacketDark', lineWidth: 1.7 }],
+  forearm: [
+    { d: 'M-4.6 38 L4.6 38 L4.4 50 L-4.4 50 Z', fill: '$skin' },
+    { d: 'M-9 -3 Q-11 20 -15 41 L15 41 Q11 20 9 -3 Z', fill: '$jacket' },
+    { d: 'M-9 -3 Q-11 20 -15 41 M9 -3 Q11 20 15 41', stroke: '$jacketDark', lineWidth: 1.7 },
+    { d: 'M-15 37 L15 37 L15 42 L-15 42 Z', fill: '$accent' }]
+};
+SW_KIT_OUTFITS.robe = {
+  torso: [
+    { d: 'M-31 10 Q-31 0 -19 0 L19 0 Q31 0 31 10 Q31 19 26 24 Q30 120 38 212 L-38 212 Q-30 120 -26 24 Q-31 19 -31 10 Z', fill: '$jacket' },
+    { d: 'M-7 0 L7 0 L10 212 L-10 212 Z', fill: '$shirt' },
+    { d: 'M-7 0 L10 212 M7 0 L-10 212', stroke: '$jacketDark', lineWidth: 1.6, opacity: 0.6 },
+    { d: 'M20 26 Q27 110 36 210 L28 210 Q22 110 18 30 Z', fill: '#020617', opacity: 0.14 },
+    { d: 'M-27 66 L27 66 L27.6 78 L-27.6 78 Z', fill: '$accent' },
+    { d: 'M12 78 L19 112 L9 112 Z', fill: '$accent' },
+    { d: 'M-38 204 L38 204 L38 212 L-38 212 Z', fill: '$jacketDark' },
+    { d: 'M-10 0 L0 15 L10 0', stroke: '$jacketDark', lineWidth: 2.2 }],
+  upperArm: SW_KIT_ROBE_SLEEVES.upperArm,
+  forearm: SW_KIT_ROBE_SLEEVES.forearm
+};
+SW_KIT_OUTFITS.dress = {
+  torso: [
+    { d: 'M-30 10 Q-30 0 -18 0 L18 0 Q30 0 30 10 Q30 19 24 24 Q22 60 21 74 Q34 140 44 200 L-44 200 Q-34 140 -21 74 Q-22 60 -24 24 Q-30 19 -30 10 Z', fill: '$shirt' },
+    { d: 'M-10 -1 Q0 12 10 -1 Z', fill: '$skinShade' },
+    { d: 'M-21.5 70 L21.5 70 L21.5 78 L-21.5 78 Z', fill: '$shirtDark' },
+    { d: 'M-10 90 Q-16 140 -22 196 M8 90 Q12 140 16 196 M24 100 Q32 150 38 196', stroke: '$shirtDark', lineWidth: 1.6, opacity: 0.55 },
+    { d: 'M18 26 Q22 60 21 74 Q30 140 40 198 L33 198 Q24 140 17 76 Q18 50 15 30 Z', fill: '#020617', opacity: 0.12 }],
+  upperArm: SW_KIT_OUTFITS.hoodie.upperArm,
+  forearm: SW_KIT_OUTFITS.hoodie.forearm
+};
+const SW_KIT_OUTFIT_OF = { blazer: 'blazer', jacket: 'blazer', suit: 'blazer', hoodie: 'hoodie', tshirt: 'tshirt', 't-shirt': 'tshirt', tee: 'tshirt', robe: 'robe', kaftan: 'robe', caftan: 'robe', dress: 'dress', gown: 'dress' };
+
+/* Footwear other than the sneaker, in foot space (ankle → toe along +x):
+   a leather boot and a slipper with a curled toe, in $leather. */
+const SW_KIT_SHOES = {
+  boot: [
+    { d: 'M-8 -22 L6 -22 L7 -4 Q20 -3 23 3 Q24 8.5 17 8.5 L-9.5 8.5 Q-11 -6 -8 -22 Z', fill: '$leather' },
+    { d: 'M-10 5.6 L22.5 5.6 Q24 6 23.5 8.5 L-9.5 8.5 Z', fill: '#020617', opacity: 0.3 },
+    { d: 'M-8 -16 L6 -16', stroke: '$leatherDark', lineWidth: 1.6 }],
+  slipper: [
+    { d: 'M-8 -4 Q2 -8 12 -4 Q22 -2 27 -6 Q28 0 22 6 Q18 8.5 12 8.5 L-9 8.5 Q-11 2 -8 -4 Z', fill: '$leather' },
+    { d: 'M-9 5.8 L20 5.8 Q16 8.5 12 8.5 L-9 8.5 Z', fill: '#020617', opacity: 0.25 }]
+};
+
+/* Headwear, in head space over the hair (hatColor): a wrapped turban with
+   a jewel, a fez with a tassel, a skullcap. */
+const SW_KIT_HATS = {
+  turban: [
+    { d: 'M-34 -12 C-38 -40 -24 -66 0 -66 C24 -66 38 -40 34 -12 C24 -19 12 -22 0 -22 C-12 -22 -24 -19 -34 -12 Z', fill: '$hat' },
+    { d: 'M14 -60 C28 -52 36 -36 34 -12 C30 -15 26 -17 22 -18 C26 -32 22 -48 14 -60 Z', fill: '$hatDark', opacity: 0.55 },
+    { d: 'M-32 -24 C-16 -34 16 -36 32 -24 M-30 -38 C-14 -48 14 -50 30 -38 M-22 -52 C-8 -58 10 -58 22 -52', stroke: '$hatDark', lineWidth: 2, lineCap: 'round' },
+    { d: 'M2 -31 a4.5 4.5 0 1 0 9 0 a4.5 4.5 0 1 0 -9 0 Z', fill: '$accent' }],
+  fez: [
+    { d: 'M-20 -28 L-16 -62 L16 -62 L20 -28 C10 -32 -10 -32 -20 -28 Z', fill: '$hat' },
+    { d: 'M-20 -28 L-19.4 -34 C-10 -38 10 -38 19.4 -34 L20 -28 C10 -32 -10 -32 -20 -28 Z', fill: '$hatDark' },
+    { d: 'M0 -62 Q14 -60 15 -46', stroke: '$ink', lineWidth: 2, lineCap: 'round' },
+    { d: 'M12 -48 L18 -48 L16 -38 L13 -38 Z', fill: '$ink' }],
+  cap: [
+    { d: 'M-28 -24 C-27 -44 27 -44 28 -24 C16 -29 -16 -29 -28 -24 Z', fill: '$hat' },
+    { d: 'M-18 -34 h3 M-6 -37 h3 M6 -37 h3 M18 -34 h3', stroke: '$hatDark', lineWidth: 2.2, lineCap: 'round' }]
+};
 
 /* Glasses, drawn at the head's eye anchor. */
 const SW_KIT_GLASSES = {
@@ -86,7 +154,11 @@ function swKitParts(opts) {
   const blush = opts.blush !== false && !beard;
   const outfit = SW_KIT_OUTFIT_OF[String(opts.outfit || 'blazer').toLowerCase()] || 'blazer';
   const glasses = !!opts.glasses;
-  const key = [hair, beard, blush, outfit, glasses].join('|');
+  const hat = SW_KIT_HATS[String(opts.hat || '').toLowerCase()] ? String(opts.hat).toLowerCase() : '';
+  /* long garments default to slippers, everything else to sneakers */
+  const shoesAsked = String(opts.shoes || '').toLowerCase();
+  const shoes = SW_KIT_SHOES[shoesAsked] ? shoesAsked : shoesAsked === 'sneaker' ? '' : (outfit === 'robe' || outfit === 'dress') ? 'slipper' : '';
+  const key = [hair, beard, blush, outfit, glasses, hat, shoes].join('|');
   if (swKitCache.has(key)) return swKitCache.get(key);
   const parts = Object.assign({}, SW_KIT_EDITORIAL);
   if (outfit !== 'blazer') {
@@ -96,6 +168,8 @@ function swKitParts(opts) {
     parts.forearm = Object.assign({}, SW_KIT_EDITORIAL.forearm, { layers: O.forearm });
   }
   if (glasses) parts.glasses = SW_KIT_GLASSES;
+  if (hat) parts.headwear = { pivot: [0, 33], tip: [0, -33], layers: SW_KIT_HATS[hat] };
+  if (shoes) parts.foot = Object.assign({}, SW_KIT_EDITORIAL.foot, { layers: SW_KIT_SHOES[shoes] });
   const head = Object.assign({}, SW_KIT_EDITORIAL.head);
   head.layers = SW_KIT_EDITORIAL.head.layers.slice(0, 4).concat(blush ? SW_KIT_BLUSH : [], SW_KIT_EDITORIAL.head.layers.slice(4), beard ? [SW_KIT_BEARDS[beard]] : []);
   parts.head = head;
@@ -105,4 +179,4 @@ function swKitParts(opts) {
   swKitCache.set(key, parts);
   return parts;
 }
-SWDraw.kits = { editorial: { hair: Object.keys(SW_KIT_HAIR), beard: ['none'].concat(Object.keys(SW_KIT_BEARDS)), outfit: ['blazer', 'hoodie', 'tshirt'], glasses: [false, true] } };
+SWDraw.kits = { editorial: { hair: Object.keys(SW_KIT_HAIR), beard: ['none'].concat(Object.keys(SW_KIT_BEARDS)), outfit: ['blazer', 'hoodie', 'tshirt', 'robe', 'dress'], shoes: ['sneaker', 'boot', 'slipper'], hat: ['none'].concat(Object.keys(SW_KIT_HATS)), age: ['child', 'adult', 'elder'], glasses: [false, true] } };

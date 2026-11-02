@@ -349,6 +349,15 @@ function check(name, ok, detail) {
       if (c.depth !== 0 || !(r && r.style === 'flat' && Number.isFinite(r.fingertip.x))) check(`kit ${hair}/${beard}/${pose}`, false, `depth ${c.depth}`);
     } catch (e) { check(`kit ${hair}/${beard}/${pose} throws`, false, String(e)); }
   }
+  for (const outfit of kit.outfit) for (const hat of kit.hat) for (const age of kit.age) for (const shoes of kit.shoes) {
+    const c = new MockCtx();
+    try {
+      const r = SWDraw.character(c, { kit: 'editorial', outfit, hat, age, shoes, beard: 'long', pose: 'walk', time: 0.7, W: 1080, H: 1920 });
+      if (c.depth !== 0 || !Number.isFinite(r.fingertip.x)) check(`kit ${outfit}/${hat}/${age}/${shoes}`, false, c.depth);
+    } catch (e) { check(`kit ${outfit}/${hat}/${age}/${shoes} throws`, false, String(e)); }
+  }
+  const adult = SWDraw.character(new MockCtx(), { kit: 'editorial', time: 1 }), child = SWDraw.character(new MockCtx(), { kit: 'editorial', age: 'child', time: 1 });
+  check('a child is shorter', child.head.y > adult.head.y + 50, `${adult.head.y} ${child.head.y}`);
   check('the kit draws finite geometry', bad.length === before, bad.slice(before, before + 3).join('; '));
 
   const W2 = (speaker, text, start, end) => ({ speaker, text, start, end });
@@ -475,6 +484,9 @@ function check(name, ok, detail) {
   const b2 = swStoryBlocking(scenes[1], tl[1].a, 16, W, sc, lines, words);
   check('story: an exit walks off before the scene ends', swStoryAt(b2.plans.ada, 15.95).x > W, swStoryAt(b2.plans.ada, 15.95).x);
   const castTable = { ada: { kit: 'editorial' }, kaan: { kit: 'editorial', hair: 'short', outfit: 'hoodie' } };
+  scenes[0].crowd = { count: 7, walkers: 0.5, outfits: ['robe', 'dress'], hats: ['turban', 'fez', 'cap', 'none'] };
+  scenes[0].effects = [{ type: 'rays', start: 0, duration: 4, x: 0.3, y: 0 }, { type: 'ink', line: 1, x: 0.5, y: 0.6, size: 0.3, layer: 'back' }];
+  scenes[0].bubbles = true;
   const before = bad.length;
   for (const [Wd, Hd] of [[1080, 1920], [1920, 1080]]) for (let t = 0; t < 16; t += 0.37) {
     const c = new MockCtx();
