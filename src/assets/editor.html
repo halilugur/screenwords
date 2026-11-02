@@ -282,13 +282,42 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
 .rows li { display: grid; grid-template-columns: 5rem 7rem minmax(0, 1fr) auto; gap: var(--space-xs); padding: var(--space-2xs) 0; border-bottom: 1px solid var(--rule); font-size: var(--text-xs); align-items: baseline; cursor: pointer; }
 .rows li:hover { background: var(--paper-2); }
 .rows li > .t { color: var(--muted); font-variant-numeric: tabular-nums; }
-.rows.chapters li { grid-template-columns: 4.5rem minmax(0, 1fr); }
+.rows.chapters li { grid-template-columns: 4.5rem minmax(0, 1fr) auto; align-items: center; }
 .rows.chapters li > .ttl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rows li.on { background: var(--paper-3); }
 .rows li.on .t { color: var(--accent); }
 .chap-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); margin-top: var(--space-md); }
 .chap-head .note { margin: 0; }
 .note { color: var(--muted); font-size: var(--text-xs); margin-top: var(--space-xs); }
+
+/* Component Catalog & Theme Studio & Selected Item Editor */
+.comp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2xs); max-height: 220px; overflow-y: auto; border: 1px solid var(--rule); padding: var(--space-2xs); background: var(--paper-2); margin-bottom: var(--space-sm); }
+.comp-chip { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: var(--space-2xs) var(--space-xs); border: 1px solid var(--rule); background: var(--paper-3); color: var(--ink); font-size: var(--text-xs); text-align: left; cursor: pointer; border-radius: 2px; overflow: hidden; }
+.comp-chip:hover, .comp-chip.active { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 16%, var(--paper-3)); }
+.comp-chip b { font-weight: 500; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.comp-chip span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.theme-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2xs); margin-bottom: var(--space-xs); }
+.theme-pill { display: flex; align-items: center; gap: 5px; padding: 4px 6px; font-size: var(--text-xs); border: 1px solid var(--rule-2); background: var(--paper-2); color: var(--ink); cursor: pointer; border-radius: 2px; text-transform: capitalize; }
+.theme-pill:hover, .theme-pill[aria-pressed="true"] { border-color: var(--accent); background: var(--paper-3); }
+.swatch-dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.25); flex-shrink: 0; }
+.color-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2xs); margin-bottom: var(--space-xs); }
+.color-cell { display: flex; flex-direction: column; gap: 2px; font-size: 10px; color: var(--muted); }
+.color-cell input[type="color"] { width: 100%; height: 24px; padding: 0; border: 1px solid var(--rule-2); background: var(--paper-2); cursor: pointer; }
+.sel-box { border: 1px solid var(--rule-2); background: var(--paper-2); padding: var(--space-sm); margin-bottom: var(--space-md); }
+.sel-box h4 { margin: 0 0 var(--space-xs) 0; font-size: var(--text-xs); color: var(--accent); display: flex; justify-content: space-between; align-items: center; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2xs); margin-bottom: var(--space-2xs); }
+.mini-btn { padding: 1px 6px; font-size: 11px; line-height: 1.3; border: 1px solid var(--rule-2); background: var(--paper-3); color: var(--ink-2); cursor: pointer; border-radius: 2px; }
+.mini-btn:hover { border-color: var(--accent); color: var(--ink); }
+.mini-btn.on { border-color: var(--accent); color: var(--accent); }
+.mini-btn.danger:hover { border-color: var(--color-error); color: var(--color-error); }
+.lane-head-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.lane-actions { display: flex; gap: 3px; }
+.lane-row.is-hidden .lane { opacity: 0.38; }
+.item.selected { outline: 2px solid #fff; outline-offset: -1px; z-index: 8; box-shadow: 0 0 0 2px var(--accent); }
+.item.disabled-item { opacity: 0.45; border-style: dashed; }
+.hist-list { list-style: none; margin: 0; padding: 0; font-size: var(--text-xs); max-height: 110px; overflow-y: auto; border: 1px solid var(--rule); background: var(--paper-2); }
+.hist-list li { display: flex; justify-content: space-between; padding: 4px 8px; border-bottom: 1px solid var(--rule); color: var(--ink-2); }
+.hist-list li:last-child { border-bottom: none; }
 
 /* Bottom Multi-Track Timeline */
 .timeline-area { height: 320px; display: flex; flex-direction: column; background: var(--paper-2); flex-shrink: 0; overflow: hidden; }
@@ -345,13 +374,19 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
     </svg>
     <span>screen<span class="wm-accent">words</span></span>
   </div>
-  <div class="proj-info"><b id="pname">Story</b></div>
+  <div class="proj-info">
+    <b id="pname">Story</b>
+    <span class="badge num" id="revbadge" title="Document revision">rev 1</span>
+  </div>
 
   <div class="header-actions">
+    <button class="btn" type="button" id="undobtn" disabled title="Undo last edit (⌘Z / Ctrl+Z)">Undo</button>
+    <button class="btn" type="button" id="redobtn" disabled title="Redo edit (⇧⌘Z / Ctrl+Y)">Redo</button>
     <a class="btn" href="/preview" target="_blank" rel="noopener">
       <span>Open preview</span>
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2v2h6.59L2 12.59 3.41 14 12 5.41V12h2V2z"/></svg>
     </a>
+    <button class="btn" type="button" id="exporthtmlbtn" title="Write self-contained HTML player next to project">Export HTML</button>
     <a class="btn" id="dlbtn" hidden download>Download</a>
     <button class="btn primary" type="button" id="exportbtn" title="Render the final MP4 (takes a few minutes)">Render MP4</button>
   </div>
@@ -366,6 +401,9 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
     <nav class="tabs" aria-label="Production panels">
       <button class="tab" type="button" data-tab="inspector" aria-selected="true" aria-label="Inspector" title="Inspector">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+      </button>
+      <button class="tab" type="button" data-tab="components" aria-label="Components" title="Component Studio (600 built-in)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><path d="M17 13v8M13 17h8"/></svg>
       </button>
       <button class="tab" type="button" data-tab="transcript" aria-label="Transcript" title="Transcript">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
@@ -393,6 +431,42 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
         <h2 class="panel-title">Project Overview</h2>
         <div class="strip" id="strip" aria-label="Project figures"></div>
 
+        <!-- Selected Timeline Component Editor -->
+        <div class="sel-box" id="sel-editor" hidden>
+          <h4>
+            <span id="sel-label">Component</span>
+            <label style="font-weight:400;color:var(--ink-2);display:inline-flex;align-items:center;gap:4px">
+              <input type="checkbox" id="sel-enabled" checked> Enabled
+            </label>
+          </h4>
+          <div class="grid-2">
+            <div class="field"><label for="sel-start">Start (s)</label><input type="number" id="sel-start" step="0.1" min="0"></div>
+            <div class="field"><label for="sel-end">End (s)</label><input type="number" id="sel-end" step="0.1" min="0.1"></div>
+          </div>
+          <div class="grid-2">
+            <div class="field"><label for="sel-px">Pos X (0–1)</label><input type="number" id="sel-px" step="0.05" min="0" max="1" placeholder="0.5"></div>
+            <div class="field"><label for="sel-py">Pos Y (0–1)</label><input type="number" id="sel-py" step="0.05" min="0" max="1" placeholder="0.5"></div>
+          </div>
+          <div class="field">
+            <label for="sel-title">Title / Text</label>
+            <input type="text" id="sel-title" placeholder="Headline or primary text">
+          </div>
+          <div class="field">
+            <label for="sel-subtitle">Subtitle / Label</label>
+            <input type="text" id="sel-subtitle" placeholder="Secondary line or label">
+          </div>
+          <div class="grid-2">
+            <div class="field"><label for="sel-color">Accent Hex</label><input type="text" id="sel-color" placeholder="#38BDF8"></div>
+            <div class="field"><label for="sel-z">Z-Index</label><input type="number" id="sel-z" step="1" value="0"></div>
+          </div>
+          <div class="actions" style="margin-bottom:0;margin-top:var(--space-xs)">
+            <button class="btn primary" type="button" id="sel-save">Save Changes</button>
+            <button class="btn" type="button" id="sel-dup" title="Duplicate 1s later">Duplicate</button>
+            <button class="btn" type="button" id="sel-del" title="Remove component (Delete)">Delete</button>
+          </div>
+          <p class="hint" id="sel-out" role="status"></p>
+        </div>
+
         <h3 class="panel-title">Frame</h3>
         <div class="ratio-row" id="ratio-row">
           <button class="btn" type="button" data-ratio="1080x1920">9:16</button>
@@ -414,6 +488,19 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
         </div>
         <p class="hint" id="frame-out" role="status"></p>
 
+        <h3 class="panel-title" style="margin-top:var(--space-md)">Visual Theme Studio</h3>
+        <div class="theme-grid" id="theme-presets" aria-label="Theme presets"></div>
+        <div class="color-row">
+          <label class="color-cell">Paper<input type="color" id="theme-paper" value="#04070f"></label>
+          <label class="color-cell">Ink<input type="color" id="theme-ink" value="#f4f8ff"></label>
+          <label class="color-cell">Accent<input type="color" id="theme-accent" value="#38bdf8"></label>
+          <label class="color-cell">Accent 2<input type="color" id="theme-accent2" value="#ffd54a"></label>
+        </div>
+        <div class="actions" style="margin-bottom:var(--space-xs)">
+          <button class="btn primary" type="button" id="theme-apply">Apply Theme Colors</button>
+        </div>
+        <p class="hint" id="theme-out" role="status"></p>
+
         <h3 class="panel-title" style="margin-top:var(--space-md)">Active at Playhead</h3>
         <div class="playhead-card">
           <h3>Current Selection</h3>
@@ -423,23 +510,89 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
           <div class="card-row"><span>Component</span><span id="insp-component">None</span></div>
           <div class="card-row"><span>Audio</span><span id="insp-audio">None</span></div>
         </div>
+
+        <h3 class="panel-title" style="margin-top:var(--space-md)">Edit History</h3>
+        <ul class="hist-list" id="history-list"><li class="muted">No edits yet in this session.</li></ul>
       </section>
 
-      <!-- 2. Transcript Panel -->
+      <!-- 2. Component Studio Panel -->
+      <section data-panel="components">
+        <h2 class="panel-title">
+          <span>Component Studio</span>
+          <span class="badge num" id="comp-count">600</span>
+        </h2>
+        <div class="grid-2">
+          <div class="field">
+            <label for="comp-search">Search</label>
+            <input type="text" id="comp-search" placeholder="e.g. badge, chart, neon">
+          </div>
+          <div class="field">
+            <label for="comp-cat">Category</label>
+            <select id="comp-cat">
+              <option value="">All categories</option>
+              <option value="title">Title</option>
+              <option value="caption">Caption</option>
+              <option value="graphic">Graphic</option>
+              <option value="chart">Chart &amp; Data</option>
+              <option value="ui">UI Callout</option>
+              <option value="background">Background</option>
+              <option value="effect">Effect &amp; Motion</option>
+              <option value="transition">Transition</option>
+            </select>
+          </div>
+        </div>
+        <div class="comp-grid" id="comp-grid" role="listbox" aria-label="Component catalog"></div>
+        <form id="comp-add-form" class="sel-box" style="margin-bottom:0">
+          <h4><span>Add Component to Timeline</span></h4>
+          <div class="field">
+            <label for="comp-id">Component ID</label>
+            <input type="text" id="comp-id" value="titleCard" required>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="comp-start">Start (s)</label>
+              <input type="number" id="comp-start" step="0.1" min="0" value="0.0">
+            </div>
+            <div class="field">
+              <label for="comp-dur">Duration (s)</label>
+              <input type="number" id="comp-dur" step="0.1" min="0.2" value="3.0">
+            </div>
+          </div>
+          <div class="field">
+            <label for="comp-title">Title / Text</label>
+            <input type="text" id="comp-title" placeholder="Optional headline, quote or value">
+          </div>
+          <div class="field">
+            <label for="comp-subtitle">Subtitle / Label</label>
+            <input type="text" id="comp-subtitle" placeholder="Optional subtitle or unit">
+          </div>
+          <div class="field">
+            <label for="comp-color">Accent Color</label>
+            <input type="text" id="comp-color" placeholder="#38BDF8 (optional hex)">
+          </div>
+          <div class="actions" style="margin-bottom:0;margin-top:var(--space-xs)">
+            <button class="btn" type="button" id="comp-at-ph">Use Playhead Time</button>
+            <button class="btn primary" type="submit" id="comp-add-btn">Add Component</button>
+          </div>
+          <p class="hint" id="comp-out" role="status"></p>
+        </form>
+      </section>
+
+      <!-- 3. Transcript Panel -->
       <section data-panel="transcript">
         <h2 class="panel-title">Transcript</h2>
         <div class="field">
           <label for="wfilter">Filter words</label>
-          <input type="text" id="wfilter" placeholder="search words">
+          <input type="text" id="wfilter" placeholder="search words (double-click a row to edit)">
         </div>
         <div class="region" id="words">
           <div class="skel"></div><div class="skel"></div>
         </div>
       </section>
 
-      <!-- 3. Find Panel -->
+      <!-- 4. Find Panel -->
       <section data-panel="find">
-        <h2 class="panel-title">Find & Sweeps</h2>
+        <h2 class="panel-title">Find &amp; Sweeps</h2>
         <form class="actions" id="findform">
           <div class="field">
             <label for="fq">Phrase</label>
@@ -454,16 +607,28 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
         <div class="region" id="findout"><p class="state">Search the transcript, or sweep numbers, fillers and pauses.</p></div>
       </section>
 
-      <!-- 4. Chapters Panel -->
+      <!-- 5. Chapters Panel -->
       <section data-panel="chapters">
         <h2 class="panel-title">
           <span>Chapters</span>
           <button class="btn" type="button" id="chrefresh">Refresh</button>
         </h2>
+        <form class="actions" id="chapform">
+          <div class="field" style="flex:1">
+            <label for="chap-title">Title</label>
+            <input type="text" id="chap-title" placeholder="Chapter title" required>
+          </div>
+          <div class="field">
+            <label for="chap-time">Start (s)</label>
+            <input type="number" id="chap-time" step="0.1" min="0" value="0.0" style="width:5rem">
+          </div>
+          <button class="btn" type="button" id="chap-at-ph" title="Set start to playhead">@ Playhead</button>
+          <button class="btn primary" type="submit">Add</button>
+        </form>
         <div class="region" id="chapout"><div class="skel"></div></div>
       </section>
 
-      <!-- 5. Subtitles Panel -->
+      <!-- 6. Subtitles Panel -->
       <section data-panel="subtitles">
         <h2 class="panel-title">Subtitles</h2>
         <div class="actions">
@@ -478,7 +643,7 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
         <div class="output"><pre id="srtout">Subtitles render from the transcript.</pre></div>
       </section>
 
-      <!-- 6. Voice Panel -->
+      <!-- 7. Voice Panel -->
       <section data-panel="voice">
         <h2 class="panel-title">Voice</h2>
         <div class="script-field">
@@ -527,15 +692,16 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
         <p class="hint" id="ttsout" role="status"></p>
       </section>
 
-      <!-- 7. Dry-Run Cut Panel -->
+      <!-- 8. Ripple Cut Panel -->
       <section data-panel="cut">
-        <h2 class="panel-title">Dry-run cut</h2>
+        <h2 class="panel-title">Ripple Cut</h2>
         <form class="actions" id="cutform">
           <div class="field"><label for="cs">Start, seconds</label><input type="number" id="cs" step="0.1" value="2.0"></div>
           <div class="field"><label for="ce">End, seconds</label><input type="number" id="ce" step="0.1" value="2.7"></div>
-          <button class="btn primary" type="submit">Preview the cut</button>
+          <button class="btn" type="submit">Preview the cut</button>
+          <button class="btn primary" type="button" id="cutapply">Apply Ripple Cut</button>
         </form>
-        <div class="region" id="cutout"><p class="state">A cut preview runs on a copy of the document in memory. The project file never changes from here.</p></div>
+        <div class="region" id="cutout"><p class="state">Preview a cut in memory or apply a real ripple cut (undoable with Undo).</p></div>
       </section>
     </div>
   </aside>
@@ -626,8 +792,6 @@ let totalDuration = 10.0;
 let playheadT = 0;
 let isPlaying = false;
 let isMuted = false;
-let spokenWordIdx = -1;
-let audioCtx = null;
 let rafId = null;
 let lastFrameTime = performance.now();
 
@@ -636,14 +800,30 @@ let timelineData = null;
    (each with params) the stage renderers read, while `items` stays the flat
    lane list. Kept in sync by loadTimeline / loadWords. */
 let doc = { tracks: [], words: [], analysis: { scenes: [] } };
+let flatComponents = [];
+let phLines = [];
+let wordRowMap = new Map();
+let lastActiveWordId = null;
+let selectedItemId = null;
 let allWords = [];
 let chaptersData = [];
 let sceneClips = [];
+let loadedRev = -1;
 
 async function getJSON(url) {
   const r = await fetch(url);
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
+}
+async function postJSON(url, body) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {})
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok || d.error) throw new Error(d.message || d.error || ('HTTP ' + r.status));
+  return d;
 }
 function fail(el, err) {
   el.innerHTML = '<p class="state error">That did not load: ' + esc(err.message) + '. <button class="btn" type="button" data-retry>Retry</button></p>';
@@ -666,10 +846,6 @@ selectTab((location.hash || '#inspector').slice(1), false);
 const stageCanvas = $('#stage-canvas');
 const stageCtx = stageCanvas.getContext('2d');
 const stageFrame = $('#stage-frame');
-const particles = [];
-for (let i = 0; i < 28; i++) {
-  particles.push({ x: Math.random(), y: Math.random(), r: 1 + Math.random() * 2, speed: 0.02 + Math.random() * 0.04, alpha: 0.15 + Math.random() * 0.35 });
-}
 
 function resizeStageCanvas() {
   const rect = stageFrame.getBoundingClientRect();
@@ -677,51 +853,6 @@ function resizeStageCanvas() {
   stageCanvas.height = rect.height * (window.devicePixelRatio || 1);
 }
 addEventListener('resize', fitStage);
-
-/* Audio Web API */
-function initAudio() {
-  if (!audioCtx) {
-    const AudioCtor = window.AudioContext || window.webkitAudioContext;
-    if (AudioCtor) audioCtx = new AudioCtor();
-  }
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-}
-function playVoiceTone(freq, dur) {
-  if (isMuted || !audioCtx) return;
-  try {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + dur);
-  } catch (e) {}
-}
-let speechOk = null;
-function speechReady() {
-  if (speechOk !== null) return speechOk;
-  try { speechOk = 'speechSynthesis' in window && typeof speechSynthesis.speaking === 'boolean'; }
-  catch (e) { speechOk = false; }
-  return speechOk;
-}
-function speakWord(text) {
-  if (isMuted) return;
-  if (speechReady()) {
-    try {
-      if (!speechSynthesis.speaking) {
-        const u = new SpeechSynthesisUtterance(text);
-        u.rate = 1.3; u.volume = 0.45;
-        speechSynthesis.speak(u);
-        return;
-      }
-    } catch (e) { speechOk = false; }
-  }
-  playVoiceTone(280 + (text.length * 15), 0.12);
-}
 
 /* Narration audio (the asset synthesize_speech wrote) */
 const editorAudio = new Audio();
@@ -732,6 +863,11 @@ editorAudio.addEventListener('error', () => {
   hasRealAudio = false;
   console.warn('Editor audio failed to load from /api/audio');
 });
+function reloadAudio() {
+  hasRealAudio = true;
+  editorAudio.src = '/api/audio?r=' + projectRev;
+  editorAudio.load();
+}
 
 /* Playback Control */
 function setPlaying(p) {
@@ -754,7 +890,6 @@ function setPlaying(p) {
 function seekTo(time) {
   playheadT = Math.max(0, Math.min(totalDuration, time));
   if (hasRealAudio) editorAudio.currentTime = playheadT;
-  spokenWordIdx = -1;
   updateStageAndPlayhead();
 }
 
@@ -804,10 +939,10 @@ function updateStageAndPlayhead() {
     ph.style.display = 'block';
     ph.style.left = (prog * 100) + '%';
   }
-  document.querySelectorAll('.ph-line').forEach(el => {
-    el.style.display = 'block';
-    el.style.left = (prog * 100) + '%';
-  });
+  for (let i = 0; i < phLines.length; i++) {
+    phLines[i].style.display = 'block';
+    phLines[i].style.left = (prog * 100) + '%';
+  }
 
   const link = $('#playlink');
   if (link) {
@@ -829,8 +964,7 @@ function updateStageAndPlayhead() {
   }
 
   const kin = $('#editor-kinetic');
-  const compsList = (doc && doc.tracks) ? doc.tracks.flatMap(t => t.components || []) : [];
-  const kinC = compsList.find(c => c.componentId === 'kineticWords' || c.componentId === 'captions');
+  const kinC = flatComponents.find(c => c.componentId === 'kineticWords' || c.componentId === 'captions');
   const kinP = (kinC && kinC.params) || {};
   const activeColor = kinP.activeColor || T.accent;
   const emphasisColor = kinP.emphasisColor || kinP.activeColor || T.accent;
@@ -866,7 +1000,7 @@ function updateStageAndPlayhead() {
 
   let activeWord = null;
   if (activePhrase) {
-    const spans = [...kin.children];
+    const spans = kin.children;
     activePhrase.words.forEach((w, idx) => {
       const el = spans[idx];
       if (el) {
@@ -890,10 +1024,17 @@ function updateStageAndPlayhead() {
     });
   }
 
-  /* Active word in table */
-  document.querySelectorAll('#words tr[data-word-id]').forEach(tr => {
-    tr.classList.toggle('active-word', activeWord && tr.dataset.wordId === activeWord.id);
-  });
+  /* Active word in table — O(1) lookup, only touch DOM when active word changes */
+  const nextWordId = activeWord ? activeWord.id : null;
+  if (nextWordId !== lastActiveWordId) {
+    if (lastActiveWordId && wordRowMap.has(lastActiveWordId)) {
+      wordRowMap.get(lastActiveWordId).classList.remove('active-word');
+    }
+    if (nextWordId && wordRowMap.has(nextWordId)) {
+      wordRowMap.get(nextWordId).classList.add('active-word');
+    }
+    lastActiveWordId = nextWordId;
+  }
 
   /* VU meter pulsing */
   const vuTopL = $('#vu-top-l'), vuTopR = $('#vu-top-r');
@@ -911,12 +1052,11 @@ function updateStageAndPlayhead() {
 
   /* Active Components: a foreground card beats the backdrop it sits on. */
   let activeComp = null;
-  if (timelineData) {
+  if (flatComponents.length) {
     const live = [];
-    for (const tr of timelineData.tracks) {
-      for (const it of tr.items) {
-        if (it.kind === 'component' && t >= it.start && t <= it.end) live.push(it);
-      }
+    for (let i = 0; i < flatComponents.length; i++) {
+      const it = flatComponents[i];
+      if (t >= it.start && t <= it.end) live.push(it);
     }
     const foreground = live.filter(it => !/background/i.test(it.componentId || ''));
     activeComp = (foreground.length ? foreground : live)[0] || null;
@@ -928,11 +1068,19 @@ function updateStageAndPlayhead() {
   if (activeComp && activeComp.componentId === 'titleCard') {
     tEl.classList.add('show');
     const tp = activeComp.params || {};
+    const tPos = tp.position || activeComp.position;
+    if (tPos && typeof tPos.y === 'number') {
+      tEl.style.top = (tPos.y * 100) + '%';
+      tEl.style.transform = 'translateY(-50%)';
+    } else {
+      tEl.style.top = '';
+      tEl.style.transform = '';
+    }
     const h2 = tEl.querySelector('h2'), p = tEl.querySelector('p');
     h2.textContent = tp.title || $('#pname').textContent;
     p.textContent = tp.subtitle || '';
     if (tp.fontFamily) { h2.style.fontFamily = tp.fontFamily; p.style.fontFamily = tp.fontFamily; }
-    if (tp.titleColor) h2.style.color = tp.titleColor;
+    if (tp.titleColor || tp.color) h2.style.color = tp.titleColor || tp.color;
     if (tp.subtitleColor) p.style.color = tp.subtitleColor;
   } else {
     tEl.classList.remove('show');
@@ -943,13 +1091,21 @@ function updateStageAndPlayhead() {
   if (activeComp && activeComp.componentId === 'numberCounter') {
     cEl.classList.add('show');
     const cp = activeComp.params || {}, span = Math.max(0.01, activeComp.end - activeComp.start);
+    const cPos = cp.position || activeComp.position;
+    if (cPos && typeof cPos.y === 'number') {
+      cEl.style.top = (cPos.y * 100) + '%';
+      cEl.style.transform = 'translateY(-50%)';
+    } else {
+      cEl.style.top = '';
+      cEl.style.transform = '';
+    }
     const prog = Math.min(1, (t - activeComp.start) / span * 1.15);
     const v = Math.round((cp.from ?? 0) + ((cp.to ?? 100) - (cp.from ?? 0)) * prog);
     const b = cEl.querySelector('b'), i = cEl.querySelector('i');
     b.textContent = (cp.prefix || '') + v.toLocaleString() + (cp.suffix || '');
     i.textContent = cp.label || '';
     if (cp.fontFamily) { b.style.fontFamily = cp.fontFamily; i.style.fontFamily = cp.fontFamily; }
-    if (cp.numberColor) b.style.color = cp.numberColor;
+    if (cp.numberColor || cp.color) b.style.color = cp.numberColor || cp.color;
     if (cp.labelColor) i.style.color = cp.labelColor;
   } else {
     cEl.classList.remove('show');
@@ -960,11 +1116,21 @@ function updateStageAndPlayhead() {
   if (activeComp && activeComp.componentId === 'lowerThird') {
     lowerEl.classList.add('show');
     const lp = activeComp.params || {};
+    const lPos = lp.position || activeComp.position;
+    if (lPos && typeof lPos.y === 'number') {
+      lowerEl.style.top = (lPos.y * 100) + '%';
+      lowerEl.style.bottom = 'auto';
+      lowerEl.style.transform = 'translateY(-50%)';
+    } else {
+      lowerEl.style.top = '';
+      lowerEl.style.bottom = '';
+      lowerEl.style.transform = '';
+    }
     const bar = lowerEl.querySelector('.bar'), sub = lowerEl.querySelector('.sub');
     bar.textContent = lp.title || '';
     sub.textContent = lp.subtitle || '';
     if (lp.fontFamily) { bar.style.fontFamily = lp.fontFamily; sub.style.fontFamily = lp.fontFamily; }
-    if (lp.barColor) bar.style.background = lp.barColor;
+    if (lp.barColor || lp.color) bar.style.background = lp.barColor || lp.color;
     if (lp.textColor) bar.style.color = lp.textColor;
     if (lp.subColor) sub.style.color = lp.subColor;
     if (lp.subBg) sub.style.background = lp.subBg;
@@ -1011,6 +1177,7 @@ function updateStageAndPlayhead() {
   let activeAudio = null;
   if (timelineData) {
     for (const tr of timelineData.tracks) {
+      if (tr.isMuted) continue;
       for (const it of tr.items) {
         if (it.kind === 'audio' && t >= it.start && t <= it.end) {
           activeAudio = it; break;
@@ -1021,13 +1188,6 @@ function updateStageAndPlayhead() {
   }
   $('#insp-audio').textContent = activeAudio ? (activeAudio.role || activeAudio.id) : 'None';
 }
-
-const scenePalettes = [
-  { name: 'The Observatory', c1: 'oklch(14% 0.05 264)', c2: 'oklch(22% 0.06 250)', wave: 'oklch(24% 0.06 240 / 0.35)', part: 'oklch(80% 0.11 230)' },
-  { name: 'The Stellar Core', c1: 'oklch(16% 0.06 65)', c2: 'oklch(26% 0.09 75)', wave: 'oklch(28% 0.09 70 / 0.35)', part: 'oklch(85% 0.14 85)' },
-  { name: 'Celestial Frequencies', c1: 'oklch(15% 0.06 160)', c2: 'oklch(24% 0.09 150)', wave: 'oklch(26% 0.09 155 / 0.35)', part: 'oklch(82% 0.12 150)' },
-  { name: 'The Awakening', c1: 'oklch(15% 0.06 295)', c2: 'oklch(25% 0.09 310)', wave: 'oklch(27% 0.09 305 / 0.35)', part: 'oklch(84% 0.13 315)' }
-];
 
 /* Universal Editor Visual Engine */
 const editorParticles = [];
@@ -1096,10 +1256,10 @@ function renderStageScene(time) {
   stageCtx.save();
   stageCtx.scale(w / W, h / H);
 
-  const comps = (doc && doc.tracks) ? doc.tracks.flatMap(t => t.components || []) : [];
+  const comps = flatComponents;
 
   /* Background: a background component overrides the procedural scene style. */
-  const scenesTrack = (doc.tracks || []).find(t => t.role === 'scenes' || t.kind === 'scenes');
+  const scenesTrack = (doc.tracks || []).find(t => !t.isHidden && (t.role === 'scenes' || t.kind === 'scenes'));
   const trackScenes = scenesTrack
     ? (scenesTrack.items || []).filter(i => i.kind === 'clip' || /background/i.test(i.componentId || ''))
     : [];
@@ -1111,31 +1271,10 @@ function renderStageScene(time) {
   sharedSceneTransforms(stageCtx, comps, W, H, time);
   sharedBackground(stageCtx, W, H, time, scene, editorParticles);
 
-  /* Custom code overlays: project-local scripts, executed against the stage. */
-  const activeCodeOverlays = comps.filter(c =>
-    (c.componentId && (c.componentId.startsWith('codeOverlay_') || (c.params && c.params.code))) &&
-    time >= c.start && time <= c.end);
-  activeCodeOverlays.forEach(c => {
-    if (!c._compiled && c.params && c.params.code) {
-      try {
-        c._compiled = new Function('ctx', 'W', 'H', 'time', 'localTime', 'params', 'words', c.params.code);
-      } catch (err) {
-        c._compiled = null;
-      }
-    }
-    if (c._compiled) {
-      stageCtx.save();
-      try {
-        c._compiled(stageCtx, W, H, time, Math.max(0, time - c.start), c.params || {}, doc.words || []);
-      } catch (err) {}
-      stageCtx.restore();
-    }
-  });
-
-  /* Every parametric component, from the shared library. The editor has no
-     DOM caption overlays, so the canvas fallbacks paint those six ids here. */
+  /* Every parametric component + custom code overlays, from the shared library.
+     The editor has no DOM caption overlays, so the canvas fallbacks paint those six ids here. */
   drawSharedComponents(stageCtx, W, H, time, comps, {
-    skip: DRAW_FALLBACK_IDS, words: doc.words || [], docName: doc.name
+    skip: DRAW_FALLBACK_IDS, words: doc.words || [], docName: doc.name, cast: doc.cast || {}
   });
 
   /* Effects and overlay transitions. */
@@ -1167,6 +1306,9 @@ async function loadSummary() {
   netOk = true; $('#banner').style.display = 'none';
   $('#pname').textContent = s.name;
   projectRev = s.revision;
+  $('#revbadge').textContent = 'rev ' + s.revision;
+  $('#undobtn').disabled = !s.canUndo;
+  $('#redobtn').disabled = !s.canRedo;
 
   const w = s.width || 1080, h = s.height || 1920;
   stageAspect = w / h;
@@ -1190,6 +1332,7 @@ async function loadSummary() {
     ['revision', s.revision], ['resolution', s.width + ' x ' + s.height], ['framerate', s.fps + ' fps'],
     ['words', s.words], ['assets', s.assets], ['undo', s.canUndo ? 'yes' : 'none']
   ].map(x => '<div class="stat"><b class="num">' + esc(x[1]) + '</b><span>' + x[0] + '</span></div>').join('');
+  return s;
 }
 
 /* The stage look follows the project's theme (document data set via MCP). */
@@ -1204,6 +1347,7 @@ function applyVideoTheme(theme) {
   rs.setProperty('--vid-accent-hot', T.accent);
   rs.setProperty('--vid-gold', T.accent2);
   rs.setProperty('--vid-accent-ink', T.accentInk);
+  syncThemeInputs(T);
 }
 
 /* Load Timeline */
@@ -1216,15 +1360,22 @@ async function loadTimeline() {
   /* The stage renderers read components (with params) off doc.tracks; keep
      that view derived from the same timeline response. */
   doc = {
+    name: $('#pname').textContent,
     tracks: (d.tracks || []).map(tr => Object.assign({}, tr, {
-      components: (tr.items || []).filter(i => i.kind === 'component')
+      components: (tr.items || []).filter(i => i.kind === 'component' && i.isEnabled !== false)
     })),
     words: allWords,
-    analysis: d.analysis || { scenes: [] }
+    analysis: d.analysis || { scenes: [] },
+    cast: d.cast || {}
   };
 
+  flatComponents = [];
   sceneClips = [];
-  (d.tracks || []).forEach(tr => {
+  (doc.tracks || []).forEach(tr => {
+    if (tr.isHidden) return;
+    (tr.components || []).forEach(c => {
+      if (c.isEnabled !== false) flatComponents.push(c);
+    });
     (tr.items || []).forEach(it => {
       if (it.kind === 'clip') {
         sceneClips.push({ start: it.start, end: it.end, name: it.name || tr.name });
@@ -1258,12 +1409,21 @@ async function loadTimeline() {
       /* On a long timeline a short item is only a few pixels wide: a clipped
          first letter reads as noise, so keep the text for the tooltip only. */
       const visibleLabel = w >= 2.2 ? esc(label) : '';
-      return '<span class="item ' + i.kind + '" style="left:' + left + '%;width:' + w +
-        '%;top:' + (4 + i.row * 32) + 'px;height:28px;bottom:auto" data-time="' + i.start + '" title="' +
+      const selCls = i.id === selectedItemId ? ' selected' : '';
+      const disStyle = i.isEnabled === false ? ';opacity:0.45' : '';
+      return '<span class="item ' + i.kind + selCls + '" style="left:' + left + '%;width:' + w +
+        '%;top:' + (4 + i.row * 32) + 'px;height:28px;bottom:auto' + disStyle + '" data-id="' + esc(i.id) + '" data-kind="' + esc(i.kind) + '" data-time="' + i.start + '" title="' +
         esc(i.id + ' ' + label + ' ' + fmt(i.start) + ' to ' + fmt(i.end)) + '">' +
         visibleLabel + '</span>';
     }).join('');
-    return '<div class="lane-row"><div class="lane-head"><b>' + esc(tr.name) + '</b><span>' + esc(tr.role || tr.kind) + '</span></div><div class="lane" style="height:' + laneH + 'px">' + items + '<span class="ph-line"></span></div></div>';
+    const hideCls = tr.isHidden ? ' on' : '';
+    const muteCls = tr.isMuted ? ' on' : '';
+    const isAudioTrack = tr.kind === 'audio' || tr.role === 'voice' || tr.role === 'music' || tr.role === 'sfx';
+    const trackCtrls = '<div class="track-ctrls">' +
+      '<button type="button" class="track-toggle' + hideCls + '" data-track-hide="' + esc(tr.id) + '" data-hidden="' + (tr.isHidden ? '1' : '0') + '" title="Toggle track visibility">' + (tr.isHidden ? 'Hidden' : 'Hide') + '</button>' +
+      (isAudioTrack ? '<button type="button" class="track-toggle' + muteCls + '" data-track-mute="' + esc(tr.id) + '" data-muted="' + (tr.isMuted ? '1' : '0') + '" title="Toggle track mute">' + (tr.isMuted ? 'Muted' : 'Mute') + '</button>' : '') +
+      '</div>';
+    return '<div class="lane-row"><div class="lane-head"><b>' + esc(tr.name) + '</b><span>' + esc(tr.role || tr.kind) + '</span>' + trackCtrls + '</div><div class="lane" style="height:' + laneH + 'px' + (tr.isHidden ? ';opacity:0.4' : '') + '">' + items + '<span class="ph-line"></span></div></div>';
   }).join('');
 
   /* The 2.5 s refresh rebuilds this DOM; keep the user's scroll position. */
@@ -1271,9 +1431,11 @@ async function loadTimeline() {
   const keepScroll = scroller ? [scroller.scrollTop, scroller.scrollLeft] : [0, 0];
   $('#timeline').innerHTML = '<div class="lanes"><div class="ruler-row"><div class="ruler-spacer">Tracks</div><div class="ruler" id="ruler" title="Click to seek playhead">' + ruler + '</div></div>' + rows + '</div>';
   if (scroller) { scroller.scrollTop = keepScroll[0]; scroller.scrollLeft = keepScroll[1]; }
+  phLines = [...document.querySelectorAll('.ph-line')];
   applyTlZoom();
 
   bindTimelineSeek(dur);
+  syncSelectedInspector();
 }
 
 /* Timeline zoom: 1 = fit the window width (default); zooming widens the
@@ -1395,6 +1557,38 @@ function layOutItems(items) {
   return { items: placed, rows: Math.max(1, laneEnds.length) };
 }
 
+function findItemById(id) {
+  if (!timelineData || !id) return null;
+  for (const tr of timelineData.tracks) {
+    for (const it of tr.items) {
+      if (it.id === id) return it;
+    }
+  }
+  return null;
+}
+
+function syncSelectedInspector() {
+  const editor = $('#sel-editor');
+  const it = findItemById(selectedItemId);
+  if (!it || it.kind !== 'component') {
+    editor.hidden = true;
+    return;
+  }
+  editor.hidden = false;
+  $('#sel-label').textContent = (it.componentId || 'component') + ' (' + it.id + ')';
+  $('#sel-enabled').checked = it.isEnabled !== false;
+  $('#sel-start').value = Number(it.start || 0).toFixed(2);
+  $('#sel-end').value = Number(it.end || 0).toFixed(2);
+  const pos = it.position || { x: 0.5, y: 0.5 };
+  $('#sel-px').value = Number(pos.x ?? 0.5).toFixed(2);
+  $('#sel-py').value = Number(pos.y ?? 0.5).toFixed(2);
+  const p = it.params || {};
+  $('#sel-title').value = p.title || p.text || p.label || '';
+  $('#sel-subtitle').value = p.subtitle || p.author || p.sub || '';
+  $('#sel-color').value = p.color || p.accentColor || p.titleColor || p.barColor || '';
+  $('#sel-z').value = it.zIndex ?? 0;
+}
+
 function bindTimelineSeek(dur) {
   const ruler = $('#ruler');
   const setPos = clientX => {
@@ -1403,7 +1597,6 @@ function bindTimelineSeek(dur) {
     seekTo(t);
   };
   ruler.addEventListener('pointerdown', e => {
-    initAudio();
     setPos(e.clientX);
     ruler.setPointerCapture(e.pointerId);
     const move = ev => setPos(ev.clientX);
@@ -1414,10 +1607,295 @@ function bindTimelineSeek(dur) {
   document.querySelectorAll('.item').forEach(el => {
     el.addEventListener('click', e => {
       e.stopPropagation();
+      selectedItemId = el.dataset.id || null;
+      document.querySelectorAll('.item.selected').forEach(x => x.classList.remove('selected'));
+      el.classList.add('selected');
       seekTo(parseFloat(el.dataset.time || '0'));
+      syncSelectedInspector();
+      if (el.dataset.kind === 'component') {
+        selectTab('inspector', false);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-track-hide]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const id = btn.dataset.trackHide;
+      const nextHidden = btn.dataset.hidden !== '1';
+      try {
+        await postJSON('/api/edit', {
+          tool: 'update_track',
+          arguments: { id: id, isHidden: nextHidden },
+          label: (nextHidden ? 'hide' : 'show') + ' track ' + id
+        });
+        await refresh(true);
+      } catch (err) {}
+    });
+  });
+
+  document.querySelectorAll('[data-track-mute]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const id = btn.dataset.trackMute;
+      const nextMuted = btn.dataset.muted !== '1';
+      try {
+        await postJSON('/api/edit', {
+          tool: 'update_track',
+          arguments: { id: id, isMuted: nextMuted },
+          label: (nextMuted ? 'mute' : 'unmute') + ' track ' + id
+        });
+        await refresh(true);
+        reloadAudio();
+      } catch (err) {}
     });
   });
 }
+
+/* Selected Component Inspector actions */
+$('#sel-save').addEventListener('click', async () => {
+  const it = findItemById(selectedItemId);
+  if (!it) return;
+  const start = parseFloat($('#sel-start').value);
+  const end = parseFloat($('#sel-end').value);
+  const px = parseFloat($('#sel-px').value);
+  const py = parseFloat($('#sel-py').value);
+  const zIndex = parseInt($('#sel-z').value || '0', 10);
+  const isEnabled = $('#sel-enabled').checked;
+  const params = Object.assign({}, it.params || {});
+  const ttl = $('#sel-title').value.trim();
+  const sub = $('#sel-subtitle').value.trim();
+  const col = $('#sel-color').value.trim();
+  if (ttl) { params.title = ttl; params.text = ttl; params.label = ttl; }
+  if (sub) { params.subtitle = sub; }
+  if (col) { params.color = col; params.accentColor = col; params.titleColor = col; }
+  try {
+    await postJSON('/api/edit', {
+      tool: 'update_component',
+      arguments: {
+        id: it.id,
+        isEnabled: isEnabled,
+        zIndex: zIndex,
+        timing: { start: start, end: Math.max(start + 0.1, end) },
+        position: { x: isFinite(px) ? px : 0.5, y: isFinite(py) ? py : 0.5 },
+        params: params
+      },
+      label: 'update ' + (it.componentId || it.id)
+    });
+    $('#sel-out').textContent = 'Saved ' + it.id;
+    await refresh(true);
+  } catch (err) {
+    $('#sel-out').textContent = 'Failed: ' + err.message;
+  }
+});
+
+$('#sel-dup').addEventListener('click', async () => {
+  const it = findItemById(selectedItemId);
+  if (!it) return;
+  const dur = Math.max(0.5, (it.end || 3) - (it.start || 0));
+  const nextStart = Math.min(Math.max(0, totalDuration - 0.2), (it.start || 0) + 1.0);
+  try {
+    const res = await postJSON('/api/edit', {
+      tool: 'add_component',
+      arguments: {
+        componentId: it.componentId || 'titleCard',
+        timing: { start: nextStart, end: nextStart + dur },
+        position: it.position || { x: 0.5, y: 0.5 },
+        zIndex: it.zIndex ?? 0,
+        params: it.params || {}
+      },
+      label: 'duplicate ' + (it.componentId || it.id)
+    });
+    if (res.result && res.result.id) selectedItemId = res.result.id;
+    $('#sel-out').textContent = 'Duplicated';
+    await refresh(true);
+  } catch (err) {
+    $('#sel-out').textContent = 'Failed: ' + err.message;
+  }
+});
+
+async function deleteSelectedComponent() {
+  const it = findItemById(selectedItemId);
+  if (!it || it.kind !== 'component') return;
+  try {
+    await postJSON('/api/edit', {
+      tool: 'remove_component',
+      arguments: { id: it.id },
+      label: 'remove ' + (it.componentId || it.id)
+    });
+    selectedItemId = null;
+    $('#sel-out').textContent = 'Deleted ' + it.id;
+    await refresh(true);
+  } catch (err) {
+    $('#sel-out').textContent = 'Failed: ' + err.message;
+  }
+}
+$('#sel-del').addEventListener('click', deleteSelectedComponent);
+
+/* Undo / Redo & History */
+async function triggerUndo() {
+  try {
+    await postJSON('/api/undo', {});
+    await refresh(true);
+  } catch (err) {}
+}
+async function triggerRedo() {
+  try {
+    await postJSON('/api/redo', {});
+    await refresh(true);
+  } catch (err) {}
+}
+$('#undobtn').addEventListener('click', triggerUndo);
+$('#redobtn').addEventListener('click', triggerRedo);
+
+async function loadHistory() {
+  try {
+    const h = await getJSON('/api/history');
+    const hist = h.history || h.undo || [];
+    const redo = h.redo || [];
+    const items = [];
+    hist.slice(0, 6).forEach(step => {
+      items.push('<li><span>' + esc(step.label) + '</span><span class="rev">r' + step.revision + '</span></li>');
+    });
+    redo.slice(0, 3).forEach(step => {
+      const lbl = typeof step === 'string' ? step : (step.label || 'step');
+      items.push('<li style="opacity:0.55"><span>↪ ' + esc(lbl) + '</span><span class="rev">redo</span></li>');
+    });
+    $('#history-list').innerHTML = items.length ? items.join('') : '<li><span>Initial project state</span><span class="rev">r' + projectRev + '</span></li>';
+  } catch (e) {}
+}
+
+/* Visual Theme Studio */
+let themesCatalog = [];
+function hex6(v, fallback) {
+  return /^#[0-9a-fA-F]{6}$/.test(String(v || '').trim()) ? String(v).trim() : fallback;
+}
+function syncThemeInputs(theme) {
+  if (!theme) return;
+  $('#theme-paper').value = hex6(theme.paper, '#04070F');
+  $('#theme-ink').value = hex6(theme.ink, '#F4F8FF');
+  $('#theme-accent').value = hex6(theme.accent, '#38BDF8');
+  $('#theme-accent2').value = hex6(theme.accent2, '#FFD54A');
+  document.querySelectorAll('#theme-presets .theme-pill').forEach(btn => {
+    const match = btn.dataset.accent && theme.accent && btn.dataset.accent.toLowerCase() === String(theme.accent).toLowerCase();
+    btn.classList.toggle('active', !!match);
+  });
+}
+async function loadThemes() {
+  try {
+    const d = await getJSON('/api/themes');
+    themesCatalog = d.presets || [];
+    if (d.current) syncThemeInputs(d.current);
+    $('#theme-presets').innerHTML = themesCatalog.map(p =>
+      '<button type="button" class="theme-pill" data-preset="' + esc(p.name) + '" data-accent="' + esc(p.accent) + '">' +
+      '<span class="swatches"><i style="background:' + esc(p.paper) + '"></i><i style="background:' + esc(p.accent) + '"></i><i style="background:' + esc(p.accent2) + '"></i></span>' +
+      '<span>' + esc(p.name) + '</span></button>'
+    ).join('');
+    document.querySelectorAll('#theme-presets .theme-pill').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          const res = await postJSON('/api/theme', { preset: btn.dataset.preset });
+          if (res.theme) applyVideoTheme(res.theme);
+          $('#theme-out').textContent = 'Applied preset "' + btn.dataset.preset + '" (rev ' + res.revision + ')';
+          await refresh(true);
+        } catch (err) {
+          $('#theme-out').textContent = 'Failed: ' + err.message;
+        }
+      });
+    });
+    syncThemeInputs(T);
+  } catch (e) {}
+}
+$('#theme-apply').addEventListener('click', async () => {
+  try {
+    const res = await postJSON('/api/theme', {
+      paper: $('#theme-paper').value,
+      ink: $('#theme-ink').value,
+      accent: $('#theme-accent').value,
+      accent2: $('#theme-accent2').value
+    });
+    if (res.theme) applyVideoTheme(res.theme);
+    $('#theme-out').textContent = 'Custom palette saved (rev ' + res.revision + ')';
+    await refresh(true);
+  } catch (err) {
+    $('#theme-out').textContent = 'Failed: ' + err.message;
+  }
+});
+
+/* Component Studio (600-component parametric browser + live insertion) */
+let catalogItems = [];
+let catalogCategories = [];
+function drawCatalog() {
+  const q = ($('#comp-search').value || '').trim().toLowerCase();
+  const cat = $('#comp-cat').value || '';
+  const filtered = catalogItems.filter(c => {
+    if (cat && c.category !== cat) return false;
+    if (q && !c.id.toLowerCase().includes(q) && !c.summary.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  $('#comp-count').textContent = filtered.length + ' / ' + catalogItems.length + ' components';
+  const shown = filtered.slice(0, 120);
+  const curId = $('#comp-id').value;
+  $('#comp-grid').innerHTML = shown.length ? shown.map(c =>
+    '<div class="comp-chip' + (c.id === curId ? ' selected' : '') + '" data-comp-id="' + esc(c.id) + '" title="' + esc(c.summary) + '">' +
+    '<b>' + esc(c.id) + '</b><span>' + esc(c.category) + ' · ' + esc(c.summary) + '</span></div>'
+  ).join('') : '<p class="state" style="grid-column:1/-1">No matching components.</p>';
+
+  document.querySelectorAll('#comp-grid .comp-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      $('#comp-id').value = chip.dataset.compId;
+      document.querySelectorAll('#comp-grid .comp-chip.selected').forEach(x => x.classList.remove('selected'));
+      chip.classList.add('selected');
+    });
+  });
+}
+async function loadCatalog() {
+  try {
+    const d = await getJSON('/api/catalog');
+    catalogItems = d.components || [];
+    catalogCategories = d.categories || [];
+    const sel = $('#comp-cat');
+    sel.innerHTML = '<option value="">All categories (' + catalogItems.length + ')</option>' +
+      catalogCategories.map(c => '<option value="' + esc(c.id) + '">' + esc(c.id) + ' (' + c.count + ')</option>').join('');
+    drawCatalog();
+  } catch (e) {}
+}
+$('#comp-search').addEventListener('input', drawCatalog);
+$('#comp-cat').addEventListener('change', drawCatalog);
+$('#comp-at-ph').addEventListener('click', () => {
+  $('#comp-start').value = playheadT.toFixed(1);
+});
+$('#comp-add-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const compId = ($('#comp-id').value || 'titleCard').trim();
+  const start = Math.max(0, parseFloat($('#comp-start').value || '0'));
+  const dur = Math.max(0.2, parseFloat($('#comp-dur').value || '3.5'));
+  const title = $('#comp-title').value.trim();
+  const subtitle = $('#comp-subtitle').value.trim();
+  const color = $('#comp-color').value.trim();
+  const params = {};
+  if (title) { params.title = title; params.text = title; params.label = title; }
+  if (subtitle) { params.subtitle = subtitle; params.sub = subtitle; }
+  if (color) { params.color = color; params.accentColor = color; params.titleColor = color; }
+  try {
+    const res = await postJSON('/api/edit', {
+      tool: 'add_component',
+      arguments: {
+        componentId: compId,
+        timing: { start: start, end: start + dur },
+        position: { x: 0.5, y: 0.5 },
+        params: params
+      },
+      label: 'add ' + compId
+    });
+    if (res.result && res.result.id) selectedItemId = res.result.id;
+    $('#comp-out').textContent = 'Added ' + compId + ' at ' + fmt(start) + '–' + fmt(start + dur);
+    seekTo(start);
+    await refresh(true);
+  } catch (err) {
+    $('#comp-out').textContent = 'Failed: ' + err.message;
+  }
+});
 
 /* Load Words */
 let phrases = [];
@@ -1478,16 +1956,34 @@ function drawWords(f) {
   f = f.toLowerCase();
   const rows = allWords.filter(w => !f || w.text.toLowerCase().includes(f));
   const body = rows.length ? rows.map(w =>
-    '<tr class="clickable" data-word-id="' + esc(w.id) + '" data-start="' + w.start + '"><td>' + esc(w.id) + '</td><td class="num">' + w.start.toFixed(3) + '</td><td class="num">' + w.end.toFixed(3) + '</td><td>' + esc(w.text) + '</td></tr>'
+    '<tr class="clickable" data-word-id="' + esc(w.id) + '" data-word-text="' + esc(w.text) + '" data-start="' + w.start + '" title="Click to seek · Double-click to edit word"><td>' + esc(w.id) + '</td><td class="num">' + w.start.toFixed(3) + '</td><td class="num">' + w.end.toFixed(3) + '</td><td>' + esc(w.text) + '</td></tr>'
   ).join('') : '';
 
   $('#words').innerHTML = rows.length
-    ? '<table id="wordtable"><thead><tr><th>Id</th><th>Start</th><th>End</th><th>Word</th></tr></thead><tbody>' + body + '</tbody></table>'
+    ? '<table id="wordtable"><thead><tr><th>Id</th><th>Start</th><th>End</th><th>Word (dbl-click edit)</th></tr></thead><tbody>' + body + '</tbody></table>'
     : '<p class="state">No words' + (f ? ' match "' + esc(f) + '"' : ' yet') + '. Author a transcript to give the story words.</p>';
 
+  wordRowMap.clear();
+  lastActiveWordId = null;
   document.querySelectorAll('#words tr.clickable').forEach(tr => {
+    wordRowMap.set(tr.dataset.wordId, tr);
     tr.addEventListener('click', () => {
       seekTo(parseFloat(tr.dataset.start || '0'));
+    });
+    tr.addEventListener('dblclick', async () => {
+      const wid = tr.dataset.wordId;
+      const oldTxt = tr.dataset.wordText || '';
+      const nextTxt = prompt('Correct word (' + wid + '):', oldTxt);
+      if (nextTxt !== null && nextTxt.trim() && nextTxt.trim() !== oldTxt) {
+        try {
+          await postJSON('/api/edit', {
+            tool: 'correct_transcript',
+            arguments: { edits: [{ wordId: wid, text: nextTxt.trim() }] },
+            label: 'correct word ' + wid
+          });
+          await refresh(true);
+        } catch (err) {}
+      }
     });
   });
 }
@@ -1508,12 +2004,27 @@ $('#findform').addEventListener('submit', async e => {
           '<li data-start="' + m.start + '"><span class="t">' + fmt(m.start) + '</span><span>' + m.wordIds.map(esc).join(' ') + '</span><span>' + esc(m.text) +
           (m.value !== undefined ? ' <span class="badge num">' + esc(m.value) + (m.numberKind ? ' ' + esc(m.numberKind) : '') + '</span>' : '') +
           (m.suspect ? ' <span class="badge">check</span>' : '') + '</span><span>' +
-          (m.cutRange ? '<span class="badge num">' + fmt(m.cutRange.start) + ' to ' + fmt(m.cutRange.end) + '</span>' : '') + '</span></li>'
+          (m.cutRange ? '<span class="badge num">' + fmt(m.cutRange.start) + ' to ' + fmt(m.cutRange.end) + '</span> <button type="button" class="btn" style="height:24px;padding:0 8px;font-size:11px" data-cut-start="' + m.cutRange.start + '" data-cut-end="' + m.cutRange.end + '">Cut</button>' : '') + '</span></li>'
         ).join('') + '</ul>' + (r.savedSeconds !== undefined ? '<p class="note">Would save ' + r.savedSeconds + ' s.</p>' : '')
       : '<p class="state">No matches. Try a shorter phrase, or a kind sweep.</p>';
 
     document.querySelectorAll('#findout li').forEach(li => {
       li.addEventListener('click', () => seekTo(parseFloat(li.dataset.start || '0')));
+    });
+    document.querySelectorAll('#findout [data-cut-start]').forEach(btn => {
+      btn.addEventListener('click', async ev => {
+        ev.stopPropagation();
+        const s = parseFloat(btn.dataset.cutStart), end = parseFloat(btn.dataset.cutEnd);
+        try {
+          await postJSON('/api/edit', {
+            tool: 'cut_range',
+            arguments: { start: s, end: end },
+            label: 'cut ' + fmt(s) + '–' + fmt(end)
+          });
+          await refresh(true);
+          $('#findform').dispatchEvent(new Event('submit'));
+        } catch (err) { fail($('#findout'), err); }
+      });
     });
   } catch (err) { fail($('#findout'), err); }
 });
@@ -1534,7 +2045,7 @@ async function loadChapters() {
   const c = await getJSON('/api/chapters');
   chaptersData = c.chapters || [];
   if (!chaptersData.length) {
-    $('#chapout').innerHTML = '<p class="state">No chapters. Add them over MCP with add_chapter, at seconds or at a word.</p>';
+    $('#chapout').innerHTML = '<p class="state">No chapters. Add them above or over MCP with add_chapter.</p>';
     chapRows = [];
     return;
   }
@@ -1544,7 +2055,7 @@ async function loadChapters() {
   $('#chapout').innerHTML =
     '<ul class="rows chapters">' + chaptersData.map(x =>
       '<li data-start="' + (x.start || 0) + '"><span class="t">' + esc(x.time || fmt(x.start)) +
-      '</span><span class="ttl">' + esc(x.title) + '</span></li>').join('') + '</ul>' +
+      '</span><span class="ttl">' + esc(x.title) + '</span><span><button type="button" class="btn danger" style="height:24px;padding:0 8px;font-size:11px" data-del-chap="' + esc(x.id) + '">Remove</button></span></li>').join('') + '</ul>' +
     '<div class="chap-head"><p class="note">YouTube description</p>' +
     '<button class="btn" type="button" id="chapcopy">Copy</button></div>' +
     '<pre id="chapdesc">' + esc(c.youtubeDescription || '') + '</pre>' + issues;
@@ -1552,6 +2063,19 @@ async function loadChapters() {
   chapRows = [...document.querySelectorAll('#chapout li')];
   chapRows.forEach(li => {
     li.addEventListener('click', () => seekTo(parseFloat(li.dataset.start || '0')));
+  });
+  document.querySelectorAll('#chapout [data-del-chap]').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      try {
+        await postJSON('/api/edit', {
+          tool: 'remove_chapter',
+          arguments: { id: btn.dataset.delChap },
+          label: 'remove chapter ' + btn.dataset.delChap
+        });
+        await refresh(true);
+      } catch (err) { fail($('#chapout'), err); }
+    });
   });
   const copy = $('#chapcopy');
   if (copy) copy.addEventListener('click', async () => {
@@ -1563,6 +2087,24 @@ async function loadChapters() {
   });
 }
 $('#chrefresh').addEventListener('click', () => { $('#chapout').innerHTML = '<div class="skel"></div>'; loadChapters().catch(e => fail($('#chapout'), e)); });
+$('#chap-at-ph').addEventListener('click', () => {
+  $('#chap-time').value = playheadT.toFixed(1);
+});
+$('#chapform').addEventListener('submit', async e => {
+  e.preventDefault();
+  const title = $('#chap-title').value.trim();
+  const start = Math.max(0, parseFloat($('#chap-time').value || '0'));
+  if (!title) return;
+  try {
+    await postJSON('/api/edit', {
+      tool: 'add_chapter',
+      arguments: { title: title, start: start },
+      label: 'add chapter ' + title
+    });
+    $('#chap-title').value = '';
+    await refresh(true);
+  } catch (err) { fail($('#chapout'), err); }
+});
 
 /* Subtitles */
 $('#srtgo').addEventListener('click', async () => {
@@ -1583,7 +2125,7 @@ $('#srtcopy').addEventListener('click', async () => {
   setTimeout(() => { $('#srtcopy').textContent = 'Copy'; }, 1200);
 });
 
-/* Dry-run Cut */
+/* Dry-run & Execute Cut */
 $('#cutform').addEventListener('submit', async e => {
   e.preventDefault();
   $('#cutout').innerHTML = '<div class="skel"></div>';
@@ -1596,6 +2138,21 @@ $('#cutform').addEventListener('submit', async e => {
         d.wordsBefore + ' words become ' + d.wordsAfter + ', a new edit point at ' + fmt(d.cutPoints[0]) +
         '. The file keeps revision ' + projectRev + '.</p>'
       : '<p class="state error">' + esc(d.error) + ': ' + esc(d.message) + '</p>';
+  } catch (err) { fail($('#cutout'), err); }
+});
+$('#cutapply').addEventListener('click', async () => {
+  const s = parseFloat($('#cs').value), end = parseFloat($('#ce').value);
+  $('#cutout').innerHTML = '<div class="skel"></div>';
+  try {
+    const d = await postJSON('/api/edit', {
+      tool: 'cut_range',
+      arguments: { start: s, end: end },
+      label: 'cut ' + fmt(s) + '–' + fmt(end)
+    });
+    const res = d.result || {};
+    $('#cutout').innerHTML = '<p class="state">Ripple cut applied (revision ' + d.revision + '): ' +
+      (res.wordsBefore ?? '') + ' words became ' + (res.wordsAfter ?? '') + '.</p>';
+    await refresh(true);
   } catch (err) { fail($('#cutout'), err); }
 });
 
@@ -1617,7 +2174,6 @@ function seekMini(clientX) {
   seekTo(totalDuration * Math.min(1, Math.max(0, (clientX - r.left) / r.width)));
 }
 miniTrack.addEventListener('pointerdown', e => {
-  initAudio();
   seekMini(e.clientX);
   miniTrack.setPointerCapture(e.pointerId);
   const move = ev => seekMini(ev.clientX);
@@ -1627,21 +2183,58 @@ miniTrack.addEventListener('pointerdown', e => {
 
 /* Keyboard shortcuts */
 addEventListener('keydown', e => {
-  if (e.code === 'Space' && !/INPUT|SELECT/.test(document.activeElement.tagName)) {
+  const inField = /INPUT|SELECT|TEXTAREA/.test(document.activeElement ? document.activeElement.tagName : '');
+  if ((e.metaKey || e.ctrlKey) && !inField && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    if (e.shiftKey) triggerRedo();
+    else triggerUndo();
+    return;
+  }
+  if ((e.metaKey || e.ctrlKey) && !inField && e.key.toLowerCase() === 'y') {
+    e.preventDefault();
+    triggerRedo();
+    return;
+  }
+  if (inField) return;
+  if (e.code === 'Space') {
     e.preventDefault();
     setPlaying(!isPlaying);
-  } else if (e.code === 'KeyM' && !/INPUT|SELECT/.test(document.activeElement.tagName)) {
+  } else if (e.code === 'KeyM') {
     isMuted = !isMuted;
     if (hasRealAudio) editorAudio.muted = isMuted;
     $('#t-mute').innerHTML = isMuted ? UNMUTE_SVG : MUTE_SVG;
-  } else if (e.code === 'ArrowLeft' && !/INPUT|SELECT/.test(document.activeElement.tagName)) {
+  } else if (e.code === 'ArrowLeft') {
     seekTo(playheadT - 1.0);
-  } else if (e.code === 'ArrowRight' && !/INPUT|SELECT/.test(document.activeElement.tagName)) {
+  } else if (e.code === 'ArrowRight') {
     seekTo(playheadT + 1.0);
+  } else if (e.code === 'BracketLeft') {
+    seekTo(playheadT - (1 / 60));
+  } else if (e.code === 'BracketRight') {
+    seekTo(playheadT + (1 / 60));
+  } else if ((e.code === 'Backspace' || e.code === 'Delete') && selectedItemId) {
+    e.preventDefault();
+    deleteSelectedComponent();
   }
 });
 
-/* Create video: write the self-contained player next to the project */
+/* Export HTML player & Create MP4 video */
+const exportHtmlBtn = $('#exporthtmlbtn');
+if (exportHtmlBtn) exportHtmlBtn.addEventListener('click', async () => {
+  const label = exportHtmlBtn.textContent;
+  exportHtmlBtn.disabled = true;
+  exportHtmlBtn.textContent = 'Exporting…';
+  try {
+    const d = await postJSON('/api/export', {});
+    const kb = Math.round((d.bytes || 0) / 1024);
+    exportHtmlBtn.textContent = 'Saved HTML (' + kb + ' KB)';
+    setTimeout(() => { exportHtmlBtn.textContent = label; exportHtmlBtn.disabled = false; }, 2500);
+  } catch (err) {
+    exportHtmlBtn.textContent = 'Failed';
+    exportHtmlBtn.title = err.message;
+    setTimeout(() => { exportHtmlBtn.textContent = label; exportHtmlBtn.disabled = false; }, 2200);
+  }
+});
+
 const exportBtn = $('#exportbtn');
 if (exportBtn) exportBtn.addEventListener('click', async () => {
   const label = exportBtn.textContent;
@@ -1681,7 +2274,7 @@ async function applyFrame(w, h, fps) {
   const d = await res.json().catch(() => ({}));
   if (!res.ok) { frameOut.textContent = d.message || d.error || ('HTTP ' + res.status); return; }
   frameOut.textContent = d.width + ' × ' + d.height + ' · ' + d.fps + ' fps';
-  loadSummary();   /* the stage refits to the new aspect */
+  await refresh(true);   /* the stage refits to the new aspect */
 }
 document.querySelectorAll('.ratio-row .btn').forEach(b => b.addEventListener('click', () => {
   const [w, h] = b.dataset.ratio.split('x').map(Number);
@@ -1767,20 +2360,25 @@ if (ttsForm) ttsForm.addEventListener('submit', async (e) => {
   }
 });
 
-/* Initial boot */
-async function refresh() {
+/* Initial boot & revision-aware background sync */
+async function refresh(force) {
   try {
-    await Promise.all([loadSummary(), loadTimeline(), loadWords()]);
+    const s = await loadSummary();
+    if (force || s.revision !== loadedRev) {
+      loadedRev = s.revision;
+      await Promise.all([loadTimeline(), loadWords(), loadChapters(), loadHistory()]);
+    }
   } catch (e) {
     netOk = false;
     $('#banner').style.display = 'block';
   }
 }
-loadChapters().catch(() => {});
-refresh().then(() => {
+loadCatalog();
+loadThemes();
+refresh(true).then(() => {
   rafId = requestAnimationFrame(playbackFrame);
 });
-setInterval(() => { if (!document.hidden && !isPlaying) refresh(); }, 2500);
+setInterval(() => { if (!document.hidden && !isPlaying) refresh(false); }, 2500);
 </script>
 </body>
 </html>

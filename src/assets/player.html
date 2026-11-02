@@ -61,9 +61,9 @@ button { font: inherit; }
 #scene-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 
 /* Title card: subtle atmospheric fade */
-#title { position: absolute; top: calc(120px * var(--sy)); left: 0; right: 0; bottom: auto; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 0 calc(40px * var(--sx)); background: transparent; opacity: 0; pointer-events: none; z-index: 5; transition: opacity var(--dur-long) var(--ease-in-out); }
+#title { position: absolute; top: calc(120px * var(--sy)); left: 0; right: 0; bottom: auto; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 0 calc(24px * var(--sx)); background: transparent; opacity: 0; pointer-events: none; z-index: 5; transition: opacity var(--dur-long) var(--ease-in-out); }
 #title.show { opacity: 1; }
-#title h2 { margin: 0; white-space: nowrap; font-size: calc(28.8px * var(--sx)); font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; color: var(--vid-white); text-shadow: 0 4px 20px var(--shadow-vid), 0 2px 4px var(--vid-stroke); }
+#title h2 { margin: 0; white-space: normal; text-wrap: balance; font-size: calc(28.8px * var(--sx)); font-weight: 800; letter-spacing: -0.02em; line-height: 1.12; color: var(--vid-white); text-shadow: 0 4px 20px var(--shadow-vid), 0 2px 4px var(--vid-stroke); }
 #title p { color: var(--vid-accent); margin-top: calc(8px * var(--sx)); font-size: calc(12px * var(--sx)); font-weight: 600; text-shadow: 0 2px 10px var(--shadow-vid); }
 
 /* Viral YouTube Shorts / Reels Kinetic Captions */
@@ -227,6 +227,7 @@ html.js #chapter:not(.show) { opacity: 0; }
 <script>
 document.documentElement.classList.add('js');
 const D = __DATA__;
+document.documentElement.lang = D.lang || 'en';
 /* The look is DOCUMENT DATA: the theme the AI set through MCP drives every
    default below. Component params still override per-instance. */
 const T = Object.assign(
@@ -339,39 +340,6 @@ function pointOf(value, fallbackX, fallbackY) {
 
 
 
-/* 2. Custom Code Overlays (codeOverlay_<slug> or params.code) */
-function executeCodeOverlays(ctx, W, H, time) {
-  const activeCodeOverlays = (D.components || []).filter(c =>
-    (c.componentId.startsWith('codeOverlay_') || (c.params && c.params.code)) &&
-    time >= c.start && time <= c.end
-  );
-
-  activeCodeOverlays.forEach(c => {
-    if (!c._compiled && c.params && c.params.code) {
-      try {
-        c._compiled = new Function('ctx', 'W', 'H', 'time', 'localTime', 'params', 'words', c.params.code);
-      } catch (err) {
-        console.warn('Failed to compile codeOverlay:', c.componentId, err);
-        c._compiled = null;
-      }
-    }
-    if (c._compiled) {
-      ctx.save();
-      try {
-        const localTime = Math.max(0, time - c.start);
-        c._compiled(ctx, W, H, time, localTime, c.params || {}, D.words || []);
-      } catch (err) {
-        console.warn('Error executing codeOverlay:', c.componentId, err);
-      }
-      ctx.restore();
-    }
-  });
-}
-
-
-
-
-
 /* 4. Unified Scene Renderer */
 function renderScene(time) {
   const w = canvas.width, h = canvas.height;
@@ -394,15 +362,12 @@ function renderScene(time) {
   const scene = sharedSceneOverride(D.components || [], time) || getActiveScene(time);
   sharedBackground(ctx, W, H, time, scene, particles);
 
-  // 2. Custom Code Overlays (User animated scripts)
-  executeCodeOverlays(ctx, W, H, time);
-
-  // 3. Parametric Graphic Overlays
+  // 2. Parametric Graphic Overlays + Custom Code Overlays (sorted by zIndex)
   drawSharedComponents(ctx, W, H, time, D.components || [], {
-    skip: DRAW_FALLBACK_IDS, canvas: canvas, docName: D.name
+    skip: DRAW_FALLBACK_IDS, canvas: canvas, docName: D.name, words: D.words || [], cast: D.cast || {}
   });
 
-  // 4. Effects and overlay transitions
+  // 3. Effects and overlay transitions
   sharedPostFX(ctx, W, H, time, D.components || [], canvas);
 
   ctx.restore();
@@ -412,7 +377,13 @@ function renderScene(time) {
 const words = D.words || [];
 const kin = $('#kinetic');
 const comps = D.components || [];
-const byId = id => comps.filter(c => c.componentId === id);
+const compsById = new Map();
+for (const c of comps) {
+  let list = compsById.get(c.componentId);
+  if (!list) { list = []; compsById.set(c.componentId, list); }
+  list.push(c);
+}
+const byId = id => compsById.get(id) || [];
 const kinC = byId('kineticWords')[0] || byId('captions')[0];
 const kinP = (kinC && kinC.params) || {};
 const activeColor = kinP.activeColor || T.accent;
@@ -572,7 +543,7 @@ const MUTE_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true" id="mute-svg"><pat
 const UNMUTE_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2.5a.5.5 0 0 1 .5.5v10a.5.5 0 0 1-.85.35L6.3 9H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h3.3l4.35-4.35a.5.5 0 0 1 .35-.15zM12.5 7.5l2-2m0 2l-2-2"/></svg>';
 
 const startAt = parseFloat(new URLSearchParams(location.search).get('t') || '0') || 0;
-let t = Math.min(startAt, D.duration), playing = false, raf = null, last = performance.now(), chLast = null;
+let t = Math.min(startAt, D.duration), playing = false, raf = null, last = performance.now();
 if (t >= D.duration - 0.5) t = 0; // a restored ?t= tab must not open frozen at the end
 const fmtc = x => { const m = Math.floor(x / 60), s = (x - m * 60).toFixed(1); return m + ':' + (s < 10 ? '0' : '') + s; };
 
@@ -735,28 +706,27 @@ function draw() {
   if (on(title)) {
     tEl.classList.add('show');
     const tp = title.params || {};
-    if (tp.position && typeof tp.position.y === 'number') {
-      tEl.style.top = (tp.position.y * 100) + '%';
+    const tPos = tp.position || title.position;
+    if (tPos && typeof tPos.y === 'number') {
+      tEl.style.top = (tPos.y * 100) + '%';
       tEl.style.transform = 'translateY(-50%)';
-    }
-    const hookEl = tEl.querySelector('h2');
-    if (typeof tp.size === 'number' && tp.size > 0) {
-      /* scale with the stage like every other overlay: a fixed rem size only
-         looked right at the window width it was authored in, so an exported
-         frame at project resolution drew a tiny title */
-      hookEl.style.fontSize = 'calc(' + (1.8 * tp.size) + 'rem * var(--sx))';
+    } else {
+      tEl.style.top = '';
+      tEl.style.transform = '';
     }
     const h2 = tEl.querySelector('h2'), p = tEl.querySelector('p');
+    const sizeScale = (typeof tp.size === 'number' && tp.size > 0) ? tp.size : 1;
+    h2.style.fontSize = 'calc(' + (28.8 * sizeScale) + 'px * var(--sx))';
     h2.textContent = tp.title || D.name;
     p.textContent = tp.subtitle || '';
+    if (tp.fontFamily) { h2.style.fontFamily = tp.fontFamily; p.style.fontFamily = tp.fontFamily; }
+    if (tp.titleColor || tp.color) h2.style.color = tp.titleColor || tp.color;
+    if (tp.subtitleColor) p.style.color = tp.subtitleColor;
     // shrink-to-fit: no title may spill past the stage edges
     const stageBoxEl = document.querySelector('#stage-box');
     for (let i = 0; i < 24 && h2.scrollWidth > stageBoxEl.clientWidth - 28; i++) {
-      h2.style.fontSize = (parseFloat(getComputedStyle(h2).fontSize) * 0.88) + 'px';
+      h2.style.fontSize = (parseFloat(getComputedStyle(h2).fontSize) * 0.9) + 'px';
     }
-    if (tp.fontFamily) { h2.style.fontFamily = tp.fontFamily; p.style.fontFamily = tp.fontFamily; }
-    if (tp.titleColor) h2.style.color = tp.titleColor;
-    if (tp.subtitleColor) p.style.color = tp.subtitleColor;
   } else {
     tEl.classList.remove('show');
   }
@@ -766,13 +736,21 @@ function draw() {
   if (on(counter)) {
     cEl.classList.add('show');
     const cp = counter.params || {}, span = Math.max(0.01, counter.end - counter.start);
+    const cPos = cp.position || counter.position;
+    if (cPos && typeof cPos.y === 'number') {
+      cEl.style.top = (cPos.y * 100) + '%';
+      cEl.style.transform = 'translateY(-50%)';
+    } else {
+      cEl.style.top = '';
+      cEl.style.transform = '';
+    }
     const prog = Math.min(1, (t - counter.start) / span * 1.15);
     const v = Math.round((cp.from ?? 0) + ((cp.to ?? 100) - (cp.from ?? 0)) * prog);
     const b = cEl.querySelector('b'), i = cEl.querySelector('i');
     b.textContent = (cp.prefix || '') + v.toLocaleString() + (cp.suffix || '');
     i.textContent = cp.label || '';
     if (cp.fontFamily) { b.style.fontFamily = cp.fontFamily; i.style.fontFamily = cp.fontFamily; }
-    if (cp.numberColor) b.style.color = cp.numberColor;
+    if (cp.numberColor || cp.color) b.style.color = cp.numberColor || cp.color;
     if (cp.labelColor) i.style.color = cp.labelColor;
   } else {
     cEl.classList.remove('show');
@@ -783,11 +761,21 @@ function draw() {
   if (on(lower)) {
     lowerEl.classList.add('show');
     const lp = lower.params || {};
+    const lPos = lp.position || lower.position;
+    if (lPos && typeof lPos.y === 'number') {
+      lowerEl.style.top = (lPos.y * 100) + '%';
+      lowerEl.style.bottom = 'auto';
+      lowerEl.style.transform = 'translateY(-50%)';
+    } else {
+      lowerEl.style.top = '';
+      lowerEl.style.bottom = '';
+      lowerEl.style.transform = '';
+    }
     const bar = lowerEl.querySelector('.bar'), sub = lowerEl.querySelector('.sub');
     bar.textContent = lp.title || '';
     sub.textContent = lp.subtitle || '';
     if (lp.fontFamily) { bar.style.fontFamily = lp.fontFamily; sub.style.fontFamily = lp.fontFamily; }
-    if (lp.barColor) bar.style.background = lp.barColor;
+    if (lp.barColor || lp.color) bar.style.background = lp.barColor || lp.color;
     if (lp.textColor) bar.style.color = lp.textColor;
     if (lp.subColor) sub.style.color = lp.subColor;
     if (lp.subBg) sub.style.background = lp.subBg;

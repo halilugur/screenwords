@@ -345,9 +345,7 @@ fn round_half_even(x: f64) -> f64 {
     let diff = x - floor;
     if diff > 0.5 {
         floor + 1.0
-    } else if diff < 0.5 {
-        floor
-    } else if floor as i64 % 2 == 0 {
+    } else if diff < 0.5 || (floor as i64) % 2 == 0 {
         floor
     } else {
         floor + 1.0
@@ -386,8 +384,7 @@ fn check_value(value: &Value, schema: &Value, path: &str, r: &mut Report) {
             r.error(
                 path,
                 format!(
-                    "default {} is not of type {}",
-                    value.to_string(),
+                    "default {value} is not of type {}",
                     types.join("/")
                 ),
             );
@@ -397,18 +394,18 @@ fn check_value(value: &Value, schema: &Value, path: &str, r: &mut Report) {
     if let Some(Value::Array(enum_)) = schema.get("enum") {
         if !enum_.iter().any(|e| e == value) {
             let items: Vec<String> = enum_.iter().map(|e| e.to_string()).collect();
-            r.error(path, format!("default {} is not one of [{}]", value.to_string(), items.join(", ")));
+            r.error(path, format!("default {value} is not one of [{}]", items.join(", ")));
         }
     }
     if is_number(value) {
         if let Some(min) = schema.get("minimum").and_then(Value::as_f64) {
             if value.as_f64().unwrap() < min {
-                r.error(path, format!("default {} < minimum {min}", value.to_string()));
+                r.error(path, format!("default {value} < minimum {min}"));
             }
         }
         if let Some(max) = schema.get("maximum").and_then(Value::as_f64) {
             if value.as_f64().unwrap() > max {
-                r.error(path, format!("default {} > maximum {max}", value.to_string()));
+                r.error(path, format!("default {value} > maximum {max}"));
             }
         }
     }

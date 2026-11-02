@@ -375,8 +375,8 @@ fn step_main(en: &mut En, embeds: Tensor<f32>, past: &[Owned]) -> Result<(Owned,
     let hidden = extract(&out, "hidden")?;
     let eos = scalar_f32(&out, "eos_logit")?;
     let mut present = Vec::with_capacity(2 * LAYERS);
-    for i in 0..2 * LAYERS {
-        present.push(extract(&out, &format!("present.{}", PRESENT_NAMES[i]))?);
+    for name in PRESENT_NAMES.iter().take(2 * LAYERS) {
+        present.push(extract(&out, &format!("present.{name}"))?);
     }
     Ok((hidden, eos, present))
 }
@@ -413,8 +413,8 @@ fn decode_mimi(
     }
     let out = en.mimi.run(inputs).map_err(|e| e.to_string())?;
     *offset = scalar_i64(&out, "next_offset")?;
-    for i in 0..mimi_state.len() {
-        mimi_state[i] = extract(&out, &format!("next_state.{}", en.state_names[i]))?;
+    for (i, state) in mimi_state.iter_mut().enumerate() {
+        *state = extract(&out, &format!("next_state.{}", en.state_names[i]))?;
     }
     let audio = extract(&out, "audio")?;
     if std::env::var("SCREENWORDS_TTS_DEBUG").is_ok() {

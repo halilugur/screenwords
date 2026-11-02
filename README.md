@@ -47,7 +47,7 @@ What you get from one `cargo build`:
   (lossless round-trips).
 - **An edit engine** — atomic batches, `ref` chaining, `ifRevision` conflict
   errors, ripple cuts, transcript correction, undo/redo with labels.
-- **600 built-in components** — titles, captions, shapes, charts, backgrounds,
+- **601 built-in components** — titles, captions, shapes, charts, backgrounds,
   transitions ([full catalog](COMPONENTS.md)), all drawn by one shared library
   injected into both the editor and the player.
 - **A web editor** (`screenwords app`) — overview, timeline, transcript, find,

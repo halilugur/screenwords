@@ -383,7 +383,7 @@ fn cmd_cut(args: &[String]) -> Result<ExitCode, String> {
             .map_err(|e| format!("write project.json: {e}"))?;
         let mut rev = Value::obj();
         rev.set("revision", Value::Int(result.revision as i64));
-        std::fs::write(dir.join("revision.json"), format!("{}\n", rev.to_string()))
+        std::fs::write(dir.join("revision.json"), format!("{rev}\n"))
             .map_err(|e| format!("write revision.json: {e}"))?;
         println!("📁 written to {}", dir.display());
     } else {

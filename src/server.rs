@@ -13,7 +13,6 @@ use crate::project::Project;
 use crate::reads;
 use std::io::{Read, Write};
 use std::net::ToSocketAddrs;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -24,7 +23,6 @@ pub struct McpServer {
     pub bundle_path: Option<std::path::PathBuf>,
     pub token: String,
     session_id: String,
-    next_request_id: AtomicU64,
 }
 
 /// A blank 9:16 project, like `screenwords-server --create --blank --format 9:16`.
@@ -103,9 +101,9 @@ const TOOLS: &[ToolSpec] = &[
     ToolSpec { name: "export_subtitles", description: "SRT / WebVTT of the edited transcript (<= 2 lines, 1-7 s cues)." },
     ToolSpec { name: "get_history", description: "Undo / redo steps newest first: label, by, revision." },
     ToolSpec { name: "apply_edits", description: "Several edit tools as ONE atomic undo step; edits [{tool, arguments}] (<= 200), label?, ifRevision?." },
-    ToolSpec { name: "author_transcript", description: "From-zero authoring: create the transcript from plain text with TTS-like timing (the stand-in for the TTS job)." },
+    ToolSpec { name: "author_transcript", description: "From-zero authoring: create the transcript from plain text (or turns [{speaker, text, gap?}] for a conversation; a negative gap overlaps the previous turn) with TTS-like timing (the stand-in for the TTS job)." },
     ToolSpec { name: "set_theme", description: "Set the project's visual theme (document data, not engine defaults): preset? (midnight | editorial | meadow | noir | candy | sunset | glacier) and/or overrides paper/ink/accent/accent2/accentInk (hex) and bg.{style} color arrays. Component colour params still win over the theme." },
-    ToolSpec { name: "synthesize_speech", description: "On-device TTS (ONNX): speak the transcript (or text?) in lang, voice?, seed?; writes a WAV asset into the bundle, places it on the Voice track and fits the project duration. English uses Phonon and Turkish EMA unless a Supertonic voice is chosen; Supertonic 3 covers 31 languages with voices M1-M5 / F1-F5: en ko ja ar bg cs da de el es et fi fr hi hr hu id it lt lv nl pl pt ro ru sk sl sv tr uk vi (anything else falls back to <na>)." },
+    ToolSpec { name: "synthesize_speech", description: "On-device TTS (ONNX): speak the transcript (or text?) in lang, voice?, seed?; writes a WAV asset into the bundle, places it on the Voice track and fits the project duration. English uses Phonon and Turkish EMA unless a Supertonic voice is chosen; Supertonic 3 covers 31 languages with voices M1-M5 / F1-F5 (voices? {speakerId: voice} speaks a transcript authored with turns in one voice per speaker): en ko ja ar bg cs da de el es et fi fr hi hr hu id it lt lv nl pl pt ro ru sk sl sv tr uk vi (anything else falls back to <na>)." },
     ToolSpec { name: "find_background", description: "Place a real photo behind the story as a full-frame, moving background. Providers: unsplash (Unsplash License, commercial use, no attribution required) or pexels; a query is searched with UNSPLASH_ACCESS_KEY / PEXELS_API_KEY in the environment. Or pass url (an image URL) or file (a local image path). The image is embedded as a data URI and animated: motion kenburns | zoomin | zoomout | panleft | panright | drift | parallax | ripple | pulse, atmosphere sheen | rain | snow | dust | embers | bokeh | rays | fog | none, grade dark | warm | cool | violet | green | light | none. Motion and atmosphere are inferred from the query when omitted." },
     ToolSpec { name: "undo", description: "One undo step; expectLabel? refuses unless the step has this label." },
     ToolSpec { name: "redo", description: "One redo step." },
@@ -139,7 +137,6 @@ impl McpServer {
             bundle_path,
             token,
             session_id,
-            next_request_id: AtomicU64::new(1),
         });
         let ready = serde_ready(&server);
         (server, ready)
@@ -148,6 +145,102 @@ impl McpServer {
     pub fn session_id(&self) -> &str {
         &self.session_id
     }
+}
+
+/// One spoken segment of a multi-speaker transcript.
+struct Turn {
+    /// The words with their punctuation.
+    text: String,
+    voice: String,
+    speaker: String,
+    /// The authored pause before the segment (negative overlaps), if any.
+    gap: Option<f64>,
+}
+
+/// The segments of a transcript authored with turns, each with the voice
+/// its speaker maps to. Empty when no word carries a speaker.
+fn speaker_segments(p: &crate::project::Project, voices: &Value, fallback: &str) -> Vec<Turn> {
+    let Some(t) = p.transcripts().first() else { return Vec::new() };
+    let words = t.get("words").and_then(Value::as_array).unwrap_or(&[]);
+    if !words.iter().any(|w| w.get("speaker").is_some()) {
+        return Vec::new();
+    }
+    let by_id: std::collections::HashMap<&str, &Value> =
+        words.iter().filter_map(|w| Some((w.get("id")?.as_str()?, w))).collect();
+    let mut out = Vec::new();
+    for seg in t.get("segments").and_then(Value::as_array).unwrap_or(&[]) {
+        let ids = seg.get("wordIds").and_then(Value::as_array).unwrap_or(&[]);
+        let ws: Vec<&Value> = ids.iter().filter_map(|id| by_id.get(id.as_str()?).copied()).collect();
+        let text = ws.iter().filter_map(|w| w.get("text").and_then(Value::as_str)).collect::<Vec<_>>().join(" ");
+        let speaker = ws
+            .first()
+            .and_then(|w| w.get("speaker"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let voice = voices.get(&speaker).and_then(Value::as_str).unwrap_or(fallback).to_string();
+        let gap = seg.get("gap").and_then(|g| g.as_f64().or_else(|| g.as_i64().map(|v| v as f64)));
+        out.push(Turn { text, voice, speaker, gap });
+    }
+    out
+}
+
+/// The pause before a segment when the script gives none, the way people
+/// take turns: a short breath inside a turn; between speakers an answer
+/// follows a question quickly and other replies a little later, varied so
+/// the rhythm never sounds metronomic.
+fn natural_gap(index: usize, prev: Option<&Turn>, this: &Turn) -> f64 {
+    let Some(prev) = prev else { return 0.0 };
+    if prev.speaker == this.speaker {
+        return 0.16;
+    }
+    let base = if prev.text.trim_end().ends_with('?') { 0.2 } else { 0.32 };
+    // Deterministic jitter in [-0.08, 0.08] from the segment index.
+    let h = (index as u32).wrapping_mul(2_654_435_761) >> 16;
+    base + (h % 1000) as f64 / 1000.0 * 0.16 - 0.08
+}
+
+/// Speak each segment in its own voice and lay them on one track: the
+/// model's leading and trailing near-silence is trimmed, segments follow
+/// with their authored or natural gap, and an overlapping one (negative
+/// gap) is mixed over the previous voice. Returns each segment's
+/// `(start, duration)` window like a chunked backend does.
+fn synthesize_turns(
+    lang: &str,
+    turns: &[Turn],
+    seed: u32,
+) -> Result<(crate::tts::Audio, Option<crate::tts::ChunkWindows>), String> {
+    let mut samples: Vec<f32> = Vec::new();
+    let mut rate = 0u32;
+    let mut windows = Vec::new();
+    let mut cursor = 0.0f64;
+    for (i, turn) in turns.iter().enumerate() {
+        let (audio, _) = crate::tts::synthesize_timed(lang, &turn.text, &turn.voice, seed)?;
+        if rate == 0 {
+            rate = audio.rate;
+        } else if audio.rate != rate {
+            return Err(format!("voice '{}' speaks at {} Hz, the others at {rate} Hz", turn.voice, audio.rate));
+        }
+        let r = rate as f64;
+        let dur = audio.samples.len() as f64 / r;
+        let (a, b) = speech_span(&audio.samples, rate, 0.0, dur);
+        let a = (a - 0.03).max(0.0);
+        let b = (b + 0.06).min(dur);
+        let clip = &audio.samples[(a * r) as usize..((b * r) as usize).max((a * r) as usize)];
+        let gap = turn.gap.unwrap_or_else(|| natural_gap(i, i.checked_sub(1).map(|j| &turns[j]), turn));
+        let start = if i == 0 { 0.0 } else { (cursor + gap).max(0.0) };
+        let s0 = (start * r) as usize;
+        if samples.len() < s0 + clip.len() {
+            samples.resize(s0 + clip.len(), 0.0);
+        }
+        for (k, v) in clip.iter().enumerate() {
+            samples[s0 + k] = (samples[s0 + k] + v).clamp(-1.0, 1.0);
+        }
+        let len = clip.len() as f64 / r;
+        windows.push((start, len));
+        cursor = cursor.max(start + len);
+    }
+    Ok((crate::tts::Audio { samples, rate: rate.max(1) }, Some(windows)))
 }
 
 /// The spoken part of a TTS chunk window: an energy-based trim of the
@@ -271,9 +364,8 @@ pub fn handle_mcp(server: &Arc<McpServer>, request: &Request) -> Response {
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("").to_string();
             let arguments = params.get("arguments").cloned().unwrap_or_else(Value::obj);
-            server.next_request_id.fetch_add(1, Ordering::Relaxed);
             let mut doc = server.document.lock().unwrap();
-            match call_tool(&server, &mut doc, &name, &arguments) {
+            match call_tool(server, &mut doc, &name, &arguments) {
                 Ok(result) => {
                     let mut r = Value::obj();
                     r.set("isError", Value::Bool(false));
@@ -393,21 +485,16 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
             Ok(r)
         }
         "set_theme" => {
-            use crate::theme;
-            let settings = doc
-                .project_mut()
-                .root
-                .get_mut("settings")
-                .ok_or_else(|| EditError::Validation {
-                    path: "settings".into(),
-                    message: "missing".into(),
-                })?;
-            let applied = theme::apply(settings, args).map_err(|e| EditError::Validation {
-                path: "preset".into(),
-                message: e,
-            })?;
-            let _ = &applied;
+            doc.apply_edits(Some("set_theme"), None, &[EditOp::new("set_theme", args.clone())])?;
             persist(server, doc);
+            let mut applied = doc
+                .project()
+                .root
+                .get("settings")
+                .and_then(|s| s.get("theme"))
+                .cloned()
+                .unwrap_or_else(Value::obj);
+            applied.set("revision", Value::Int(doc.revision() as i64));
             Ok(applied)
         }
         "synthesize_speech" => {
@@ -435,10 +522,19 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
                     words.join(" ")
                 }
             };
-            let (audio, chunk_windows) =
-                crate::tts::synthesize_timed(&lang, &text, &voice, seed).map_err(|e| {
-                    EditError::Validation { path: "lang".into(), message: format!("tts failed: {e}") }
-                })?;
+            // A conversation (`voices: {speaker: voice}` over a transcript
+            // authored with turns): every segment is spoken by its speaker's
+            // voice, and its window feeds the same sentence alignment below.
+            let turns = args
+                .get("voices")
+                .filter(|v| matches!(v, Value::Object(_)))
+                .map(|voices| speaker_segments(doc.project(), voices, &voice))
+                .filter(|t| !t.is_empty());
+            let (audio, chunk_windows) = match turns {
+                Some(turns) => synthesize_turns(&lang, &turns, seed),
+                None => crate::tts::synthesize_timed(&lang, &text, &voice, seed),
+            }
+            .map_err(|e| EditError::Validation { path: "lang".into(), message: format!("tts failed: {e}") })?;
             if server.bundle_path.is_none() {
                 return Err(EditError::Validation {
                     path: "lang".into(),
@@ -487,7 +583,7 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
                     let tr = &mut tracks[i];
                     let mut events = tr.get("audioEvents").cloned().unwrap_or(Value::Array(Vec::new()));
                     if let Value::Array(list) = &mut events {
-                        list.retain(|e| e.get("id").and_then(Value::as_str) != Some(&event.get("id").and_then(Value::as_str).unwrap_or("")));
+                        list.retain(|e| e.get("id").and_then(Value::as_str) != Some(event.get("id").and_then(Value::as_str).unwrap_or("")));
                         list.push(event);
                     }
                     tr.set("audioEvents", events);
@@ -515,7 +611,6 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
                 })
                 .unwrap_or_default();
             let speech_end = segs.last().map(|(_, e)| *e).unwrap_or(0.0);
-            let duration = duration;
             let piecewise: Vec<((f64, f64), (f64, f64))> = match &chunk_windows {
                 // A chunk window is its full audio span, including the
                 // leading/trailing near-silence the model emits around the
@@ -1238,7 +1333,7 @@ fn persist(server: &McpServer, doc: &Document) {
     let _ = std::fs::write(bundle.join("project.json"), doc.project().to_json_string());
     let mut rev = Value::obj();
     rev.set("revision", Value::Int(doc.revision() as i64));
-    let _ = std::fs::write(bundle.join("revision.json"), format!("{}\n", rev.to_string()));
+    let _ = std::fs::write(bundle.join("revision.json"), format!("{rev}\n"));
 }
 
 pub fn project_summary(doc: &Document) -> Value {
@@ -1263,6 +1358,8 @@ pub fn project_summary(doc: &Document) -> Value {
         if let Some(role) = t.role() {
             o.set("role", Value::str(role));
         }
+        o.set("isHidden", Value::Bool(t.is_hidden()));
+        o.set("isMuted", Value::Bool(t.is_muted()));
         o.set("clips", Value::Int(t.clips().len() as i64));
         o.set("components", Value::Int(t.components().len() as i64));
         o.set("audioEvents", Value::Int(t.audio_events().len() as i64));

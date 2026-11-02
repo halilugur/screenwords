@@ -21,7 +21,11 @@ function ecRestoreTo(ctx, depth) {
 function drawSharedComponents(ctx, W, H, time, comps, opts) {
   opts = opts || {};
   const skip = opts.skip || [];
-  const activeComps = (comps || []).filter(c => skip.indexOf(c.componentId) < 0 && time >= c.start && time <= c.end);
+  const allActive = (comps || []).filter(c => time >= c.start && time <= c.end);
+  const activeComps = allActive
+    .filter(c => skip.indexOf(c.componentId) < 0)
+    .slice()
+    .sort((a, b) => ((a.zIndex ?? (a.params && a.params.zIndex) ?? 0) - (b.zIndex ?? (b.params && b.params.zIndex) ?? 0)));
 
   ecTrackContext(ctx);
   activeComps.forEach(c => {
@@ -29,12 +33,40 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
     const baseTransform = ctx.getTransform ? ctx.getTransform() : null;
     const baseAlpha = ctx.globalAlpha;
     try {
-    const p = c.params || {};
+    const rawP = c.params || {};
+    /* Unify top-level c.position (from add_component / update_component) with
+       c.params.position so every component renderer sees the true position. */
+    const mergedPos = (rawP.position && typeof rawP.position === 'object')
+      ? rawP.position
+      : (c.position && typeof c.position === 'object' ? c.position : null);
+    const p = mergedPos ? Object.assign({}, rawP, { position: mergedPos }) : Object.assign({}, rawP);
+
+    /* Keyframe interpolation: if c.keyframes has timed {time, x, y, scale, opacity}
+       stops, interpolate position/scale/opacity smoothly at current `time`. */
+    let kfScale = 1, kfAlpha = 1;
+    if (Array.isArray(c.keyframes) && c.keyframes.length > 0) {
+      const kfs = c.keyframes.slice().sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+      let k0 = kfs[0], k1 = kfs[kfs.length - 1];
+      for (let i = 0; i < kfs.length - 1; i++) {
+        const t0 = kfs[i].time ?? c.start, t1 = kfs[i + 1].time ?? c.end;
+        if (time >= t0 && time <= t1) { k0 = kfs[i]; k1 = kfs[i + 1]; break; }
+      }
+      const t0 = k0.time ?? c.start, t1 = k1.time ?? c.end;
+      const kt = t1 > t0 ? SWDraw.easeInOut((time - t0) / (t1 - t0)) : 1;
+      const curPos = p.position || { x: 0.5, y: 0.5 };
+      p.position = {
+        x: SWDraw.lerp(k0.x ?? curPos.x ?? 0.5, k1.x ?? curPos.x ?? 0.5, kt),
+        y: SWDraw.lerp(k0.y ?? curPos.y ?? 0.5, k1.y ?? curPos.y ?? 0.5, kt)
+      };
+      if (k0.scale != null || k1.scale != null) kfScale = SWDraw.lerp(k0.scale ?? 1, k1.scale ?? 1, kt);
+      if (k0.opacity != null || k1.opacity != null) kfAlpha = SWDraw.lerp(k0.opacity ?? 1, k1.opacity ?? 1, kt);
+    }
+
     /* animation is COMPONENT DATA set through MCP: animate: {in, out, duration}
        — in/out one of fade | rise | drop | pop | zoom | slideLeft | slideRight |
        sink | shrink | slideOut. No animate param: no animation at all. */
     const AN = p.animate || null;
-    let GA = 1, gdx = 0, gdy = 0, gsc = 1;
+    let GA = kfAlpha, gdx = 0, gdy = 0, gsc = kfScale;
     if (AN) {
       const adur = AN.duration == null ? 0.4 : AN.duration;
       if (AN.in) {
@@ -57,7 +89,9 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
         else if (AN.out === 'shrink') gsc *= 1 - 0.25 * k;
         else if (AN.out === 'slideOut') gdx = -k * 420;
       }
-      if (GA <= 0.002) return;
+    }
+    if (GA <= 0.002) return;
+    if (AN || kfScale !== 1 || kfAlpha !== 1) {
       ctx.save();
       ctx.globalAlpha = GA;
       if (gdx || gdy || gsc !== 1) {
@@ -72,8 +106,78 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
     const enterProg = Math.min(1, (time - c.start) / Math.min(0.4, dur * 0.4));
     const easeOut = enterProg * (2 - enterProg);
 
+    // 0. Custom Code Overlays / Declarative Scene / SVG Vector Stage (codeOverlay_*, params.code, params.scene, params.svg)
+    if ((c.componentId && c.componentId.startsWith('codeOverlay_')) || p.code || Array.isArray(p.scene) || p.svg || Array.isArray(p.svgLayers)) {
+      ctx.save();
+      const localTime = Math.max(0, time - c.start);
+      const words = opts.words || [];
+      /* Live stage boxes of the other visible components, so code can dock
+         gestures, arrows and layouts to them (sw.boxOf('statBadge')). */
+      const boxes = [];
+      for (const o of allActive) {
+        if (o === c) continue;
+        const b = ecComponentBox(o, W, H);
+        if (b) boxes.push(Object.assign(swPx(b.cx - b.w / 2, b.cy - b.h / 2, b.w, b.h), { id: o.id, componentId: o.componentId }));
+      }
+      const boxOf = id => boxes.find(b => b.id === id) || boxes.find(b => b.componentId === id) || null;
+      const sw = Object.assign({}, SWDraw, {
+        prog, enter: easeOut, dur, localTime, time, W, H, theme: T, words,
+        boxes, boxOf, safe: SWDraw.layout.safe(W, H),
+        character: (cx, o) => SWDraw.character(cx, Object.assign({ W, H, time, localTime, words, boxOf, boxes, castTable: opts.cast }, o)),
+        cast: opts.cast || {},
+        speakerAt: t => SWDraw.speakerAt(words, t == null ? time : t),
+        svgLayers: (cx, layers, o) => SWDraw.svgLayers(cx, layers, Object.assign({ W, H, localTime }, o)),
+        drawScene: (cx, nodes) => SWDraw.drawScene(cx, nodes, W, H, time, prog, words, { localTime, boxOf, boxes, cast: opts.cast })
+      });
+      if (Array.isArray(p.scene)) {
+        SWDraw.drawScene(ctx, p.scene, W, H, time, prog, words, { localTime, boxOf, boxes, cast: opts.cast });
+      }
+      if (Array.isArray(p.svgLayers)) {
+        SWDraw.svgLayers(ctx, p.svgLayers, {
+          viewBox: p.viewBox, box: p.box, preserveAspectRatio: p.preserveAspectRatio, W, H, localTime
+        });
+      }
+      if (p.svg) {
+        SWDraw.svgPath(ctx, p.svg, Object.assign({ progress: p.trimProgress != null ? p.trimProgress : easeOut }, p));
+      }
+      if (p.code) {
+        if (!c._compiled || c._compiledSrc !== p.code) {
+          try {
+            c._compiled = new Function('ctx', 'W', 'H', 'time', 'localTime', 'params', 'words', 'sw', p.code);
+            c._compiledSrc = p.code;
+          } catch (err) {
+            console.warn('Failed to compile codeOverlay:', c.componentId, err);
+            c._compiled = null;
+          }
+        }
+        if (c._compiled) {
+          /* A throwing overlay skips its own drawing for that frame; the
+             other components and the frame still render. */
+          ctx.save();
+          try {
+            c._compiled(ctx, W, H, time, localTime, p, opts.words || [], sw);
+          } catch (err) {
+            if (c._failedSrc !== p.code) {
+              c._failedSrc = p.code;
+              console.warn('codeOverlay threw:', c.componentId, err);
+            }
+          }
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+    }
+
+    // 0b. conversation: a podcast / interview studio directed from the transcript's speakers
+    else if (c.componentId === 'conversation') {
+      SWDraw.conversation(ctx, Object.assign({}, p, {
+        W, H, time, localTime: Math.max(0, time - c.start), words: opts.words || [],
+        castTable: opts.cast || {}, theme: T
+      }));
+    }
+
     // 1. circleShape (pulse, sonar, orbit, ring, halo)
-    if (c.componentId === 'circleShape') {
+    else if (c.componentId === 'circleShape') {
       const x = (p.position?.x ?? 0.5) * W, y = (p.position?.y ?? 0.5) * H;
       const rad = (p.radius || 120) * easeOut;
       const style = (p.style || 'pulse').toLowerCase();
@@ -151,6 +255,17 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
         ctx.fillStyle = hGrad;
         ctx.globalAlpha = GA * p.opacity || 0.65;
         ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.fill();
+      }
+      const circleLabel = p.label || p.text || '';
+      if (circleLabel) {
+        ctx.globalAlpha = GA * easeOut;
+        ctx.font = '800 ' + Math.round(28 * (p.textScale || 1)) + 'px ' + (p.fontFamily || '"Space Grotesk", sans-serif');
+        ctx.fillStyle = p.textColor || T.ink;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(0,0,0,0.85)';
+        ctx.shadowBlur = 12;
+        ctx.fillText(String(circleLabel), x, y + rad + 36);
       }
       ctx.restore();
 
@@ -270,32 +385,47 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
     } else if (c.componentId === 'statBadge' || c.componentId === 'calloutBox') {
       const x = (p.position?.x ?? 0.5) * W, y = (p.position?.y ?? 0.5) * H;
       const TS = p.textScale || 1;
-      const mainText = p.value != null ? String(p.value) : (p.text || '');
+      const fontFam = p.fontFamily || '"Space Grotesk", "Outfit", sans-serif';
+      const accCol = p.accentColor || p.color || T.accent;
+      const mainText = p.value != null ? String(p.value) : (p.title != null ? String(p.title) : (p.text || ''));
       const subText = p.label || p.sublabel || '';
-      ctx.font = '800 ' + Math.round(80 * TS) + 'px "Space Grotesk", "Outfit", sans-serif';
-      const tw1 = ctx.measureText(mainText).width;
-      ctx.font = '600 ' + Math.round(58 * TS) + 'px "Space Grotesk", sans-serif';
-      const tw2 = ctx.measureText(subText).width;
-      const mainSize = Math.round(80 * TS);
-      const labelSize = Math.round(58 * TS);
-      const gap = subText ? 18 : 0;
+      const thirdText = p.subtitle || '';
+      let mainSize = Math.round(74 * TS);
+      let labelSize = Math.round(34 * TS);
+      const subSize = Math.round(24 * TS);
+      ctx.font = '800 ' + mainSize + 'px ' + fontFam;
+      let tw1 = ctx.measureText(mainText).width;
+      ctx.font = '600 ' + labelSize + 'px ' + fontFam;
+      let tw2 = ctx.measureText(subText).width;
+      while ((tw1 > W * 0.76 || tw2 > W * 0.76) && labelSize > 18) {
+        mainSize = Math.round(mainSize * 0.92);
+        labelSize = Math.round(labelSize * 0.92);
+        ctx.font = '800 ' + mainSize + 'px ' + fontFam;
+        tw1 = ctx.measureText(mainText).width;
+        ctx.font = '600 ' + labelSize + 'px ' + fontFam;
+        tw2 = ctx.measureText(subText).width;
+      }
+      ctx.font = '500 ' + subSize + 'px ' + fontFam;
+      const tw3 = thirdText ? ctx.measureText(thirdText).width : 0;
+      const gap = subText ? 16 : 0;
+      const gap2 = thirdText ? 12 : 0;
       const hasDelta = !!p.delta;
-      const dSize = Math.round(30 * TS);
-      const deltaBand = hasDelta ? dSize + 32 : 0;
+      const dSize = Math.round(28 * TS);
+      const deltaBand = hasDelta ? dSize + 30 : 0;
       const mainH = mainText ? mainSize : 0;
-      const contentH = mainH + (subText ? gap + labelSize : 0);
-      const w = Math.max(p.width || 560, tw1 + 140, tw2 + 140);
-      const h = Math.max(p.height || 180, deltaBand + contentH + 60);
-      const r = 18;
+      const contentH = mainH + (subText ? gap + labelSize : 0) + (thirdText ? gap2 + subSize : 0);
+      const w = Math.min(W * 0.88, Math.max(p.width || 520, tw1 + 110, tw2 + 110, tw3 + 110));
+      const h = Math.max(p.height || 180, deltaBand + contentH + 64);
+      const r = 20;
 
       ctx.save();
       ctx.translate(x, y);
       ctx.scale(easeOut, easeOut);
-      ctx.fillStyle = p.backgroundColor || T.paper;
-      ctx.strokeStyle = p.borderColor || (p.accentColor || T.accent);
+      ctx.fillStyle = p.backgroundColor || 'rgba(9, 14, 28, 0.92)';
+      ctx.strokeStyle = p.borderColor || accCol;
       ctx.lineWidth = 2.5;
-      ctx.shadowColor = (p.accentColor || T.accent) + '66';
-      ctx.shadowBlur = 24;
+      ctx.shadowColor = accCol + '55';
+      ctx.shadowBlur = 28;
       ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, r); ctx.fill(); ctx.stroke();
       ctx.shadowBlur = 0;
 
@@ -306,34 +436,42 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
       const blockTop = areaTop + Math.max(0, (areaH - contentH) / 2);
       const mainY = blockTop + mainH / 2;
       const labelY = blockTop + mainH + gap + labelSize / 2;
+      const subY = blockTop + mainH + (subText ? gap + labelSize : 0) + gap2 + subSize / 2;
 
       if (mainText) {
-        ctx.font = '800 ' + mainSize + 'px "Space Grotesk", "Outfit", sans-serif';
-        ctx.fillStyle = p.valueColor || (p.accentColor || T.accent);
+        ctx.font = '800 ' + mainSize + 'px ' + fontFam;
+        ctx.fillStyle = p.valueColor || accCol;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(mainText, 0, mainY);
       }
 
       if (subText) {
-        ctx.font = '600 ' + labelSize + 'px "Space Grotesk", sans-serif';
+        ctx.font = '600 ' + labelSize + 'px ' + fontFam;
         ctx.fillStyle = p.labelColor || T.ink;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(subText, 0, labelY);
       }
 
+      if (thirdText) {
+        ctx.font = '500 ' + subSize + 'px ' + fontFam;
+        ctx.fillStyle = p.subtitleColor || 'rgba(244, 248, 255, 0.72)';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(thirdText, 0, subY);
+      }
+
       if (hasDelta) {
-        ctx.font = '800 ' + dSize + 'px "Space Grotesk", sans-serif';
+        ctx.font = '800 ' + dSize + 'px ' + fontFam;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         const dw = ctx.measureText(p.delta).width;
         const ph = dSize + 20, pw = dw + 34;
         const px = w / 2 - pw / 2 - 24, py = -h / 2 + 20 + ph / 2;
-        const dCol = p.deltaColor || p.accentColor || T.accent;
+        const dCol = p.deltaColor || accCol;
         ctx.fillStyle = dCol + '2E';
         ctx.beginPath(); ctx.roundRect(px - pw / 2, py - ph / 2, pw, ph, ph / 2); ctx.fill();
         ctx.strokeStyle = dCol + '80'; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.roundRect(px - pw / 2, py - ph / 2, pw, ph, ph / 2); ctx.stroke();
         ctx.fillStyle = dCol;
-        ctx.font = '800 ' + dSize + 'px "Space Grotesk", sans-serif';
+        ctx.font = '800 ' + dSize + 'px ' + fontFam;
         ctx.fillText(p.delta, px, py);
       }
       ctx.restore();
@@ -342,66 +480,94 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
     } else if (c.componentId === 'chapterCard') {
       const x = (p.position?.x ?? 0.5) * W, y = (p.position?.y ?? 0.3) * H;
       const TS = p.textScale || 1;
+      const accCol = p.accentColor || p.color || T.accent;
+      const fontFam = p.fontFamily || '"Cinzel", "Space Grotesk", serif';
+      const kicker = p.chapter || p.label || '';
+      const titleStr = p.title || p.text || '';
+      const subStr = p.subtitle || '';
       ctx.save();
       ctx.translate(x, y);
       ctx.scale(easeOut, easeOut);
 
-      if (p.chapter) {
-        ctx.font = '800 ' + Math.round(48 * TS) + 'px "Space Grotesk", sans-serif';
-        ctx.fillStyle = p.accentColor || T.accent;
-        ctx.letterSpacing = '2px';
+      if (kicker) {
+        ctx.font = '800 ' + Math.round(30 * TS) + 'px "Space Grotesk", sans-serif';
+        ctx.fillStyle = accCol;
+        ctx.letterSpacing = '3px';
         ctx.textAlign = 'center';
-        ctx.fillText((p.chapter || '').toUpperCase(), 0, -32);
+        ctx.fillText(String(kicker).toUpperCase(), 0, -44);
       }
 
-      ctx.font = '900 ' + Math.round(68 * TS) + 'px "Cinzel", "Space Grotesk", serif';
+      let tSize = Math.round(58 * TS);
+      ctx.font = '900 ' + tSize + 'px ' + fontFam;
+      while (ctx.measureText(titleStr).width > W * 0.84 && tSize > 26) {
+        tSize = Math.round(tSize * 0.92);
+        ctx.font = '900 ' + tSize + 'px ' + fontFam;
+      }
       ctx.fillStyle = p.titleColor || T.ink;
       ctx.textAlign = 'center';
-      ctx.fillText(p.title || '', 0, 18);
+      ctx.shadowColor = 'rgba(0,0,0,0.75)';
+      ctx.shadowBlur = 16;
+      ctx.fillText(titleStr, 0, 12);
+      ctx.shadowBlur = 0;
 
-      const lineLen = Math.min(320, 320 * (enterProg * 1.2));
-      ctx.strokeStyle = p.accentColor || T.accent;
-      ctx.lineWidth = 3;
-      ctx.shadowColor = p.accentColor || T.accent; ctx.shadowBlur = 12;
+      const lineLen = Math.min(340, 340 * (enterProg * 1.2));
+      ctx.strokeStyle = accCol;
+      ctx.lineWidth = 3.5;
+      ctx.shadowColor = accCol; ctx.shadowBlur = 12;
       ctx.beginPath();
-      ctx.moveTo(-lineLen / 2, 45);
-      ctx.lineTo(lineLen / 2, 45);
+      ctx.moveTo(-lineLen / 2, 38);
+      ctx.lineTo(lineLen / 2, 38);
       ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      if (subStr) {
+        ctx.font = '600 ' + Math.round(28 * TS) + 'px "Space Grotesk", sans-serif';
+        ctx.fillStyle = p.subtitleColor || 'rgba(244, 248, 255, 0.82)';
+        ctx.textAlign = 'center';
+        ctx.fillText(subStr, 0, 78);
+      }
       ctx.restore();
 
     // 6. gaugeMeter
     } else if (c.componentId === 'gaugeMeter') {
       const x = (p.position?.x ?? 0.5) * W, y = (p.position?.y ?? 0.5) * H;
-      const rad = p.radius || 110;
-      const fromVal = p.from ?? 0, toVal = p.to ?? 100;
-      const curVal = fromVal + (toVal - fromVal) * prog;
+      const rad = p.radius || 115;
+      const fromVal = p.from ?? p.min ?? 0;
+      const toVal = p.to ?? p.value ?? 100;
+      const maxVal = p.max ?? Math.max(toVal, 100);
+      const animP = 1 - Math.pow(1 - Math.min(1, prog * 1.35), 3);
+      const curVal = fromVal + (toVal - fromVal) * animP;
+      const fillFrac = ecClamp((curVal - fromVal) / Math.max(1e-6, maxVal - fromVal), 0, 1);
       const col = p.color || T.accent;
 
       ctx.save();
       ctx.translate(x, y);
+      ctx.scale(easeOut, easeOut);
       const startAngle = Math.PI * 0.75, endAngle = Math.PI * 2.25;
 
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-      ctx.lineWidth = 14;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+      ctx.lineWidth = 16;
       ctx.lineCap = 'round';
       ctx.beginPath(); ctx.arc(0, 0, rad, startAngle, endAngle); ctx.stroke();
 
-      const curAngle = startAngle + (endAngle - startAngle) * prog;
+      const curAngle = startAngle + (endAngle - startAngle) * fillFrac;
       ctx.strokeStyle = col;
-      ctx.shadowColor = col; ctx.shadowBlur = 18;
+      ctx.shadowColor = col; ctx.shadowBlur = 20;
       ctx.beginPath(); ctx.arc(0, 0, rad, startAngle, curAngle); ctx.stroke();
+      ctx.shadowBlur = 0;
 
       const TS = p.textScale || 1;
-      ctx.font = '800 ' + Math.round(64 * TS) + 'px "Space Grotesk", sans-serif';
+      const unitStr = p.unit != null ? (' ' + p.unit) : '%';
+      ctx.font = '800 ' + Math.round(52 * TS) + 'px ' + (p.fontFamily || '"Space Grotesk", sans-serif');
       ctx.fillStyle = T.ink;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(Math.round(curVal) + (p.unit || '%'), 0, -10);
+      ctx.fillText(Math.round(curVal) + unitStr.trim(), 0, 0);
 
       if (p.label) {
-        ctx.font = '600 ' + Math.round(48 * TS) + 'px "Space Grotesk", sans-serif';
+        ctx.font = '600 ' + Math.round(30 * TS) + 'px ' + (p.fontFamily || '"Space Grotesk", sans-serif');
         ctx.fillStyle = p.labelColor || T.ink;
-        ctx.fillText(p.label, 0, 30);
+        ctx.fillText(p.label, 0, rad + 36);
       }
       ctx.restore();
 
@@ -459,19 +625,29 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
     // 9. badgePill
     } else if (c.componentId === 'badgePill' || c.componentId === 'shapeBadge') {
       const x = (p.position?.x ?? 0.5) * W, y = (p.position?.y ?? 0.5) * H;
-      const text = p.text || '';
+      const text = String(p.text || p.label || p.title || '');
       ctx.save();
       const TS = p.textScale || 1;
-      ctx.font = '700 ' + Math.round(44 * TS) + 'px "Space Grotesk", sans-serif';
+      const fontFam = p.fontFamily || '"Space Grotesk", sans-serif';
+      let fSize = Math.round(28 * TS);
+      ctx.font = '800 ' + fSize + 'px ' + fontFam;
+      while (ctx.measureText(text).width > W * 0.82 && fSize > 16) {
+        fSize = Math.round(fSize * 0.92);
+        ctx.font = '800 ' + fSize + 'px ' + fontFam;
+      }
       const tw = ctx.measureText(text).width;
-      const pw = tw + 90, ph = 100;
+      const pw = Math.min(W * 0.9, tw + 68), ph = Math.round(62 * TS);
+      const bgCol = p.backgroundColor || p.color || T.accent;
 
       ctx.translate(x, y);
       ctx.scale(easeOut, easeOut);
-      ctx.fillStyle = p.backgroundColor || T.accent;
+      ctx.fillStyle = bgCol;
+      ctx.shadowColor = bgCol + '66';
+      ctx.shadowBlur = 20;
       ctx.beginPath(); ctx.roundRect(-pw / 2, -ph / 2, pw, ph, 9999); ctx.fill();
+      ctx.shadowBlur = 0;
 
-      ctx.fillStyle = p.textColor || T.accentInk;
+      ctx.fillStyle = p.textColor || ec2InkOn(bgCol);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(text, 0, 1);
@@ -585,30 +761,127 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
       }
       ctx.restore();
 
-    // 10. arrowPointer
+    // 10. arrowPointer — Target-Aware, Auto-Docking, Animated Curved/Straight Vector Pointer
     } else if (c.componentId === 'arrowPointer') {
-      const fp = pointOf(p.from, 0.3, 0.3), tp = pointOf(p.to, 0.5, 0.5);
-      const fromX = fp.x * W, fromY = fp.y * H;
-      const toX = tp.x * W, toY = tp.y * H;
+      const fp = pointOf(p.from, 0.25, 0.68), tp = pointOf(p.to, p.position?.x ?? 0.5, p.position?.y ?? 0.5);
+      let fromX = fp.x * W, fromY = fp.y * H;
+      let toX = tp.x * W, toY = tp.y * H;
+
+      /* Target / source component resolution & automatic bounding-box docking:
+         if `targetId` / `toId` is given, or if (toX, toY) lands inside another
+         active component on stage, dock the arrowhead cleanly to its outer edge! */
+      let targetBox = null, fromBox = null;
+      for (let k = 0; k < allActive.length; k++) {
+        const other = allActive[k];
+        if (!other || other.id === c.id) continue;
+        const box = ecComponentBox(other, W, H);
+        if (!box) continue;
+        if (p.targetId && (other.id === p.targetId || other.componentId === p.targetId)) {
+          targetBox = box;
+          toX = box.cx; toY = box.cy;
+        } else if (!targetBox && p.dock !== false &&
+                   Math.abs(toX - box.cx) <= box.w * 0.52 &&
+                   Math.abs(toY - box.cy) <= box.h * 0.52) {
+          targetBox = box;
+        }
+        if (p.fromId && (other.id === p.fromId || other.componentId === p.fromId)) {
+          fromBox = box;
+          fromX = box.cx; fromY = box.cy;
+        }
+      }
+      if (fromBox && p.dock !== false) {
+        const d0 = ecDockRayToBox(toX, toY, fromX, fromY, fromBox, p.fromGap ?? 14);
+        fromX = d0.x; fromY = d0.y;
+      }
+      if (targetBox && p.dock !== false) {
+        const d1 = ecDockRayToBox(fromX, fromY, toX, toY, targetBox, p.targetGap ?? 18);
+        toX = d1.x; toY = d1.y;
+      }
+
+      const col = p.color || T.accent;
+      const drawProg = SWDraw.easeOut(Math.min(1, Math.max(0.05, (time - c.start) / Math.min(0.55, dur * 0.55))));
+      const cur = p.straight ? 0 : (p.curve != null ? Number(p.curve) : (p.curvature != null ? Number(p.curvature) : 0.14));
+      const dx = toX - fromX, dy = toY - fromY, dist = Math.hypot(dx, dy) || 1;
+      const ctrlX = (fromX + toX) / 2 - (dy / dist) * cur * dist;
+      const ctrlY = (fromY + toY) / 2 + (dx / dist) * cur * dist;
+
+      /* De Casteljau split of quadratic Bezier [0..drawProg] so the shaft grows
+         smoothly and the arrowhead always rides the exact animated tip! */
+      const u = drawProg;
+      const q1x = fromX + (ctrlX - fromX) * u, q1y = fromY + (ctrlY - fromY) * u;
+      const q2x = ctrlX + (toX - ctrlX) * u, q2y = ctrlY + (toY - ctrlY) * u;
+      const tipX = q1x + (q2x - q1x) * u, tipY = q1y + (q2y - q1y) * u;
+      const angle = Math.atan2(tipY - q1y, tipX - q1x);
+
+      const lw = p.strokeWidth || p.width || 6.5;
+      const headLen = p.headLength || 28, headHalf = p.headWidth || 13;
+      const shaftEndX = tipX - Math.cos(angle) * (headLen * 0.72);
+      const shaftEndY = tipY - Math.sin(angle) * (headLen * 0.72);
+
       ctx.save();
-      ctx.strokeStyle = p.color || T.accent;
-      ctx.fillStyle = p.color || T.accent;
-      ctx.lineWidth = 11;
-      /* Butt cap at the head base: a round cap at the tip bulges past the
-         triangle and reads as an edge line outside the arrow. */
-      ctx.lineCap = 'butt';
-      const angle = Math.atan2(toY - fromY, toX - fromX);
-      const headLen = 62, headHalf = 36;
-      const baseX = toX - Math.cos(angle) * headLen;
-      const baseY = toY - Math.sin(angle) * headLen;
-      ctx.beginPath(); ctx.moveTo(fromX, fromY); ctx.lineTo(baseX, baseY); ctx.stroke();
+      ctx.strokeStyle = col;
+      ctx.fillStyle = col;
+      ctx.lineWidth = lw;
+      ctx.lineCap = 'round';
+      ctx.shadowColor = col;
+      ctx.shadowBlur = 16;
+
+      // Tail origin dot
+      ctx.beginPath();
+      ctx.arc(fromX, fromY, lw * 0.95, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Animated curved/straight shaft
+      ctx.beginPath();
+      ctx.moveTo(fromX, fromY);
+      ctx.quadraticCurveTo(q1x, q1y, shaftEndX, shaftEndY);
+      ctx.stroke();
+
+      // Sleek notched vector arrowhead at (tipX, tipY)
+      const baseX = tipX - Math.cos(angle) * headLen;
+      const baseY = tipY - Math.sin(angle) * headLen;
+      const notchX = tipX - Math.cos(angle) * (headLen * 0.76);
+      const notchY = tipY - Math.sin(angle) * (headLen * 0.76);
       const px = Math.cos(angle + Math.PI / 2) * headHalf;
       const py = Math.sin(angle + Math.PI / 2) * headHalf;
       ctx.beginPath();
-      ctx.moveTo(toX, toY);
+      ctx.moveTo(tipX, tipY);
       ctx.lineTo(baseX + px, baseY + py);
+      ctx.lineTo(notchX, notchY);
       ctx.lineTo(baseX - px, baseY - py);
-      ctx.closePath(); ctx.fill();
+      ctx.closePath();
+      ctx.fill();
+
+      // Subtle target lock ring once the arrow reaches the destination
+      if (drawProg > 0.85) {
+        const ringPulse = (time * 2.2) % 1;
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = GA * (1 - ringPulse) * 0.65;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(toX, toY, 8 + ringPulse * 22, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = GA;
+      }
+
+      // Optional tail pill label (`p.label || p.text`)
+      const arrowLabel = p.label || p.text || '';
+      if (arrowLabel) {
+        ctx.shadowBlur = 0;
+        const fSize = Math.round(24 * (p.textScale || 1));
+        ctx.font = '700 ' + fSize + 'px ' + (p.fontFamily || '"Space Grotesk", sans-serif');
+        const tw = ctx.measureText(arrowLabel).width;
+        const pw = tw + 36, ph = fSize + 22;
+        const lx = ecClamp(fromX, pw / 2 + 24, W - pw / 2 - 24);
+        const ly = dy < 0 ? fromY + ph / 2 + 16 : fromY - ph / 2 - 16;
+        ctx.fillStyle = 'rgba(9, 14, 28, 0.92)';
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.roundRect(lx - pw / 2, ly - ph / 2, pw, ph, ph / 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = p.textColor || T.ink;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(arrowLabel, lx, ly + 1);
+      }
       ctx.restore();
 
     // 11. spotlight
@@ -1188,7 +1461,7 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
     else if (EXTRA_COMPONENT_SET.has(c.componentId)) {
       drawExtraComponent(ctx, W, H, time, prog, c, p, GA);
     }
-    if (AN) ctx.restore();
+    if (AN || kfScale !== 1 || kfAlpha !== 1) ctx.restore();
     } catch (err) {
       console.warn('component draw failed:', c.componentId, err);
     } finally {

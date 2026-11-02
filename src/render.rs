@@ -26,6 +26,9 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
             o.set("start", Value::from_f64(w.start().seconds()));
             o.set("end", Value::from_f64(w.end().seconds()));
             o.set("text", Value::str(w.text()));
+            if let Some(sp) = w.speaker() {
+                o.set("speaker", Value::str(sp));
+            }
             o
         })
         .collect();
@@ -48,6 +51,15 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
             o.set("start", Value::from_f64(start.seconds()));
             o.set("end", Value::from_f64(end.seconds()));
             o.set("params", c.get("params").cloned().unwrap_or_else(Value::obj));
+            if let Some(pos) = c.get("position") {
+                o.set("position", pos.clone());
+            }
+            if let Some(z) = c.get("zIndex") {
+                o.set("zIndex", z.clone());
+            }
+            if let Some(kfs) = c.get("keyframes") {
+                o.set("keyframes", kfs.clone());
+            }
             Some(o)
         })
         .collect();
@@ -100,6 +112,15 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
                 o.set("start", Value::from_f64(st.seconds()));
                 o.set("end", Value::from_f64(en.map(|x| x.seconds()).unwrap_or(st.seconds())));
                 o.set("params", c.get("params").cloned().unwrap_or_else(Value::obj));
+                if let Some(pos) = c.get("position") {
+                    o.set("position", pos.clone());
+                }
+                if let Some(z) = c.get("zIndex") {
+                    o.set("zIndex", z.clone());
+                }
+                if let Some(kfs) = c.get("keyframes") {
+                    o.set("keyframes", kfs.clone());
+                }
                 items.push(o);
             }
         }
@@ -192,12 +213,36 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
         .or_else(|| Value::parse(crate::theme::DEFAULT).ok())
         .unwrap_or_else(Value::obj);
     r.set("theme", theme);
+    // The spoken language: the player's text (CSS uppercase above all, where
+    // Turkish i must become İ) follows it.
+    r.set(
+        "lang",
+        Value::str(
+            p.transcripts()
+                .first()
+                .and_then(|t| t.get("language"))
+                .and_then(Value::as_str)
+                .filter(|l| !l.is_empty() && l.len() <= 12 && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+                .unwrap_or("en"),
+        ),
+    );
+    r.set(
+        "cast",
+        p.root.get("settings").and_then(|st| st.get("cast")).cloned().unwrap_or_else(Value::obj),
+    );
 
     let mut audio_uri: Option<String> = None;
     let mut audio_bytes = None;
     let mut audio_wav = false;
     let mut audio_assets = Vec::new();
+    let voice_track_muted = p
+        .tracks()
+        .iter()
+        .any(|t| t.role() == Some("voice") && t.is_muted() && !t.audio_events().is_empty());
     for t in p.tracks() {
+        if t.is_muted() {
+            continue;
+        }
         for ev in t.audio_events() {
             if ev.get("role").and_then(Value::as_str) == Some("voice") {
                 if let Some(a) = ev.get("assetId").and_then(Value::as_str).and_then(|id| p.asset(id)) {
@@ -206,7 +251,9 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
             }
         }
     }
-    audio_assets.extend(p.assets());
+    if !voice_track_muted {
+        audio_assets.extend(p.assets());
+    }
     for a in audio_assets {
         if a.get("kind").and_then(Value::as_str) == Some("audio") {
             // New projects embed narration as a data URI: nothing on disk.
@@ -276,7 +323,7 @@ pub(crate) fn base64_decode(text: &str) -> Option<Vec<u8>> {
 
 pub(crate) fn base64_encode(bytes: &[u8]) -> String {
     const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let b0 = chunk[0];
         let b1 = if chunk.len() > 1 { chunk[1] } else { 0 };
@@ -323,6 +370,11 @@ pub const COMPONENTS: &str = concat!(
     include_str!("assets/components/00-registry.js"),
     include_str!("assets/components/01-catalog.js"),
     include_str!("assets/components/02-helpers.js"),
+    include_str!("assets/components/02a-vector.js"),
+    include_str!("assets/components/02b-figure.js"),
+    include_str!("assets/components/02c-toon.js"),
+    include_str!("assets/components/02d-kit.js"),
+    include_str!("assets/components/02e-conversation.js"),
     include_str!("assets/components/03-extras.js"),
     include_str!("assets/components/04-backdrop.js"),
     include_str!("assets/components/05-common.js"),
@@ -376,6 +428,22 @@ mod tests {
         let editor = include_str!("assets/editor.html");
         assert!(!editor.contains("fonts.googleapis.com"), "the editor still links Google Fonts");
         assert!(editor.contains(FONTS_MARKER), "the editor has no font marker");
+    }
+
+    #[test]
+    fn player_data_carries_language_speakers_and_cast() {
+        let p = Project::parse(r#"{"schemaVersion":2,"id":"p","name":"P","tracks":[],
+            "settings":{"cast":{"ada":{"style":"flat"}}},
+            "transcripts":[{"language":"tr","segments":[],"words":[
+              {"id":"w1","text":"Merhaba","speaker":"ada","start":{"value":0,"timescale":1000},"end":{"value":500,"timescale":1000}},
+              {"id":"w2","text":"selam","start":{"value":600,"timescale":1000},"end":{"value":900,"timescale":1000}}]}]}"#).unwrap();
+        let d = render_data(&p);
+        assert_eq!(d.get("lang").and_then(Value::as_str), Some("tr"));
+        let words = d.get("words").and_then(Value::as_array).unwrap();
+        assert_eq!(words[0].get("speaker").and_then(Value::as_str), Some("ada"));
+        assert!(words[1].get("speaker").is_none());
+        assert_eq!(d.get("cast").and_then(|c| c.get("ada")).and_then(|a| a.get("style")).and_then(Value::as_str), Some("flat"));
+        assert!(include_str!("assets/player.html").contains("document.documentElement.lang = D.lang"));
     }
 
     #[test]
@@ -486,17 +554,53 @@ mod tests {
     }
 
     #[test]
+    fn drawing_toolkit_math_checks_pass() {
+        // tools/test-draw.mjs runs the vector/figure modules' pure math (path
+        // parse, trim, morph, viewBox fit, layout, springs, IK, visemes) in
+        // node. Without node on PATH there is nothing to run it with.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let out = match std::process::Command::new("node").arg(root.join("tools/test-draw.mjs")).output() {
+            Ok(out) => out,
+            Err(_) => return,
+        };
+        assert!(
+            out.status.success(),
+            "drawing toolkit checks failed:\n{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    #[test]
+    fn components_embed_the_vector_and_figure_modules() {
+        for api in ["SWDraw.character", "svgLayers:", "viseme:", "layout:", "follow:", "anatomicalLimb:", "hand:"] {
+            assert!(COMPONENTS.contains(api), "the component library is missing {api}");
+        }
+    }
+
+    #[test]
+    fn a_throwing_code_overlay_cannot_abort_the_frame() {
+        // User code runs inside try, so one bad overlay skips only itself.
+        let call = COMPONENTS.find("c._compiled(ctx,").expect("code overlays are called");
+        let try_at = COMPONENTS[..call].rfind("try {").expect("the call is guarded");
+        assert_eq!(COMPONENTS[try_at..call].trim(), "try {", "the overlay call must open its try block");
+    }
+
+    #[test]
     fn every_catalog_component_has_a_shared_renderer() {
         // An id neither registry paints can only produce a blank frame; keep
         // the catalog and the one shared library in lockstep.
-        let rendered = quoted_ids(block_between(COMPONENTS, "const RENDERED_IDS", "];"));
+        let mut rendered = quoted_ids(block_between(COMPONENTS, "const RENDERED_IDS", "];"));
         let extra = pack_ids(COMPONENTS);
+        let scene = quoted_ids(block_between(COMPONENTS, "const SW_SCENE_IDS", "];"));
+        assert_eq!(scene, ["conversation"], "the scene registry");
         assert_eq!(rendered.len(), 68, "the legacy registry must list the original 68 ids");
         assert_eq!(extra.len(), 532, "the packs must declare exactly 532 ids (232 + 300 pack 3)");
         let unique: std::collections::HashSet<&&str> = extra.iter().collect();
         assert_eq!(unique.len(), extra.len(), "the pack repeats an id");
         let catalog = crate::catalog::all_ids();
-        assert_eq!(catalog.len(), 600, "catalog size");
+        assert_eq!(catalog.len(), 601, "catalog size");
+        rendered.extend(scene);
         for id in &catalog {
             assert!(
                 rendered.contains(id) || extra.contains(id),

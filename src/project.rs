@@ -265,6 +265,11 @@ impl<'a> Word<'a> {
         self.raw.get("id").and_then(Value::as_str).unwrap_or("")
     }
 
+    /// The speaker id of a multi-speaker transcript (`turns`), if any.
+    pub fn speaker(&self) -> Option<&str> {
+        self.raw.get("speaker").and_then(Value::as_str)
+    }
+
     pub fn text(&self) -> &str {
         self.raw.get("text").and_then(Value::as_str).unwrap_or("")
     }
@@ -310,12 +315,8 @@ impl<'a> Settings<'a> {
             .unwrap_or(30.0)
     }
 
-    pub fn audio_sample_rate(&self) -> i64 {
-        self.raw.and_then(|r| r.get("audioSampleRate")).and_then(Value::as_i64).unwrap_or(48_000)
-    }
-
     pub fn target_duration(&self) -> Option<RationalTime> {
-        self.raw.and_then(|r| r.get("targetDuration")).and_then(|d| RationalTime::from_json(d))
+        self.raw.and_then(|r| r.get("targetDuration")).and_then(RationalTime::from_json)
     }
 
     pub fn lufs(&self) -> f64 {

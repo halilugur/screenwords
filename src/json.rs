@@ -38,17 +38,6 @@ impl Value {
         Value::Object(Vec::new())
     }
 
-    pub fn type_name(&self) -> &'static str {
-        match self {
-            Value::Null => "null",
-            Value::Bool(_) => "boolean",
-            Value::Int(_) | Value::Float(_) => "number",
-            Value::Str(_) => "string",
-            Value::Array(_) => "array",
-            Value::Object(_) => "object",
-        }
-    }
-
     pub fn is_null(&self) -> bool {
         matches!(self, Value::Null)
     }
@@ -176,18 +165,20 @@ impl Value {
         Ok(v)
     }
 
-    pub fn to_string(&self) -> String {
-        let mut out = String::new();
-        write_value(self, &mut out, None, 0);
-        out
-    }
-
     /// Swift-`JSONEncoder`-flavoured pretty printing: two-space indent and
     /// `" : "` between key and value; `sorted` reproduces `.sortedKeys`.
     pub fn to_string_pretty(&self, sorted: bool) -> String {
         let mut out = String::new();
         write_value(self, &mut out, if sorted { Some(true) } else { Some(false) }, 0);
         out
+    }
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut out = String::new();
+        write_value(self, &mut out, None, 0);
+        f.write_str(&out)
     }
 }
 

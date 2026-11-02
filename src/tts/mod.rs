@@ -92,6 +92,9 @@ pub fn synthesize(lang: &str, text: &str, voice: &str, seed: u32) -> Result<Audi
     synthesize_timed(lang, text, voice, seed).map(|(audio, _)| audio)
 }
 
+/// Chunk timing spans `(start_seconds, duration_seconds)` reported by a TTS backend.
+pub type ChunkWindows = Vec<(f64, f64)>;
+
 /// As [`synthesize`], plus the `(start, duration)` window of each spoken chunk
 /// when the backend can report one. Caption re-timing maps sentences onto these.
 pub fn synthesize_timed(
@@ -99,7 +102,7 @@ pub fn synthesize_timed(
     text: &str,
     voice: &str,
     seed: u32,
-) -> Result<(Audio, Option<Vec<(f64, f64)>>), String> {
+) -> Result<(Audio, Option<ChunkWindows>), String> {
     // Those two languages have a dedicated model; everything else is Supertonic
     // 3, and silently reading German with English rules would be worse than
     // telling the caller the models are missing.

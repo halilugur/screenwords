@@ -165,6 +165,10 @@ impl Document {
         self.undo_stack.iter().map(|s| s.label.as_str()).collect()
     }
 
+    pub fn redo_labels(&self) -> Vec<&str> {
+        self.redo_stack.iter().map(|s| s.label.as_str()).collect()
+    }
+
     /// `apply_edits {label?, ifRevision?, edits: [...]}`.
     pub fn apply_edits(
         &mut self,
@@ -267,7 +271,7 @@ impl Document {
             root: self.project.root.clone(),
         });
         self.project.root = step.root;
-        self.project.revision = step.revision_before + 1;
+        self.project.revision = step.revision_before;
         Ok(label)
     }
 }
@@ -315,9 +319,9 @@ fn apply_one(
                 "update_audio" => update_audio(root, &args, created)?,
                 "update_track" => update_track(root, &args)?,
                 "set_project_settings" => set_project_settings(root, &args)?,
+                "set_theme" => set_theme_op(root, &args)?,
                 "cut_range" => cut_range(root, fx, &args)?,
                 "correct_transcript" => correct_transcript(root, fx, &args)?,
-                "add_chapter_placeholder" => {}
                 "update_chapter" => update_chapter(root, &args)?,
                 "remove_chapter" => remove_chapter(root, &args)?,
                 "rename_speaker" => rename_speaker(root, &args)?,
@@ -327,7 +331,7 @@ fn apply_one(
                     return Err(EditError::Unsupported {
                         path: "edits".into(),
                         message: format!(
-                            "'{other}' needs live media or the renderer; the document-local edit set is: add/update/remove_component, add_track, update_track, add/update/remove_audio, insert_clip, update_clip, move_clip, remove_clip, trim_clip, set_clip_framing_keyframe, cut_range, set_project_settings, correct_transcript, add/update/remove_chapter, rename_speaker, resolve_note, author_transcript"
+                            "'{other}' needs live media or the renderer; the document-local edit set is: add/update/remove_component, add_track, update_track, add/update/remove_audio, insert_clip, update_clip, move_clip, remove_clip, trim_clip, set_clip_framing_keyframe, cut_range, set_project_settings, set_theme, correct_transcript, add/update/remove_chapter, rename_speaker, resolve_note, author_transcript"
                         ),
                     });
                 }
@@ -371,7 +375,10 @@ fn get_str<'a>(args: &'a Value, key: &str) -> Result<Option<&'a str>, EditError>
 
 /// A timing argument: a word anchor object, or seconds as a number.
 fn timing_arg(args: &Value, key: &str, _created: &[(String, String)]) -> Result<Option<Value>, EditError> {
-    match args.get(key) {
+    let raw = args
+        .get(key)
+        .or_else(|| args.get("timing").and_then(|t| t.get(key)));
+    match raw {
         None | Some(Value::Null) => Ok(None),
         Some(v @ Value::Object(_)) => {
             if v.get("wordId").is_some() {
@@ -399,7 +406,7 @@ fn require_timing(args: &Value, key: &str, created: &[(String, String)]) -> Resu
     })
 }
 
-fn tracks_mut<'a>(root: &'a mut Value) -> &'a mut Vec<Value> {
+fn tracks_mut(root: &mut Value) -> &mut Vec<Value> {
     root.get_mut("tracks").and_then(Value::as_array_mut).expect("validated at parse")
 }
 
@@ -460,7 +467,12 @@ fn add_component(
     if let Some(d) = duration {
         timing.set("duration", d);
     }
-    let params = args.get("params").cloned().unwrap_or_else(Value::obj);
+    let mut params = args.get("params").cloned().unwrap_or_else(Value::obj);
+    if let Some(pos) = args.get("position") {
+        if params.get("position").is_none() {
+            params.set("position", pos.clone());
+        }
+    }
     let mut issues: Vec<(String, String)> = Vec::new();
     crate::catalog::check_common_params(&params, &mut issues);
     if let Some((path, message)) = issues.first() {
@@ -476,9 +488,13 @@ fn add_component(
         "keyframes",
         args.get("keyframes").cloned().unwrap_or_else(|| Value::Array(Vec::new())),
     );
+    let pos_from_params = params.get("position").cloned();
     component.set("params", params);
     component.set("timing", timing);
     component.set("zIndex", args.get("zIndex").cloned().unwrap_or(Value::Int(0)));
+    if let Some(pos) = args.get("position").cloned().or(pos_from_params) {
+        component.set("position", pos);
+    }
     if let Some(mask) = args.get("mask") {
         component.set("mask", mask.clone());
     }
@@ -531,7 +547,7 @@ fn component_home(tracks: &[Value], component_id: &str) -> usize {
         Some("background") => overlays.iter().copied().find(|&i| is_scenes(&tracks[i])),
         Some("caption") => tracks
             .iter()
-            .position(|t| is_caption(t))
+            .position(is_caption)
             .or_else(|| overlays.iter().copied().find(|&i| is_plain(&tracks[i]))),
         _ => overlays.iter().copied().find(|&i| is_plain(&tracks[i])),
     };
@@ -610,10 +626,22 @@ fn update_component(root: &mut Value, args: &Value, created: &[(String, String)]
     if let Some(kfs) = args.get("keyframes") {
         component.set("keyframes", kfs.clone());
     }
-    for (arg, stored) in [("enabled", "isEnabled"), ("zIndex", "zIndex")] {
+    for (arg, stored) in [
+        ("enabled", "isEnabled"),
+        ("isEnabled", "isEnabled"),
+        ("zIndex", "zIndex"),
+        ("position", "position"),
+    ] {
         if let Some(v) = args.get(arg) {
             component.set(stored, v.clone());
         }
+    }
+    if let Some(pos) = args.get("position") {
+        if let Some(p_obj) = component.get_mut("params") {
+            p_obj.set("position", pos.clone());
+        }
+    } else if let Some(pos) = args.get("params").and_then(|p| p.get("position")).cloned() {
+        component.set("position", pos);
     }
     if let Some(timing) = component.get_mut("timing") {
         for key in ["start", "end", "duration"] {
@@ -640,10 +668,13 @@ fn remove_by_id(
     list: &str,
     arg_name: &str,
 ) -> Result<(), EditError> {
-    let id_ref = args.get(arg_name).ok_or_else(|| EditError::Validation {
-        path: arg_name.into(),
-        message: "required".into(),
-    })?;
+    let id_ref = args
+        .get(arg_name)
+        .or_else(|| args.get("id"))
+        .ok_or_else(|| EditError::Validation {
+            path: arg_name.into(),
+            message: "required".into(),
+        })?;
     let id = deref(id_ref.as_str().unwrap_or(""), created)
         .ok_or_else(|| EditError::Validation { path: arg_name.into(), message: "unknown $ref".into() })?
         .to_string();
@@ -700,10 +731,12 @@ fn add_track(root: &mut Value, gen_id: &mut IdGen, args: &Value) -> Result<Strin
 }
 
 fn update_track(root: &mut Value, args: &Value) -> Result<(), EditError> {
-    let track_id = get_str(args, "trackId")?.ok_or_else(|| EditError::Validation {
-        path: "trackId".into(),
-        message: "required".into(),
-    })?;
+    let track_id = get_str(args, "trackId")?
+        .or(get_str(args, "id")?)
+        .ok_or_else(|| EditError::Validation {
+            path: "trackId".into(),
+            message: "required".into(),
+        })?;
     let tracks = tracks_mut(root);
     let track = tracks
         .iter_mut()
@@ -713,7 +746,13 @@ fn update_track(root: &mut Value, args: &Value) -> Result<(), EditError> {
             message: format!("no track '{track_id}'"),
         })?;
     // Tool args are muted/hidden; the document stores isMuted/isHidden.
-    for (arg, stored) in [("name", "name"), ("muted", "isMuted"), ("hidden", "isHidden")] {
+    for (arg, stored) in [
+        ("name", "name"),
+        ("muted", "isMuted"),
+        ("isMuted", "isMuted"),
+        ("hidden", "isHidden"),
+        ("isHidden", "isHidden"),
+    ] {
         if let Some(v) = args.get(arg) {
             track.set(stored, v.clone());
         }
@@ -1355,7 +1394,69 @@ fn set_project_settings(root: &mut Value, args: &Value) -> Result<(), EditError>
         }
         settings.set("targetDuration", RationalTime::from_seconds(d, 1000).to_json());
     }
+    if let Some(cast) = args.get("cast") {
+        let merged = merge_cast(settings.get("cast"), cast)?;
+        settings.set("cast", merged);
+    }
     *root.get_mut("settings").expect("settings") = settings;
+    Ok(())
+}
+
+/// The project's cast: named characters every scene draws the same way
+/// (`sw.character({ cast: 'ada', pose })`). `cast` maps a name to the
+/// member's look (style, colours, hair, outfit, or SVG `parts`); a member
+/// set to null leaves the cast, and members not named are kept.
+fn merge_cast(current: Option<&Value>, cast: &Value) -> Result<Value, EditError> {
+    let Value::Object(entries) = cast else {
+        return Err(EditError::Validation { path: "cast".into(), message: "cast must be an object of name → character".into() });
+    };
+    let mut out = match current {
+        Some(v @ Value::Object(_)) => v.clone(),
+        _ => Value::obj(),
+    };
+    for (name, member) in entries {
+        let ok_name = !name.is_empty()
+            && name.len() <= 40
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        if !ok_name {
+            return Err(EditError::Validation {
+                path: format!("cast.{name}"),
+                message: "cast names are 1-40 letters, digits, _ or -".into(),
+            });
+        }
+        match member {
+            Value::Null => {
+                out.remove(name);
+            }
+            Value::Object(_) => {
+                if member.to_string_pretty(false).len() > 512 * 1024 {
+                    return Err(EditError::Validation {
+                        path: format!("cast.{name}"),
+                        message: "a cast member is at most 512 KB".into(),
+                    });
+                }
+                out.set(name, member.clone());
+            }
+            _ => {
+                return Err(EditError::Validation {
+                    path: format!("cast.{name}"),
+                    message: "a cast member is an object (or null to remove it)".into(),
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn set_theme_op(root: &mut Value, args: &Value) -> Result<(), EditError> {
+    let settings = root.get_mut("settings").ok_or_else(|| EditError::Validation {
+        path: "settings".into(),
+        message: "missing".into(),
+    })?;
+    crate::theme::apply(settings, args).map_err(|e| EditError::Validation {
+        path: "preset".into(),
+        message: e,
+    })?;
     Ok(())
 }
 
@@ -1430,7 +1531,7 @@ fn cut_range(root: &mut Value, fx: &mut SideEffects, args: &Value) -> Result<(),
             let src_dur = clip
                 .get("sourceRange")
                 .and_then(|r| r.get("duration"))
-                .and_then(|d| RationalTime::from_json(d))
+                .and_then(RationalTime::from_json)
                 .unwrap_or(RationalTime::ZERO)
                 .resampled(1000);
             let tl_end = tl_start.add(&src_dur);
@@ -1566,7 +1667,7 @@ fn cut_range(root: &mut Value, fx: &mut SideEffects, args: &Value) -> Result<(),
                     let tail_start = if cmp(&we, &end) == std::cmp::Ordering::Greater {
                         we.sub(&dur) // has a tail after the cut: shift it back
                     } else {
-                        start.clone() // ends inside the cut: clamp to its start
+                        start // ends inside the cut: clamp to its start
                     };
                     (if cmp(&ws, &start) == std::cmp::Ordering::Less { ws } else { start }, tail_start)
                 };
@@ -1675,8 +1776,8 @@ fn cut_range(root: &mut Value, fx: &mut SideEffects, args: &Value) -> Result<(),
     if let Some(notes) = root.get_mut("notes").and_then(Value::as_array_mut) {
         let cut_start_json = RationalTime::from_seconds(start_s, 1000).to_json();
         for note in notes.iter_mut() {
-            let ns = note.get("start").and_then(|v| RationalTime::from_json(v)).map(|t| t.seconds()).unwrap_or(0.0);
-            let ne = note.get("end").and_then(|v| RationalTime::from_json(v)).map(|t| t.seconds()).unwrap_or(0.0);
+            let ns = note.get("start").and_then(RationalTime::from_json).map(|t| t.seconds()).unwrap_or(0.0);
+            let ne = note.get("end").and_then(RationalTime::from_json).map(|t| t.seconds()).unwrap_or(0.0);
             if ns >= start_s && ne <= end_s {
                 note.set("start", cut_start_json.clone());
                 note.set("end", cut_start_json.clone());
@@ -1705,13 +1806,13 @@ fn cut_range(root: &mut Value, fx: &mut SideEffects, args: &Value) -> Result<(),
             let start_time = c
                 .get("timing")
                 .and_then(|t| t.get("start"))
-                .and_then(|s| RationalTime::from_json(s))
+                .and_then(RationalTime::from_json)
                 .unwrap_or(RationalTime::ZERO)
                 .resampled(1000);
             let end_time = c
                 .get("timing")
                 .and_then(|t| t.get("end"))
-                .and_then(|s| RationalTime::from_json(s))
+                .and_then(RationalTime::from_json)
                 .map(|e| e.resampled(1000));
             let cmp = |a: &RationalTime, b: &RationalTime| a.cmp_time(b);
             let fully_inside = cmp(&start_time, &start) != std::cmp::Ordering::Less
@@ -1964,11 +2065,58 @@ fn correct_transcript(root: &mut Value, fx: &mut SideEffects, args: &Value) -> R
 /// story in place (word ids restart at w1, so word-anchored scenes keep
 /// pointing at the same ordinal word).
 fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
-    let text = get_str(args, "text")?.ok_or_else(|| EditError::Validation {
-        path: "text".into(),
-        message: "required (the story)" .into(),
-    })?;
-    let words: Vec<&str> = text.split_whitespace().collect();
+    /* A conversation is `turns: [{speaker, text, gap?}, ...]`: every word
+       carries its speaker and a turn always ends a segment, so each segment
+       has one voice. `gap` (seconds, -1.5..3) is the pause before the turn;
+       negative overlaps the previous one (a quick "Aynen!" over its end).
+       Otherwise `text` is one narrator. */
+    let mut tokens: Vec<(String, Option<String>, bool, Option<f64>)> = Vec::new();
+    if let Some(turns) = args.get("turns") {
+        let list = turns.as_array().ok_or_else(|| EditError::Validation {
+            path: "turns".into(),
+            message: "turns is a list of {speaker, text}".into(),
+        })?;
+        for (i, turn) in list.iter().enumerate() {
+            let speaker = turn.get("speaker").and_then(Value::as_str).unwrap_or("");
+            let ok = !speaker.is_empty()
+                && speaker.len() <= 40
+                && speaker.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+            if !ok {
+                return Err(EditError::Validation {
+                    path: format!("turns[{i}].speaker"),
+                    message: "a speaker id is 1-40 letters, digits, _ or -".into(),
+                });
+            }
+            let text = turn.get("text").and_then(Value::as_str).unwrap_or("");
+            let ws: Vec<&str> = text.split_whitespace().collect();
+            if ws.is_empty() {
+                return Err(EditError::Validation { path: format!("turns[{i}].text"), message: "empty".into() });
+            }
+            let gap = match turn.get("gap") {
+                None | Some(Value::Null) => None,
+                Some(g) => match g.as_f64().or_else(|| g.as_i64().map(|v| v as f64)) {
+                    Some(v) if (-1.5..=3.0).contains(&v) => Some(v),
+                    _ => {
+                        return Err(EditError::Validation {
+                            path: format!("turns[{i}].gap"),
+                            message: "gap is seconds, -1.5 to 3".into(),
+                        })
+                    }
+                },
+            };
+            let last = ws.len() - 1;
+            for (j, w) in ws.into_iter().enumerate() {
+                tokens.push((w.to_string(), Some(speaker.to_string()), j == last, if j == 0 { gap } else { None }));
+            }
+        }
+    } else {
+        let text = get_str(args, "text")?.ok_or_else(|| EditError::Validation {
+            path: "text".into(),
+            message: "required (the story), or turns".into(),
+        })?;
+        tokens = text.split_whitespace().map(|w| (w.to_string(), None, false, None)).collect();
+    }
+    let words = tokens;
     if words.is_empty() {
         return Err(EditError::Validation { path: "text".into(), message: "empty".into() });
     }
@@ -1989,7 +2137,13 @@ fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
     let mut seg_start = 0.0f64;
     let mut seg_text = String::new();
     let mut counter = root.get("wordCounter").and_then(Value::as_i64).unwrap_or(0);
-    for w in words {
+    let mut seg_speaker: Option<String> = None;
+    let mut seg_gap: Option<f64> = None;
+    for (w, speaker, turn_end, gap) in words.iter() {
+        if gap.is_some() {
+            seg_gap = *gap;
+        }
+        let w = w.as_str();
         counter += 1;
         let id = format!("w{counter}");
         let dur = 0.24 + 0.06 * w.chars().count() as f64;
@@ -2000,6 +2154,10 @@ fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
         word.set("id", Value::str(&id));
         word.set("start", RationalTime::from_seconds(t, 1000).to_json());
         word.set("text", Value::str(w));
+        if let Some(sp) = speaker {
+            word.set("speaker", Value::str(sp));
+            seg_speaker = Some(sp.clone());
+        }
         word_values.push(word);
         segment_word_ids.push(Value::str(&id));
         if !seg_text.is_empty() {
@@ -2007,10 +2165,16 @@ fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
         }
         seg_text.push_str(&clean);
         t += dur + 0.06;
-        if w.ends_with(['.', '!', '?']) {
+        if w.ends_with(['.', '!', '?']) || *turn_end {
             let mut seg = Value::obj();
             seg.set("end", RationalTime::from_seconds(t - 0.06, 1000).to_json());
             seg.set("id", Value::str(&format!("seg_{}", segments.len() + 1)));
+            if let Some(sp) = seg_speaker.take() {
+                seg.set("speaker", Value::str(&sp));
+            }
+            if let Some(g) = seg_gap.take() {
+                seg.set("gap", Value::from_f64(g));
+            }
             seg.set("start", RationalTime::from_seconds(seg_start, 1000).to_json());
             seg.set("text", Value::str(&seg_text));
             seg.set("wordIds", Value::Array(std::mem::take(&mut segment_word_ids)));
@@ -2024,6 +2188,9 @@ fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
         let mut seg = Value::obj();
         seg.set("end", RationalTime::from_seconds(t - 0.06, 1000).to_json());
         seg.set("id", Value::str(&format!("seg_{}", segments.len() + 1)));
+        if let Some(sp) = seg_speaker.take() {
+            seg.set("speaker", Value::str(&sp));
+        }
         seg.set("start", RationalTime::from_seconds(seg_start, 1000).to_json());
         seg.set("text", Value::str(&seg_text));
         seg.set("wordIds", Value::Array(segment_word_ids));
@@ -2058,10 +2225,14 @@ fn add_chapter(root: &mut Value, gen_id: &mut IdGen, args: &Value) -> Result<Str
         path: "title".into(),
         message: "required".into(),
     })?;
-    let time = args.get("time").cloned().ok_or_else(|| EditError::Validation {
-        path: "time".into(),
-        message: "required: {seconds: N} or {wordId: \"w12\"}".into(),
-    })?;
+    let time = args
+        .get("time")
+        .or_else(|| args.get("start"))
+        .cloned()
+        .ok_or_else(|| EditError::Validation {
+            path: "time".into(),
+            message: "required: {seconds: N} or {wordId: \"w12\"}".into(),
+        })?;
     let anchor = time.get("anchor").unwrap_or(&time);
     if let Some(wid) = anchor.get("wordId").and_then(Value::as_str) {
         let exists = root
@@ -2106,6 +2277,7 @@ fn add_chapter(root: &mut Value, gen_id: &mut IdGen, args: &Value) -> Result<Str
 /// `update_chapter {chapterId, title?, time?}`.
 fn update_chapter(root: &mut Value, args: &Value) -> Result<(), EditError> {
     let id = get_str(args, "chapterId")?
+        .or(get_str(args, "id")?)
         .ok_or_else(|| EditError::Validation { path: "chapterId".into(), message: "required".into() })?;
     let chapters = root
         .get_mut("chapters")
@@ -2124,7 +2296,7 @@ fn update_chapter(root: &mut Value, args: &Value) -> Result<(), EditError> {
     if let Some(title) = get_str(args, "title")? {
         chapter.set("title", Value::str(title));
     }
-    if let Some(time) = args.get("time") {
+    if let Some(time) = args.get("time").or_else(|| args.get("start")) {
         chapter.set("time", time.clone());
     }
     Ok(())
@@ -2133,6 +2305,7 @@ fn update_chapter(root: &mut Value, args: &Value) -> Result<(), EditError> {
 /// `remove_chapter {chapterId}`.
 fn remove_chapter(root: &mut Value, args: &Value) -> Result<(), EditError> {
     let id = get_str(args, "chapterId")?
+        .or(get_str(args, "id")?)
         .ok_or_else(|| EditError::Validation { path: "chapterId".into(), message: "required".into() })?;
     let chapters = root
         .get_mut("chapters")
@@ -2301,6 +2474,56 @@ mod tests {
         assert!(matches!(err, EditError::NotFound { ref path, .. } if path == "edits[0].trackId"));
         assert_eq!(d.revision(), 7); // nothing changed
         assert!(d.undo_labels().is_empty());
+    }
+
+    #[test]
+    fn author_transcript_turns_tag_every_word_and_split_segments_by_speaker() {
+        let mut d = doc();
+        let mut a = crate::json::Value::obj();
+        a.set(
+            "turns",
+            Value::parse(r#"[{"speaker":"ada","text":"Merhaba! Hoş geldiniz"},{"speaker":"kaan","text":"Selam herkese."}]"#).unwrap(),
+        );
+        a.set("language", Value::str("tr"));
+        a.set("replace", Value::Bool(true));
+        d.apply_edits(Some("turns"), None, &[EditOp::new("author_transcript", a)]).unwrap();
+        let t = &d.project().transcripts()[0];
+        let words = t.get("words").and_then(Value::as_array).unwrap();
+        let speakers: Vec<&str> = words.iter().map(|w| w.get("speaker").and_then(Value::as_str).unwrap()).collect();
+        assert_eq!(speakers, ["ada", "ada", "ada", "kaan", "kaan"]);
+        // "Merhaba!" ends a sentence, "geldiniz" ends ada's turn without one.
+        let segs = t.get("segments").and_then(Value::as_array).unwrap();
+        let seg_speakers: Vec<&str> = segs.iter().map(|s| s.get("speaker").and_then(Value::as_str).unwrap()).collect();
+        assert_eq!(seg_speakers, ["ada", "ada", "kaan"]);
+        let mut bad = crate::json::Value::obj();
+        bad.set("turns", Value::parse(r#"[{"speaker":"a b","text":"x"}]"#).unwrap());
+        let err = d.apply_edits(Some("bad"), None, &[EditOp::new("author_transcript", bad)]).unwrap_err();
+        assert!(err.message().contains("speaker"), "{}", err.message());
+    }
+
+    #[test]
+    fn project_cast_merges_members_and_validates_names() {
+        let mut d = doc();
+        let cast_of = |d: &Document| d.project().root.get("settings").and_then(|s| s.get("cast")).cloned();
+        let settings = |json: &str| {
+            let mut s = crate::json::Value::obj();
+            s.set("cast", Value::parse(json).unwrap());
+            s
+        };
+        d.apply_edits(Some("cast"), None, &[EditOp::new("set_project_settings", settings(r##"{"ada": {"style": "flat", "skinColor": "#E8B48F"}, "kaan": {"style": "geo"}}"##))])
+            .unwrap();
+        // A later call replaces one member and removes another; the rest stays.
+        d.apply_edits(Some("cast"), None, &[EditOp::new("set_project_settings", settings(r#"{"ada": {"style": "cartoon"}, "kaan": null}"#))])
+            .unwrap();
+        let cast = cast_of(&d).unwrap();
+        assert_eq!(cast.get("ada").and_then(|a| a.get("style")).and_then(Value::as_str), Some("cartoon"));
+        assert!(cast.get("kaan").is_none());
+        // Bad names and non-object members are refused without a change.
+        for bad in [r#"{"a b": {}}"#, r#"{"ada": "flat"}"#, r#"["ada"]"#] {
+            let err = d.apply_edits(Some("cast"), None, &[EditOp::new("set_project_settings", settings(bad))]).unwrap_err();
+            assert!(err.message().contains("cast"), "{bad}: {}", err.message());
+        }
+        assert_eq!(cast_of(&d).unwrap(), cast);
     }
 
     #[test]

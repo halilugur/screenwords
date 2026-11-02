@@ -114,6 +114,205 @@ function ecGrad(ctx, x0, y0, x1, y1, stops) {
   return g;
 }
 
+/* Estimate a component's stage bounding box {cx, cy, w, h} in W x H coordinates
+   so arrows and connectors can dock cleanly to its outer edge instead of
+   piercing through its center or text. */
+function ecComponentBox(c, W, H) {
+  if (!c || !c.componentId) return null;
+  const id = c.componentId;
+  if (/background|transition|punchIn|camera|vignette|glowPulse|scanLines|confetti|bokeh|starfield|gridWarp|arrowPointer|flowConnector/i.test(id)) {
+    return null;
+  }
+  const p = Object.assign({}, c.params || {});
+  if (!p.position && c.position) p.position = c.position;
+  const ts = ecN(p.textScale, 1);
+  const defY = id === 'titleCard' ? 0.24 : id === 'chapterCard' ? 0.30 : id === 'lowerThird' ? 0.78 : id === 'numberCounter' ? 0.28 : 0.5;
+  const pos = pointOf(p.position, 0.5, defY);
+  const cx = pos.x * W, cy = pos.y * H;
+  if (id === 'statBadge' || id === 'calloutBox') {
+    /* Mirrors the statBadge renderer: max(width || 520, text + 110) wide,
+       content + 64 tall; glyph widths are averaged since there is no canvas
+       to measure with here. */
+    const main = String(p.value != null ? p.value : (p.title != null ? p.title : (p.text || '')));
+    const sub = String(p.label || p.sublabel || ''), third = String(p.subtitle || '');
+    const w = Math.min(W * 0.88, Math.max(ecN(p.width, 520), main.length * 74 * 0.56 * ts + 110,
+      sub.length * 34 * 0.55 * ts + 110, third.length * 24 * 0.5 * ts + 110));
+    const content = (main ? 74 : 0) + (sub ? 16 + 34 : 0) + (third ? 12 + 24 : 0);
+    const h = Math.max(ecN(p.height, 180), (content + (p.delta ? 58 : 0)) * ts + 64);
+    return { cx, cy, w, h };
+  }
+  if (id === 'quoteBox') {
+    return { cx, cy, w: ecN(p.width, 680), h: ecN(p.height, 280) };
+  }
+  if (id === 'badgePill' || id === 'shapeBadge') {
+    const txt = String(p.text || p.label || p.title || '');
+    return { cx, cy, w: ecClamp(txt.length * 19 * ts + 96, 220, W * 0.88), h: 68 * ts };
+  }
+  if (id === 'titleCard') {
+    return { cx, cy, w: W * 0.82, h: (p.subtitle ? 180 : 120) * ts };
+  }
+  if (id === 'chapterCard') {
+    return { cx, cy, w: W * 0.78, h: (p.subtitle ? 190 : 140) * ts };
+  }
+  if (id === 'numberCounter') {
+    return { cx, cy, w: 460 * ts, h: 170 * ts };
+  }
+  if (id === 'lowerThird') {
+    return { cx, cy, w: W * 0.84, h: 130 * ts };
+  }
+  if (id === 'gaugeMeter' || id === 'progressRing' || id === 'countdownRing' || id === 'circleShape') {
+    const r = ecN(p.radius, 115) * 2 + 24;
+    return { cx, cy, w: r, h: r + (p.label ? 48 : 0) };
+  }
+  if (id === 'imageOverlay' || id === 'pictureInPicture' || id === 'terminalPanel') {
+    return { cx, cy, w: ecN(p.width, 460), h: ecN(p.height, 300) };
+  }
+  return { cx, cy, w: ecN(p.width, 420), h: ecN(p.height, 160) };
+}
+
+/* Ray-box docking: given a ray from (x0, y0) toward (x1, y1) where (x1, y1) is
+   inside `box`, returns the intersection point on the outer boundary of `box`
+   padded by `pad` pixels. */
+function ecDockRayToBox(x0, y0, x1, y1, box, pad) {
+  if (!box) return { x: x1, y: y1 };
+  const p = pad == null ? 16 : pad;
+  const hw = box.w / 2 + p, hh = box.h / 2 + p;
+  if (Math.abs(x1 - box.cx) > hw || Math.abs(y1 - box.cy) > hh) {
+    return { x: x1, y: y1 };
+  }
+  const dx = x0 - box.cx, dy = y0 - box.cy;
+  if (Math.abs(dx) <= hw && Math.abs(dy) <= hh) {
+    return { x: x1, y: y1 };
+  }
+  const sx = Math.abs(dx) > 1e-4 ? hw / Math.abs(dx) : 1e9;
+  const sy = Math.abs(dy) > 1e-4 ? hh / Math.abs(dy) : 1e9;
+  const s = Math.min(sx, sy);
+  return { x: box.cx + dx * s, y: box.cy + dy * s };
+}
+
+/* Universal Procedural, Inverse-Kinematics (IK), Character & SVG Scene Toolkit.
+   Exposed as `sw` inside every `codeOverlay_<slug>` and via `params.scene` /
+   `params.svg` so the AI can draw and animate anything (humans, characters,
+   diagrams, custom vector rigs) at 60 FPS without dedicated MCP endpoints. */
+const SWDraw = {
+  clamp: ecClamp,
+  lerp: (a, b, t) => a + (b - a) * t,
+  easeOut: t => { const x = ecClamp(t, 0, 1); return 1 - Math.pow(1 - x, 3); },
+  easeOutCubic: t => { const x = ecClamp(t, 0, 1); return 1 - Math.pow(1 - x, 3); },
+  easeInOut: t => { const x = ecClamp(t, 0, 1); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; },
+  backOut: t => { const x = ecClamp(t, 0, 1), c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); },
+  spring: (t, freq, decay) => {
+    const x = Math.max(0, t);
+    return 1 - Math.exp(-x * (decay || 6)) * Math.cos(x * (freq || 14));
+  },
+  osc: (time, freq, min, max, phase) => {
+    const s = 0.5 + 0.5 * Math.sin(time * (freq || 1) * Math.PI * 2 + (phase || 0));
+    return (min == null ? -1 : min) + ((max == null ? 1 : max) - (min == null ? -1 : min)) * s;
+  },
+  activeWord: (words, time) => {
+    if (!Array.isArray(words)) return null;
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
+      if (w && time >= w.start && time < w.end) {
+        const dur = Math.max(0.02, w.end - w.start);
+        return { id: w.id, text: w.text, start: w.start, end: w.end, prog: (time - w.start) / dur };
+      }
+    }
+    return null;
+  },
+  mouthOpen: (words, time) => {
+    const w = SWDraw.activeWord(words, time);
+    if (!w) return 0;
+    const syllables = Math.max(1, Math.min(4, Math.ceil((w.text || '').length / 3)));
+    return Math.sin(w.prog * Math.PI) * (0.35 + 0.65 * Math.abs(Math.sin(w.prog * Math.PI * syllables)));
+  },
+  /* Analytical 2-bone Inverse Kinematics solver: shoulder/hip (x1, y1) ->
+     target (tx, ty) with bone lengths L1, L2 and bend direction (+1 or -1). */
+  ik2: (x1, y1, tx, ty, L1, L2, bendDir) => {
+    const dx = tx - x1, dy = ty - y1;
+    const rawDist = Math.hypot(dx, dy) || 0.001;
+    const maxReach = (L1 + L2) * 0.995;
+    const minReach = Math.abs(L1 - L2) + 0.001;
+    const d = ecClamp(rawDist, minReach, maxReach);
+    const baseAngle = Math.atan2(dy, dx);
+    const cosA = ecClamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1);
+    const a1 = baseAngle + (bendDir >= 0 ? 1 : -1) * Math.acos(cosA);
+    const jx = x1 + Math.cos(a1) * L1;
+    const jy = y1 + Math.sin(a1) * L1;
+    /* Aim the lower bone at the reach-clamped target so an out-of-reach
+       chain extends straight toward it instead of ending off the line. */
+    const cx = x1 + Math.cos(baseAngle) * d, cy = y1 + Math.sin(baseAngle) * d;
+    const a2 = Math.atan2(cy - jy, cx - jx);
+    const ex = jx + Math.cos(a2) * L2;
+    const ey = jy + Math.sin(a2) * L2;
+    return { jx, jy, ex, ey, a1, a2 };
+  },
+  /* Render any SVG path `d` string with optional stroke-trim animation. */
+  svgPath: (ctx, d, opts) => {
+    if (!d || typeof Path2D === 'undefined') return;
+    opts = opts || {};
+    ctx.save();
+    if (opts.x || opts.y) ctx.translate(opts.x || 0, opts.y || 0);
+    if (opts.scale && opts.scale !== 1) ctx.scale(opts.scale, opts.scale);
+    if (opts.rotate) ctx.rotate(opts.rotate);
+    const path = new Path2D(d);
+    if (opts.fill && opts.fill !== 'none') {
+      ctx.fillStyle = opts.fill;
+      ctx.fill(path);
+    }
+    if (opts.stroke !== 'none') {
+      ctx.strokeStyle = opts.stroke || '#38BDF8';
+      ctx.lineWidth = opts.lineWidth || 4;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (typeof opts.progress === 'number' && opts.progress < 0.999) {
+        const len = opts.pathLength || 1200;
+        ctx.setLineDash([len * ecClamp(opts.progress, 0, 1), len]);
+      }
+      ctx.stroke(path);
+    }
+    ctx.restore();
+  },
+  /* The figure rig (character, hand, anatomicalLimb, limb) lives in
+     02b-figure.js; vector layers and layout in 02a-vector.js. */
+  /* Declarative scene-graph renderer (`params.scene: [...]`) */
+  drawScene: (ctx, nodes, W, H, time, prog, words, env) => {
+    if (!Array.isArray(nodes)) return;
+    env = env || {};
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      if (!n || typeof n !== 'object') continue;
+      const kind = String(n.type || n.kind || '').toLowerCase();
+      if (kind === 'character' || kind === 'figure' || kind === 'person') {
+        SWDraw.character(ctx, Object.assign({ W, H, time, prog, words, localTime: env.localTime, boxOf: env.boxOf, boxes: env.boxes, castTable: env.cast }, n));
+      } else if (kind === 'svglayers' || kind === 'layers' || kind === 'group') {
+        SWDraw.svgLayers(ctx, n.layers || [], Object.assign({ W, H, localTime: env.localTime || 0 }, n));
+      } else if (kind === 'hand') {
+        const hx = n.x <= 1.5 ? n.x * W : n.x, hy = n.y <= 1.5 ? n.y * H : n.y;
+        SWDraw.hand(ctx, hx || W / 2, hy || H / 2, ecN(n.angle, 0), n.pose || 'open', { skin: n.skin || n.color, size: ecN(n.size, 4) });
+      } else if (kind === 'taper' || kind === 'stroke') {
+        const pts = (n.points || []).map(q => [q[0] <= 1.5 ? q[0] * W : q[0], q[1] <= 1.5 ? q[1] * H : q[1]]);
+        SWDraw.taper(ctx, pts, ecN(n.w0, 12), ecN(n.w1, 2), n.color);
+      } else if (kind === 'path' || kind === 'svg') {
+        SWDraw.svgPath(ctx, n.d || n.path, n);
+      } else if (kind === 'limb') {
+        const ik = SWDraw.ik2(n.x1 || 0, n.y1 || 0, n.tx || 100, n.ty || 100, n.l1 || 60, n.l2 || 60, n.bend || 1);
+        SWDraw.limb(ctx, n.x1 || 0, n.y1 || 0, ik.jx, ik.jy, ik.ex, ik.ey, n.w1 || 16, n.w2 || 12, n.color, n.cuffColor);
+      } else if (kind === 'circle') {
+        ctx.save();
+        ctx.fillStyle = n.fill || n.color || '#38BDF8';
+        ctx.beginPath();
+        ctx.arc((n.x <= 1.5 ? n.x * W : n.x) || W / 2, (n.y <= 1.5 ? n.y * H : n.y) || H / 2, n.r || 40, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else if (kind === 'text') {
+        ecText(ctx, n.text, (n.x <= 1.5 ? n.x * W : n.x) || W / 2, (n.y <= 1.5 ? n.y * H : n.y) || H / 2, n.size || 36, n.color || '#F8FAFC', n.align || 'center', n.weight || 700, n.fontFamily);
+      }
+    }
+  }
+};
+if (typeof window !== 'undefined') window.SWDraw = SWDraw;
+
 /* --- Typography --------------------------------------------------------- */
 function ecTitle(ctx, W, H, el, prog, id, p, GA, col, acc) {
   const a = ecXY(p, W, H, 0.5, 0.16);

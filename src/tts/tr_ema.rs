@@ -214,7 +214,7 @@ pub fn speak(text: &str, seed: u32) -> Result<Audio, String> {
     let stoi = |c: char| {
         tr.vocab
             .iter()
-            .position(|v| v.chars().next() == Some(c))
+            .position(|v| v.starts_with(c))
             .unwrap_or(1)
     };
     let ids: Vec<i64> = alpha.chars().map(|c| stoi(c) as i64).collect();

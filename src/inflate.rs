@@ -140,10 +140,10 @@ impl Huffman {
 fn fixed_literal_lengths() -> Vec<u8> {
     // 0-143: 8, 144-255: 9, 256-279: 7, 280-287: 8.
     let mut l = Vec::with_capacity(288);
-    l.extend(std::iter::repeat(8).take(144));
-    l.extend(std::iter::repeat(9).take(112));
-    l.extend(std::iter::repeat(7).take(24));
-    l.extend(std::iter::repeat(8).take(8));
+    l.extend(std::iter::repeat_n(8, 144));
+    l.extend(std::iter::repeat_n(9, 112));
+    l.extend(std::iter::repeat_n(7, 24));
+    l.extend(std::iter::repeat_n(8, 8));
     l
 }
 
@@ -189,16 +189,12 @@ fn dynamic_lengths(r: &mut BitReader) -> Result<(Vec<u8>, Vec<u8>), String> {
                 }
             }
             17 => {
-                let n = 3 + r.bits(3)?;
-                for _ in 0..n {
-                    lengths.push(0);
-                }
+                let n = 3 + r.bits(3)? as usize;
+                lengths.extend(std::iter::repeat_n(0, n));
             }
             18 => {
-                let n = 11 + r.bits(7)?;
-                for _ in 0..n {
-                    lengths.push(0);
-                }
+                let n = 11 + r.bits(7)? as usize;
+                lengths.extend(std::iter::repeat_n(0, n));
             }
             _ => return Err("invalid code-length symbol".into()),
         }

@@ -11,7 +11,7 @@ use crate::json::Value;
 /// The `ec`-pack ids (everything after the original 68) are painted by the
 /// shared component pack in `assets/player.html` and `assets/editor.html`;
 /// one block, kept byte-identical in both files.
-const CATALOG: &[(&str, &[&str])] = &[
+pub const CATALOG: &[(&str, &[&str])] = &[
     (
         "title",
         &[
@@ -201,6 +201,9 @@ const CATALOG: &[(&str, &[&str])] = &[
             "lottieStarTwinkle", "lottieThumbsUp", "lottieToggleSwitch", "lottieWaveHand",
         ],
     ),
+    // Whole scenes acted by the project's cast (settings.cast), directed from
+    // a transcript authored with turns.
+    ("scene", &["conversation"]),
 ];
 
 pub fn all_ids() -> Vec<&'static str> {
@@ -306,7 +309,7 @@ mod tests {
     #[test]
     fn catalog_carries_the_extra_component_pack() {
         let ids = all_ids();
-        assert_eq!(ids.len(), 600, "68 original + 232 pack + 300 pack 3 components");
+        assert_eq!(ids.len(), 601, "68 original + 232 pack + 300 pack 3 components + the conversation scene");
         let mut sorted = ids.clone();
         sorted.sort_unstable();
         for pair in sorted.windows(2) {

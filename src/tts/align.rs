@@ -114,7 +114,7 @@ impl Aligner {
         let s_len = 2 * n + 1;
         const NEG: f32 = -1e30;
         let state_label = |i: usize| -> usize {
-            if i % 2 == 0 {
+            if i.is_multiple_of(2) {
                 BLANK
             } else {
                 tokens[(i - 1) / 2].0
@@ -126,7 +126,7 @@ impl Aligner {
         if s_len > 1 {
             alpha[1] = lp[state_label(1)];
         }
-        for t in 1..frames {
+        for (t, back_row) in back.iter_mut().enumerate().take(frames).skip(1) {
             let mut next = vec![NEG; s_len];
             let row_base = t * 32;
             for i in 0..s_len {
@@ -142,7 +142,7 @@ impl Aligner {
                     b = 2;
                 }
                 next[i] = best + lp[row_base + lab];
-                back[t][i] = b;
+                back_row[i] = b;
             }
             alpha = next;
         }

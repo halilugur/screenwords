@@ -176,7 +176,7 @@ impl Client {
         for m in Self::read_messages(&response, Some(id))? {
             if m.get("id").and_then(Value::as_i64) == Some(id) {
                 if let Some(err) = m.get("error") {
-                    return Err(McpError(format!("{method}: {}", err.to_string())));
+                    return Err(McpError(format!("{method}: {err}")));
                 }
                 if let Some(sid) = response.header("mcp-session-id") {
                     self.session_id = Some(sid.to_string());
@@ -208,9 +208,6 @@ impl Client {
         info.set("version", Value::str("1"));
         params.set("clientInfo", info);
         let result = self.request("initialize", Some(params))?;
-        if let Some(sid) = self.session_id.as_ref() {
-            let _ = sid;
-        }
         self.protocol_version =
             result.get("protocolVersion").and_then(Value::as_str).map(str::to_string);
         self.server_info = result.get("serverInfo").cloned().unwrap_or_else(Value::obj);
@@ -221,25 +218,6 @@ impl Client {
             .to_string();
         self.notify("notifications/initialized")?;
         Ok(result)
-    }
-
-    pub fn list_tools(&mut self) -> Result<Vec<Value>, McpError> {
-        let mut tools = Vec::new();
-        let mut cursor: Option<String> = None;
-        loop {
-            let mut params = Value::obj();
-            if let Some(c) = cursor.clone() {
-                params.set("cursor", Value::str(&c));
-            }
-            let result = self.request("tools/list", Some(params))?;
-            if let Some(list) = result.get("tools").and_then(Value::as_array) {
-                tools.extend(list.iter().cloned());
-            }
-            cursor = result.get("nextCursor").and_then(Value::as_str).map(str::to_string);
-            if cursor.is_none() {
-                return Ok(tools);
-            }
-        }
     }
 
     /// `tools/call`: returns (is_error, parsed first text content).

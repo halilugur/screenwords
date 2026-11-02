@@ -62,9 +62,16 @@ fn route(ui: &Ui, request: &Request) -> Response {
                 let doc = ui.document.lock().unwrap();
                 let p = doc.project();
                 // The voice event wins, then the other audio assets, then a
-                // sidecar voice.mp3 next to the bundle.
+                // sidecar voice.mp3 next to the bundle. Muted tracks are skipped.
+                let voice_track_muted = p
+                    .tracks()
+                    .iter()
+                    .any(|t| t.role() == Some("voice") && t.is_muted() && !t.audio_events().is_empty());
                 let mut ids: Vec<String> = Vec::new();
                 for t in p.tracks() {
+                    if t.is_muted() {
+                        continue;
+                    }
                     for ev in t.audio_events() {
                         if ev.get("role").and_then(Value::as_str) == Some("voice") {
                             if let Some(aid) = ev.get("assetId").and_then(Value::as_str) {
@@ -75,11 +82,13 @@ fn route(ui: &Ui, request: &Request) -> Response {
                         }
                     }
                 }
-                for a in p.assets() {
-                    if a.get("kind").and_then(Value::as_str) == Some("audio") {
-                        if let Some(aid) = a.get("id").and_then(Value::as_str) {
-                            if !ids.iter().any(|x| x == aid) {
-                                ids.push(aid.to_string());
+                if !voice_track_muted {
+                    for a in p.assets() {
+                        if a.get("kind").and_then(Value::as_str) == Some("audio") {
+                            if let Some(aid) = a.get("id").and_then(Value::as_str) {
+                                if !ids.iter().any(|x| x == aid) {
+                                    ids.push(aid.to_string());
+                                }
                             }
                         }
                     }
@@ -122,7 +131,7 @@ fn route(ui: &Ui, request: &Request) -> Response {
             let mut r = match parse_range(request.header("range"), bytes.len()) {
                 RangeSpec::Unsatisfiable => {
                     let mut r = Response::text(416, "");
-                    r.content_type = mime.into();
+                    r.content_type = mime;
                     r.extra_headers
                         .push(("Content-Range".into(), format!("bytes */{}", bytes.len())));
                     r
@@ -146,6 +155,16 @@ fn route(ui: &Ui, request: &Request) -> Response {
             let doc = ui.document.lock().unwrap();
             let mut r = project_summary(&doc);
             r.set("path", Value::str(&ui.project_path));
+            r.set(
+                "theme",
+                doc.project()
+                    .root
+                    .get("settings")
+                    .and_then(|st| st.get("theme"))
+                    .cloned()
+                    .or_else(|| Value::parse(crate::theme::DEFAULT).ok())
+                    .unwrap_or_else(Value::obj),
+            );
             // The last MP4 the render button wrote, so the editor can offer it
             // for download without guessing.
             if let Some(base) = project_base(&ui.project_path) {
@@ -162,133 +181,156 @@ fn route(ui: &Ui, request: &Request) -> Response {
             Response::json(200, r.to_string_pretty(false))
         }
         ("GET", "/api/words") => {
-            let p = ui.document.lock().unwrap().project().clone();
-            let words: Vec<Value> = p
-                .words()
-                .iter()
-                .map(|w| {
-                    let mut o = Value::obj();
-                    o.set("id", Value::str(w.id()));
-                    o.set("start", Value::from_f64(w.start().seconds()));
-                    o.set("end", Value::from_f64(w.end().seconds()));
-                    o.set("text", Value::str(w.text()));
-                    o
-                })
-                .collect();
-            let mut r = Value::obj();
-            r.set("words", Value::Array(words));
-            Response::json(200, r.to_string_pretty(false))
+            let body = {
+                let doc = ui.document.lock().unwrap();
+                let p = doc.project();
+                let words: Vec<Value> = p
+                    .words()
+                    .iter()
+                    .map(|w| {
+                        let mut o = Value::obj();
+                        o.set("id", Value::str(w.id()));
+                        o.set("start", Value::from_f64(w.start().seconds()));
+                        o.set("end", Value::from_f64(w.end().seconds()));
+                        o.set("text", Value::str(w.text()));
+                        if let Some(sp) = w.speaker() {
+                            o.set("speaker", Value::str(sp));
+                        }
+                        o
+                    })
+                    .collect();
+                let mut r = Value::obj();
+                r.set("words", Value::Array(words));
+                r.to_string_pretty(false)
+            };
+            Response::json(200, body)
         }
         ("GET", "/api/timeline") => {
-            let p = ui.document.lock().unwrap().project().clone();
-            let duration = p
-                .settings()
-                .target_duration()
-                .map(|t| t.seconds())
-                .unwrap_or(10.0)
-                .max(p.words().last().map(|w| w.end().seconds()).unwrap_or(0.0));
-            let mut tracks = Vec::new();
-            for t in p.tracks() {
-                let mut items = Vec::new();
-                for c in t.clips() {
-                    let start = RationalTime::from_json(c.get("timelineStart").unwrap_or(&Value::Null))
+            let body = {
+                let doc = ui.document.lock().unwrap();
+                let p = doc.project();
+                let duration = p
+                    .settings()
+                    .target_duration()
+                    .map(|t| t.seconds())
+                    .unwrap_or(10.0)
+                    .max(p.words().last().map(|w| w.end().seconds()).unwrap_or(0.0));
+                let mut tracks = Vec::new();
+                for t in p.tracks() {
+                    let mut items = Vec::new();
+                    for c in t.clips() {
+                        let start = RationalTime::from_json(c.get("timelineStart").unwrap_or(&Value::Null))
+                            .unwrap_or(RationalTime::ZERO)
+                            .seconds();
+                        let dur = RationalTime::from_json(
+                            c.get("sourceRange").and_then(|r| r.get("duration")).unwrap_or(&Value::Null),
+                        )
                         .unwrap_or(RationalTime::ZERO)
                         .seconds();
-                    let dur = RationalTime::from_json(
-                        c.get("sourceRange").and_then(|r| r.get("duration")).unwrap_or(&Value::Null),
-                    )
-                    .unwrap_or(RationalTime::ZERO)
-                    .seconds();
-                    let mut o = Value::obj();
-                    o.set("kind", Value::str("clip"));
-                    o.set("id", Value::str(c.get("id").and_then(Value::as_str).unwrap_or("")));
-                    let asset_id = c.get("assetId").and_then(Value::as_str).unwrap_or("");
-                    if let Some(asset) = p.asset(asset_id) {
-                        let name = asset_label(asset, asset_id);
-                        o.set("name", Value::str(&name));
-                    }
-                    if let Some(params) = c.get("params") {
-                        o.set("params", params.clone());
-                    }
-                    o.set("start", Value::from_f64(start));
-                    o.set("end", Value::from_f64(start + dur));
-                    items.push(o);
-                }
-                for c in t.components() {
-                    if let Some((s, e)) = p.component_window(c) {
                         let mut o = Value::obj();
-                        o.set("kind", Value::str("component"));
+                        o.set("kind", Value::str("clip"));
                         o.set("id", Value::str(c.get("id").and_then(Value::as_str).unwrap_or("")));
-                        o.set(
-                            "componentId",
-                            Value::str(c.get("componentId").and_then(Value::as_str).unwrap_or("")),
-                        );
+                        let asset_id = c.get("assetId").and_then(Value::as_str).unwrap_or("");
+                        if let Some(asset) = p.asset(asset_id) {
+                            let name = asset_label(asset, asset_id);
+                            o.set("name", Value::str(&name));
+                        }
                         if let Some(params) = c.get("params") {
                             o.set("params", params.clone());
                         }
-                        o.set(
-                            "isEnabled",
-                            Value::Bool(c.get("isEnabled").and_then(Value::as_bool).unwrap_or(true)),
-                        );
-                        o.set("zIndex", c.get("zIndex").cloned().unwrap_or(Value::Int(0)));
-                        o.set("start", Value::from_f64(s.seconds()));
-                        o.set("end", Value::from_f64(e.map(|x| x.seconds()).unwrap_or(s.seconds())));
+                        o.set("start", Value::from_f64(start));
+                        o.set("end", Value::from_f64(start + dur));
                         items.push(o);
                     }
-                }
-                for e in t.audio_events() {
-                    let start = p
-                        .resolve_time(e.get("start").unwrap_or(&Value::Null))
-                        .map(|t| t.seconds())
-                        .unwrap_or(0.0);
-                    let dur = RationalTime::from_json(e.get("duration").unwrap_or(&Value::Null))
-                        .unwrap_or(RationalTime::ZERO)
-                        .seconds();
-                    let mut o = Value::obj();
-                    o.set("kind", Value::str("audio"));
-                    o.set("id", Value::str(e.get("id").and_then(Value::as_str).unwrap_or("")));
-                    let asset_id = e.get("assetId").and_then(Value::as_str).unwrap_or("");
-                    if let Some(asset) = p.asset(asset_id) {
-                        let name = asset_label(asset, asset_id);
-                        o.set("name", Value::str(&name));
+                    for c in t.components() {
+                        if let Some((s, e)) = p.component_window(c) {
+                            let mut o = Value::obj();
+                            o.set("kind", Value::str("component"));
+                            o.set("id", Value::str(c.get("id").and_then(Value::as_str).unwrap_or("")));
+                            o.set(
+                                "componentId",
+                                Value::str(c.get("componentId").and_then(Value::as_str).unwrap_or("")),
+                            );
+                            if let Some(params) = c.get("params") {
+                                o.set("params", params.clone());
+                            }
+                            if let Some(pos) = c.get("position") {
+                                o.set("position", pos.clone());
+                            }
+                            if let Some(timing) = c.get("timing") {
+                                o.set("timing", timing.clone());
+                            }
+                            o.set(
+                                "isEnabled",
+                                Value::Bool(c.get("isEnabled").and_then(Value::as_bool).unwrap_or(true)),
+                            );
+                            o.set("zIndex", c.get("zIndex").cloned().unwrap_or(Value::Int(0)));
+                            o.set("start", Value::from_f64(s.seconds()));
+                            o.set("end", Value::from_f64(e.map(|x| x.seconds()).unwrap_or(s.seconds())));
+                            items.push(o);
+                        }
                     }
-                    o.set(
-                        "role",
-                        Value::str(e.get("role").and_then(Value::as_str).unwrap_or("")),
-                    );
-                    o.set("start", Value::from_f64(start));
-                    o.set("end", Value::from_f64(start + dur));
-                    items.push(o);
+                    for e in t.audio_events() {
+                        let start = p
+                            .resolve_time(e.get("start").unwrap_or(&Value::Null))
+                            .map(|t| t.seconds())
+                            .unwrap_or(0.0);
+                        let dur = RationalTime::from_json(e.get("duration").unwrap_or(&Value::Null))
+                            .unwrap_or(RationalTime::ZERO)
+                            .seconds();
+                        let mut o = Value::obj();
+                        o.set("kind", Value::str("audio"));
+                        o.set("id", Value::str(e.get("id").and_then(Value::as_str).unwrap_or("")));
+                        let asset_id = e.get("assetId").and_then(Value::as_str).unwrap_or("");
+                        if let Some(asset) = p.asset(asset_id) {
+                            let name = asset_label(asset, asset_id);
+                            o.set("name", Value::str(&name));
+                        }
+                        o.set(
+                            "role",
+                            Value::str(e.get("role").and_then(Value::as_str).unwrap_or("")),
+                        );
+                        o.set("start", Value::from_f64(start));
+                        o.set("end", Value::from_f64(start + dur));
+                        items.push(o);
+                    }
+                    let mut o = Value::obj();
+                    o.set("id", Value::str(t.id()));
+                    o.set("kind", Value::str(t.kind()));
+                    o.set("name", Value::str(t.name()));
+                    o.set("isHidden", Value::Bool(t.is_hidden()));
+                    o.set("isMuted", Value::Bool(t.is_muted()));
+                    if let Some(role) = t.role() {
+                        o.set("role", Value::str(role));
+                    }
+                    o.set("items", Value::Array(items));
+                    tracks.push(o);
                 }
-                let mut o = Value::obj();
-                o.set("id", Value::str(t.id()));
-                o.set("kind", Value::str(t.kind()));
-                o.set("name", Value::str(t.name()));
-                if let Some(role) = t.role() {
-                    o.set("role", Value::str(role));
-                }
-                o.set("items", Value::Array(items));
-                tracks.push(o);
-            }
-            let mut r = Value::obj();
-            r.set("duration", Value::from_f64(duration));
-            r.set("tracks", Value::Array(tracks));
-            r.set(
-                "analysis",
-                p.root.get("analysis").cloned().unwrap_or_else(Value::obj),
-            );
-            r.set(
-                "theme",
-                p.root.get("settings")
-                    .and_then(|st| st.get("theme"))
-                    .cloned()
-                    .or_else(|| Value::parse(crate::theme::DEFAULT).ok())
-                    .unwrap_or_else(Value::obj),
-            );
-            Response::json(200, r.to_string_pretty(false))
+                let mut r = Value::obj();
+                r.set("duration", Value::from_f64(duration));
+                r.set("tracks", Value::Array(tracks));
+                r.set(
+                    "analysis",
+                    p.root.get("analysis").cloned().unwrap_or_else(Value::obj),
+                );
+                r.set(
+                    "cast",
+                    p.root.get("settings").and_then(|st| st.get("cast")).cloned().unwrap_or_else(Value::obj),
+                );
+                r.set(
+                    "theme",
+                    p.root
+                        .get("settings")
+                        .and_then(|st| st.get("theme"))
+                        .cloned()
+                        .or_else(|| Value::parse(crate::theme::DEFAULT).ok())
+                        .unwrap_or_else(Value::obj),
+                );
+                r.to_string_pretty(false)
+            };
+            Response::json(200, body)
         }
         ("GET", "/api/find") => {
-            let p = ui.document.lock().unwrap().project().clone();
             let mut args = Value::obj();
             if let Some(q) = request.query_param("q") {
                 if !q.is_empty() {
@@ -303,7 +345,11 @@ fn route(ui: &Ui, request: &Request) -> Response {
             if let Some(min) = request.query_param("minPause").and_then(|v| v.parse::<f64>().ok()) {
                 args.set("minPause", Value::from_f64(min));
             }
-            match reads::find_in_transcript(&p, &args) {
+            let result = {
+                let doc = ui.document.lock().unwrap();
+                reads::find_in_transcript(doc.project(), &args)
+            };
+            match result {
                 Ok(v) => Response::json(200, v.to_string_pretty(false)),
                 Err(e) => Response::json(200, error_json(&e)),
             }
@@ -440,8 +486,8 @@ fn route(ui: &Ui, request: &Request) -> Response {
             let Some(base) = project_base(&ui.project_path) else {
                 return Response::text(404, "no project on disk");
             };
-            let project = ui.document.lock().unwrap().project().clone();
-            let name = format!("{}.mp4", slug(project.name()));
+            let slug_name = slug(ui.document.lock().unwrap().project().name());
+            let name = format!("{slug_name}.mp4");
             let path = base.join(&name);
             let Ok(bytes) = std::fs::read(&path) else {
                 return Response::text(404, "no video yet — press Render MP4 in the editor");
@@ -463,8 +509,8 @@ fn route(ui: &Ui, request: &Request) -> Response {
             let Some(base) = project_base(&ui.project_path) else {
                 return Response::text(404, "no project on disk");
             };
-            let project = ui.document.lock().unwrap().project().clone();
-            let path = base.join(format!("{}.html", slug(project.name())));
+            let slug_name = slug(ui.document.lock().unwrap().project().name());
+            let path = base.join(format!("{slug_name}.html"));
             let download = request.query_param("download").map(|v| v != "0").unwrap_or(false);
             match std::fs::read_to_string(&path) {
                 Ok(html) => {
@@ -472,7 +518,7 @@ fn route(ui: &Ui, request: &Request) -> Response {
                     if download {
                         r.extra_headers.push((
                             "Content-Disposition".into(),
-                            format!("attachment; filename=\"{}\"" , slug(project.name()) + ".html"),
+                            format!("attachment; filename=\"{slug_name}.html\""),
                         ));
                     }
                     r
@@ -484,16 +530,22 @@ fn route(ui: &Ui, request: &Request) -> Response {
             }
         }
         ("GET", "/api/chapters") => {
-            let p = ui.document.lock().unwrap().project().clone();
-            Response::json(200, reads::list_chapters(&p).to_string_pretty(false))
+            let body = {
+                let doc = ui.document.lock().unwrap();
+                reads::list_chapters(doc.project()).to_string_pretty(false)
+            };
+            Response::json(200, body)
         }
         ("GET", "/api/srt") => {
-            let p = ui.document.lock().unwrap().project().clone();
             let mut args = Value::obj();
             if let Some(f) = request.query_param("format") {
                 args.set("format", Value::str(f));
             }
-            match reads::export_subtitles(&p, &args) {
+            let result = {
+                let doc = ui.document.lock().unwrap();
+                reads::export_subtitles(doc.project(), &args)
+            };
+            match result {
                 Ok(v) => Response::text(200, v.get("text").and_then(Value::as_str).unwrap_or("")),
                 Err(e) => Response::text(200, &e.message()),
             }
@@ -621,7 +673,7 @@ fn route(ui: &Ui, request: &Request) -> Response {
                     )?;
                 }
                 let mut synth = Value::obj();
-                for key in ["lang", "voice", "seed"] {
+                for key in ["lang", "voice", "voices", "seed"] {
                     if let Some(v) = args.get(key) {
                         synth.set(key, v.clone());
                     }
@@ -670,6 +722,214 @@ fn route(ui: &Ui, request: &Request) -> Response {
                 }
                 Err(e) => Response::json(200, error_json(&e)),
             }
+        }
+        ("GET", "/api/catalog") => {
+            let cats: Vec<Value> = crate::catalog::CATALOG
+                .iter()
+                .map(|(cat, ids)| {
+                    let mut o = Value::obj();
+                    o.set("id", Value::str(cat));
+                    o.set("category", Value::str(cat));
+                    o.set("count", Value::Int(ids.len() as i64));
+                    o
+                })
+                .collect();
+            let total = crate::catalog::all_ids().len();
+            let mut items = Vec::with_capacity(total);
+            for (cat, ids) in crate::catalog::CATALOG {
+                for id in *ids {
+                    let mut o = Value::obj();
+                    o.set("id", Value::str(id));
+                    o.set("category", Value::str(cat));
+                    o.set("summary", Value::str(&format!("{id} ({cat})")));
+                    items.push(o);
+                }
+            }
+            let mut r = Value::obj();
+            r.set("total", Value::Int(total as i64));
+            r.set("categories", Value::Array(cats));
+            r.set("components", Value::Array(items));
+            Response::json(200, r.to_string_pretty(false))
+        }
+        ("GET", "/api/themes") => {
+            let mut presets = Vec::with_capacity(crate::theme::PRESETS.len());
+            for p in crate::theme::PRESETS {
+                let mut o = Value::obj();
+                o.set("name", Value::str(p.name));
+                o.set("description", Value::str(p.description));
+                if let Ok(parsed) = Value::parse(p.json) {
+                    for key in ["paper", "ink", "accent", "accent2", "accentInk"] {
+                        if let Some(v) = parsed.get(key) {
+                            o.set(key, v.clone());
+                        }
+                    }
+                    o.set("theme", parsed);
+                }
+                presets.push(o);
+            }
+            let current = {
+                let doc = ui.document.lock().unwrap();
+                doc.project()
+                    .root
+                    .get("settings")
+                    .and_then(|s| s.get("theme"))
+                    .cloned()
+                    .or_else(|| Value::parse(crate::theme::DEFAULT).ok())
+                    .unwrap_or_else(Value::obj)
+            };
+            let mut r = Value::obj();
+            r.set("presets", Value::Array(presets));
+            r.set("current", current);
+            Response::json(200, r.to_string_pretty(false))
+        }
+        ("POST", "/api/theme") => {
+            let body = String::from_utf8_lossy(&request.body);
+            let args = match Value::parse(&body) {
+                Ok(v) => v,
+                Err(e) => return Response::json(400, json_error("badRequest", &format!("bad JSON: {e}"))),
+            };
+            let base = project_base(&ui.project_path).filter(|p| !p.as_os_str().is_empty() && p.exists());
+            let (server, _) = McpServer::new_shared(ui.document.clone(), base);
+            let result = {
+                let mut doc = ui.document.lock().unwrap();
+                match crate::server::call_tool(&server, &mut doc, "set_theme", &args) {
+                    Ok(mut out) => {
+                        let theme_snapshot = out.clone();
+                        out.set("theme", theme_snapshot);
+                        out.set("canUndo", Value::Bool(doc.can_undo()));
+                        out.set("canRedo", Value::Bool(doc.can_redo()));
+                        Ok(out)
+                    }
+                    Err(e) => Err(e),
+                }
+            };
+            match result {
+                Ok(v) => Response::json(200, v.to_string_pretty(false)),
+                Err(e) => Response::json(400, error_json(&e)),
+            }
+        }
+        ("POST", "/api/edit") => {
+            let body = String::from_utf8_lossy(&request.body);
+            let args = match Value::parse(&body) {
+                Ok(v) => v,
+                Err(e) => return Response::json(400, json_error("badRequest", &format!("bad JSON: {e}"))),
+            };
+            let edit_args = if args.get("edits").is_some() {
+                args
+            } else if let Some(tool) = args.get("tool").and_then(Value::as_str) {
+                let mut op_args = args.get("arguments").cloned().unwrap_or_else(Value::obj);
+                if op_args.get("ref").is_none() {
+                    op_args.set("ref", Value::str("item"));
+                }
+                let mut op = Value::obj();
+                op.set("tool", Value::str(tool));
+                op.set("arguments", op_args);
+                let mut wrapped = Value::obj();
+                wrapped.set(
+                    "label",
+                    Value::str(args.get("label").and_then(Value::as_str).unwrap_or(tool)),
+                );
+                if let Some(rev) = args.get("ifRevision") {
+                    wrapped.set("ifRevision", rev.clone());
+                }
+                wrapped.set("edits", Value::Array(vec![op]));
+                wrapped
+            } else {
+                return Response::json(
+                    400,
+                    json_error("validationFailed", "give {tool, arguments} or {edits: [...]}"),
+                );
+            };
+            let base = project_base(&ui.project_path).filter(|p| !p.as_os_str().is_empty() && p.exists());
+            let (server, _) = McpServer::new_shared(ui.document.clone(), base);
+            let result = {
+                let mut doc = ui.document.lock().unwrap();
+                let words_before = doc.project().words().len();
+                match crate::server::call_tool(&server, &mut doc, "apply_edits", &edit_args) {
+                    Ok(mut out) => {
+                        let words_after = doc.project().words().len();
+                        let mut res_obj = Value::obj();
+                        res_obj.set("wordsBefore", Value::Int(words_before as i64));
+                        res_obj.set("wordsAfter", Value::Int(words_after as i64));
+                        if let Some(first) = out
+                            .get("createdIds")
+                            .and_then(Value::as_array)
+                            .and_then(|a| a.first())
+                            .and_then(Value::as_object)
+                            .and_then(|o| o.first())
+                        {
+                            res_obj.set("id", first.1.clone());
+                        }
+                        out.set("result", res_obj);
+                        out.set("ok", Value::Bool(true));
+                        out.set("canUndo", Value::Bool(doc.can_undo()));
+                        out.set("canRedo", Value::Bool(doc.can_redo()));
+                        Ok(out)
+                    }
+                    Err(e) => Err(e),
+                }
+            };
+            match result {
+                Ok(v) => Response::json(200, v.to_string_pretty(false)),
+                Err(e) => Response::json(400, error_json(&e)),
+            }
+        }
+        ("POST", "/api/undo") => {
+            let body = String::from_utf8_lossy(&request.body);
+            let args = if body.trim().is_empty() {
+                Value::obj()
+            } else {
+                match Value::parse(&body) {
+                    Ok(v) => v,
+                    Err(e) => return Response::json(400, json_error("badRequest", &format!("bad JSON: {e}"))),
+                }
+            };
+            let base = project_base(&ui.project_path).filter(|p| !p.as_os_str().is_empty() && p.exists());
+            let (server, _) = McpServer::new_shared(ui.document.clone(), base);
+            let result = {
+                let mut doc = ui.document.lock().unwrap();
+                match crate::server::call_tool(&server, &mut doc, "undo", &args) {
+                    Ok(mut out) => {
+                        out.set("ok", Value::Bool(true));
+                        out.set("canUndo", Value::Bool(doc.can_undo()));
+                        out.set("canRedo", Value::Bool(doc.can_redo()));
+                        Ok(out)
+                    }
+                    Err(e) => Err(e),
+                }
+            };
+            match result {
+                Ok(v) => Response::json(200, v.to_string_pretty(false)),
+                Err(e) => Response::json(400, error_json(&e)),
+            }
+        }
+        ("POST", "/api/redo") => {
+            let base = project_base(&ui.project_path).filter(|p| !p.as_os_str().is_empty() && p.exists());
+            let (server, _) = McpServer::new_shared(ui.document.clone(), base);
+            let result = {
+                let mut doc = ui.document.lock().unwrap();
+                match crate::server::call_tool(&server, &mut doc, "redo", &Value::obj()) {
+                    Ok(mut out) => {
+                        out.set("ok", Value::Bool(true));
+                        out.set("canUndo", Value::Bool(doc.can_undo()));
+                        out.set("canRedo", Value::Bool(doc.can_redo()));
+                        Ok(out)
+                    }
+                    Err(e) => Err(e),
+                }
+            };
+            match result {
+                Ok(v) => Response::json(200, v.to_string_pretty(false)),
+                Err(e) => Response::json(400, error_json(&e)),
+            }
+        }
+        ("GET", "/api/history") => {
+            let limit = request.query_param("limit").and_then(|v| v.parse::<usize>().ok());
+            let body = {
+                let doc = ui.document.lock().unwrap();
+                reads::get_history(&doc, limit).to_string_pretty(false)
+            };
+            Response::json(200, body)
         }
         ("GET", _) => Response::text(404, "not found"),
         _ => Response::text(405, "method not allowed"),
@@ -784,8 +1044,9 @@ fn frame_rate(args: &Value) -> Result<Option<f64>, String> {
 /// the voice will speak.
 fn script_text(doc: &Document) -> String {
     let p = doc.project();
-    let words: Vec<(String, String)> =
-        p.words().iter().map(|w| (w.id().to_string(), w.text().to_string())).collect();
+    let p_words = p.words();
+    let word_map: std::collections::HashMap<&str, &str> =
+        p_words.iter().map(|w| (w.id(), w.text())).collect();
     let Some(segs) = p
         .transcripts()
         .first()
@@ -802,7 +1063,7 @@ fn script_text(doc: &Document) -> String {
             .map(|ids| {
                 ids.iter()
                     .filter_map(|v| v.as_str())
-                    .filter_map(|id| words.iter().find(|(wid, _)| wid == id).map(|(_, t)| t.as_str()))
+                    .filter_map(|id| word_map.get(id).copied())
                     .collect::<Vec<_>>()
                     .join(" ")
             })
@@ -1086,7 +1347,7 @@ mod tests {
 
         let file = dir.join("a-short-history.html");
         let written = std::fs::read_to_string(&file).expect("video file on disk");
-        assert!(written.contains("__DATA__") == false, "the template was not filled");
+        assert!(!written.contains("__DATA__"), "the template was not filled");
         assert!(written.contains("A Short History"), "the render has no project data");
 
         // served bytes are the saved file, byte for byte
@@ -1383,5 +1644,115 @@ mod tests {
             let id = &rest[..end];
             assert!(ids.contains(&id), "editor.html references #{id} but never declares it");
         }
+    }
+
+    #[test]
+    fn catalog_route_exposes_all_categories_and_components() {
+        let ui = ui_for(Document::new(crate::server::blank_project("cat", true)), "cat");
+        let res = handle(&ui, &request("GET", "/api/catalog", ""));
+        assert_eq!(res.status, 200);
+        let json = Value::parse(&String::from_utf8_lossy(&res.body)).unwrap();
+        assert_eq!(json.get("total").and_then(Value::as_i64), Some(601));
+        let cats = json.get("categories").and_then(Value::as_array).unwrap();
+        assert_eq!(cats.len(), 9);
+        let comps = json.get("components").and_then(Value::as_array).unwrap();
+        assert_eq!(comps.len(), 601);
+    }
+
+    #[test]
+    fn theme_routes_list_presets_and_apply_undoable_themes() {
+        let dir = std::env::temp_dir().join(format!("sw-theme-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let ui = ui_for(Document::new(crate::server::blank_project("theme", true)), &dir.to_string_lossy());
+
+        let res = handle(&ui, &request("GET", "/api/themes", ""));
+        assert_eq!(res.status, 200);
+        let list = Value::parse(&String::from_utf8_lossy(&res.body)).unwrap();
+        assert_eq!(list.get("presets").and_then(Value::as_array).map(<[Value]>::len), Some(8));
+
+        let res = handle(&ui, &request("POST", "/api/theme", r##"{"preset":"editorial","accent":"#FF3366"}"##));
+        let body = String::from_utf8_lossy(&res.body).to_string();
+        assert_eq!(res.status, 200, "{body}");
+        let applied = Value::parse(&body).unwrap();
+        assert_eq!(applied.get("revision").and_then(Value::as_i64), Some(2));
+        let theme = applied.get("theme").unwrap();
+        assert_eq!(theme.get("accent").and_then(Value::as_str), Some("#FF3366"));
+        assert_eq!(theme.get("paper").and_then(Value::as_str), Some("#F6F1E7"));
+
+        // Undo restores the initial theme and revision 1
+        let undo_res = handle(&ui, &request("POST", "/api/undo", "{}"));
+        assert_eq!(undo_res.status, 200);
+        let undo_json = Value::parse(&String::from_utf8_lossy(&undo_res.body)).unwrap();
+        assert_eq!(undo_json.get("revision").and_then(Value::as_i64), Some(1));
+        assert_eq!(undo_json.get("canRedo").and_then(Value::as_bool), Some(true));
+
+        // Redo reapplies revision 2
+        let redo_res = handle(&ui, &request("POST", "/api/redo", "{}"));
+        assert_eq!(redo_res.status, 200);
+        let redo_json = Value::parse(&String::from_utf8_lossy(&redo_res.body)).unwrap();
+        assert_eq!(redo_json.get("revision").and_then(Value::as_i64), Some(2));
+
+        let bad = handle(&ui, &request("POST", "/api/theme", r#"{"preset":"nonexistent"}"#));
+        assert_eq!(bad.status, 400);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn edit_and_history_routes_support_component_track_and_chapter_workflows() {
+        let dir = std::env::temp_dir().join(format!("sw-edit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let ui = ui_for(authored("Hello world. Testing edits now."), &dir.to_string_lossy());
+
+        // 1. Add a component via /api/edit
+        let add_body = r##"{"tool":"add_component","arguments":{"componentId":"statBadge","timing":{"start":1.0,"end":3.5},"position":{"x":0.4,"y":0.6},"params":{"title":"99%"}},"label":"add statBadge"}"##;
+        let res = handle(&ui, &request("POST", "/api/edit", add_body));
+        let body = String::from_utf8_lossy(&res.body).to_string();
+        assert_eq!(res.status, 200, "{body}");
+        let json = Value::parse(&body).unwrap();
+        let comp_id = json
+            .get("result")
+            .and_then(|r| r.get("id"))
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_string();
+
+        // 2. Update the component via /api/edit
+        let upd_body = format!(
+            r##"{{"tool":"update_component","arguments":{{"id":"{comp_id}","zIndex":5,"params":{{"title":"100%"}}}},"label":"update statBadge"}}"##
+        );
+        let res = handle(&ui, &request("POST", "/api/edit", &upd_body));
+        assert_eq!(res.status, 200);
+
+        // 3. Add a chapter via /api/edit
+        let chap_body = r#"{"tool":"add_chapter","arguments":{"title":"Intro","start":0.0},"label":"add Intro"}"#;
+        let res = handle(&ui, &request("POST", "/api/edit", chap_body));
+        assert_eq!(res.status, 200);
+
+        // 4. Correct transcript word via /api/edit
+        let corr_body = r#"{"tool":"correct_transcript","arguments":{"edits":[{"wordId":"w1","text":"Greetings"}]},"label":"fix w1"}"#;
+        let res = handle(&ui, &request("POST", "/api/edit", corr_body));
+        assert_eq!(res.status, 200);
+
+        // 5. Check history endpoint
+        let hist_res = handle(&ui, &request("GET", "/api/history", ""));
+        assert_eq!(hist_res.status, 200);
+        let hist_json = Value::parse(&String::from_utf8_lossy(&hist_res.body)).unwrap();
+        let steps = hist_json.get("history").and_then(Value::as_array).unwrap();
+        assert!(steps.len() >= 4);
+
+        // 6. Verify timeline exposes position and zIndex on the updated component
+        let tl_res = handle(&ui, &request("GET", "/api/timeline", ""));
+        let tl_body = String::from_utf8_lossy(&tl_res.body);
+        assert!(tl_body.contains("\"zIndex\" : 5"), "{tl_body}");
+        assert!(tl_body.contains("\"100%\""), "{tl_body}");
+
+        // 7. Remove the component
+        let del_body = format!(r#"{{"tool":"remove_component","arguments":{{"id":"{comp_id}"}}}}"#);
+        let res = handle(&ui, &request("POST", "/api/edit", &del_body));
+        assert_eq!(res.status, 200);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

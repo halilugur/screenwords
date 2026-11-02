@@ -252,7 +252,7 @@ impl Engine {
                 .map_err(|e| format!("duration: {e}"))?;
             arr.iter().next().copied().unwrap_or(0.0)
         };
-        if !(dur > 0.0) || !dur.is_finite() {
+        if dur <= 0.0 || !dur.is_finite() {
             return Err(format!("duration_predictor returned {dur}"));
         }
 

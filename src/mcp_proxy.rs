@@ -81,7 +81,7 @@ pub fn run<R: BufRead, W: Write>(
             reply.set("jsonrpc", Value::str("2.0"));
             reply.set("id", id.unwrap_or(Value::Null));
             reply.set("result", init_result.clone());
-            let _ = writeln!(output, "{}", reply.to_string());
+            let _ = writeln!(output, "{reply}");
             let _ = output.flush();
             continue;
         }
@@ -104,7 +104,7 @@ pub fn run<R: BufRead, W: Write>(
                 r
             }
         };
-        let _ = writeln!(output, "{}", reply.to_string());
+        let _ = writeln!(output, "{reply}");
         let _ = output.flush();
     }
     0

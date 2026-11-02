@@ -43,8 +43,7 @@ fn has_new_ident(code: &str, ident: &str, paren: bool) -> bool {
             let ws = rest.len() - rest.trim_start().len();
             if ws > 0 {
                 let rest = &rest[ws..];
-                if rest.starts_with(ident) {
-                    let after = &rest[ident.len()..];
+                if let Some(after) = rest.strip_prefix(ident) {
                     let word_ends =
                         after.chars().next().map(|c| !is_word(c)).unwrap_or(true);
                     let ok = if paren {
@@ -72,8 +71,7 @@ fn has_open_tag(code: &str, tag: &str) -> bool {
         let rest = &code[start + 1..];
         let ws = rest.len() - rest.trim_start().len();
         let rest = &rest[ws..];
-        if rest.starts_with(tag) {
-            let after = &rest[tag.len()..];
+        if let Some(after) = rest.strip_prefix(tag) {
             if after.chars().next().map(|c| !is_word(c)).unwrap_or(true) {
                 return true;
             }
@@ -786,13 +784,14 @@ pub fn check_code(
         }
     }
 
-    if (kind == "css" || kind == "html") && !is_scene_sized(manifest) {
-        if has_opaque_html_body(&code) {
-            r.warn(
-                where_,
-                "html/body get a background: an overlay should stay transparent (scenes may be opaque)".into(),
-            );
-        }
+    if (kind == "css" || kind == "html")
+        && !is_scene_sized(manifest)
+        && has_opaque_html_body(&code)
+    {
+        r.warn(
+            where_,
+            "html/body get a background: an overlay should stay transparent (scenes may be opaque)".into(),
+        );
     }
 }
 
@@ -838,10 +837,10 @@ fn has_virtual_clock(code: &str) -> bool {
         let mut from = 0;
         while let Some(pos) = code[from..].find(needle) {
             let start = from + pos;
-            if start == 0 || !is_word(code[..start].chars().next_back().unwrap()) {
-                if code[start + needle.len()..].trim_start().starts_with('(') {
-                    return true;
-                }
+            if (start == 0 || !is_word(code[..start].chars().next_back().unwrap()))
+                && code[start + needle.len()..].trim_start().starts_with('(')
+            {
+                return true;
             }
             from = start + needle.len();
         }
@@ -916,7 +915,7 @@ fn has_opaque_html_body(code: &str) -> bool {
     while let Some(rel) = code[i..].find('{') {
         let brace = i + rel;
         let sel_start = code[..brace]
-            .rfind(|c: char| matches!(c, '}' | '{' | ';'))
+            .rfind(['}', '{', ';'])
             .map(|p| p + 1)
             .unwrap_or(0);
         let selector = code[sel_start..brace].trim();

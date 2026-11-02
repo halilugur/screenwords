@@ -7,7 +7,6 @@ use crate::edits::{Document, EditError};
 use crate::json::Value;
 use crate::project::{Project, Word};
 use crate::rational::{format_clock, RationalTime};
-use std::path::Path;
 
 // --- get_transcript -------------------------------------------------------------------
 
@@ -381,6 +380,7 @@ fn phrase_hits(words: &[Word], query: &str) -> Vec<Hit> {
 pub fn get_history(doc: &Document, limit: Option<usize>) -> Value {
     let mut steps = Vec::new();
     let undo = doc.undo_labels();
+    let undo_len = undo.len() as u64;
     for (i, label) in undo.iter().enumerate().rev() {
         if let Some(limit) = limit {
             if steps.len() >= limit {
@@ -390,12 +390,30 @@ pub fn get_history(doc: &Document, limit: Option<usize>) -> Value {
         let mut s = Value::obj();
         s.set("label", Value::str(label));
         s.set("by", Value::str("claude"));
-        s.set("revision", Value::Int((doc.revision() - (i as u64 + 1)) as i64));
+        s.set(
+            "revision",
+            Value::Int((doc.revision().saturating_sub(undo_len.saturating_sub(i as u64 + 1))) as i64),
+        );
         steps.push(s);
     }
+    let mut redo_steps = Vec::new();
+    let redo = doc.redo_labels();
+    for (i, label) in redo.iter().rev().enumerate() {
+        if let Some(limit) = limit {
+            if redo_steps.len() >= limit {
+                break;
+            }
+        }
+        let mut s = Value::obj();
+        s.set("label", Value::str(label));
+        s.set("by", Value::str("claude"));
+        s.set("revision", Value::Int((doc.revision() + i as u64 + 1) as i64));
+        redo_steps.push(s);
+    }
     let mut out = Value::obj();
+    out.set("history", Value::Array(steps.clone()));
     out.set("undo", Value::Array(steps));
-    out.set("redo", Value::Array(Vec::new()));
+    out.set("redo", Value::Array(redo_steps));
     out.set("revision", Value::Int(doc.revision() as i64));
     out.set("canUndo", Value::Bool(doc.can_undo()));
     out.set("canRedo", Value::Bool(doc.can_redo()));
@@ -725,61 +743,6 @@ fn wrap_lines(text: &str, max_chars: usize, max_lines: usize) -> Vec<String> {
         return out;
     }
     lines
-}
-
-// --- projects & last export --------------------------------------------------------------------
-
-/// `projects {list}`: every bundle in a projects folder, newest first by
-/// modification, with name / revision / modified time.
-pub fn projects(folder: &Path, query: Option<&str>) -> Vec<Value> {
-    let mut out: Vec<(u64, Value)> = Vec::new();
-    let Ok(entries) = std::fs::read_dir(folder) else {
-        return Vec::new();
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.join("project.json").exists() {
-            continue;
-        }
-        let Ok(text) = std::fs::read_to_string(path.join("project.json")) else {
-            continue;
-        };
-        let Ok(p) = Project::parse(&text) else {
-            continue;
-        };
-        let name = p.name().to_string();
-        if let Some(q) = query {
-            if !name.to_lowercase().contains(&q.to_lowercase()) {
-                continue;
-            }
-        }
-        let revision = std::fs::read_to_string(path.join("revision.json"))
-            .ok()
-            .and_then(|s| Value::parse(&s).ok())
-            .and_then(|v| v.get("revision").and_then(Value::as_i64))
-            .unwrap_or(1);
-        let modified = entry
-            .metadata()
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let mut item = Value::obj();
-        item.set("name", Value::str(&name));
-        item.set("path", Value::str(&path.to_string_lossy()));
-        item.set("revision", Value::Int(revision));
-        item.set("modifiedAt", Value::Int(modified as i64));
-        out.push((modified, item));
-    }
-    out.sort_by(|a, b| b.0.cmp(&a.0));
-    out.into_iter().map(|(_, v)| v).collect()
-}
-
-/// `last-export.json` next to project.json, when present.
-pub fn last_export(bundle: &Path) -> Option<Value> {
-    let text = std::fs::read_to_string(bundle.join("last-export.json")).ok()?;
-    Value::parse(&text).ok()
 }
 
 #[cfg(test)]
