@@ -139,9 +139,10 @@ const SW_KIT_HATS = {
 
 /* Under a fez or a cap only the hair below the rim shows: hair layers are
    cut to the region under the hat's lower edge, which past its sides
-   rounds down along the skull, so nothing sticks out above or around it. */
+   rounds down along the skull, so nothing sticks out above or around it
+   (the narrow fez also keeps the forehead clear under its arched rim). */
 const SW_KIT_HAT_RIM = {
-  fez: 'M-120 8 L-41 6 C-38 -6 -33 -13 -27 -16 C-14 -21 14 -21 27 -16 C33 -13 38 -6 41 6 L120 8 L120 160 L-120 160 Z',
+  fez: 'M-120 24 L-40 16 C-34 8 -30 -10 -27 -16 C-14 -13 14 -13 27 -16 C30 -10 34 8 40 16 L120 24 L120 160 L-120 160 Z',
   cap: 'M-120 8 L-41 6 C-39 -2 -37 -8 -33 -11 C-20 -17 20 -17 33 -11 C37 -8 39 -2 41 6 L120 8 L120 160 L-120 160 Z'
 };
 

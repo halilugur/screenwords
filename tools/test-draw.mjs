@@ -829,6 +829,22 @@ function check(name, ok, detail) {
   const c = new MockCtx(); c.clip = () => { clips++; };
   SWDraw.character(c, { kit: 'editorial', hair: 'curly', hat: 'cap', age: 'child', time: 1, W: 1080, H: 1920 });
   check('kit: a capped head draws its hair through a clip', clips > 0, clips);
+  // the fez's rim arches up: the forehead under it stays clear (no strip of
+  // fringe under the rim), the hair shows at the temples
+  const fezClip = swParsePath(swKitParts({ hair: 'curly', hat: 'fez' }).hairFront.layers[0].clip)[0].pts;
+  check('kit: under a fez the forehead middle is clear of hair', !inside(fezClip, 0, -16) && inside(fezClip, 0, -12));
+  // profile: under a fez or a cap the hair is clipped too and curly hair is
+  // a patch at the nape, not big curls around the hat
+  for (const hat of ['fez', 'cap']) for (const hair of ['curly', 'short', 'bob', 'long', 'bun']) {
+    let cl = 0, big = 0;
+    const c2 = new MockCtx(); c2.clip = () => { cl++; };
+    c2.arc = (x, y, r) => { if (r >= 5) big++; };
+    const plain = new MockCtx(); let plainBig = 0, plainCl = 0; plain.arc = (x, y, r) => { if (r >= 5) plainBig++; }; plain.clip = () => { plainCl++; };
+    SWDraw.character(c2, { kit: 'editorial', view: 'side', hair, hat, age: 'child', time: 1, W: 1080, H: 1920 });
+    SWDraw.character(plain, { kit: 'editorial', view: 'side', hair, age: 'child', time: 1, W: 1080, H: 1920 });
+    check(`profile: ${hair} hair under a ${hat} is clipped to the rim`, cl > plainCl, `${cl} clips, ${plainCl} bare`);
+    if (hair === 'curly') check(`profile: no big curls around a ${hat}`, big === 0 && plainBig > 0, `${big} under the hat, ${plainBig} bare`);
+  }
 }
 
 if (failed) {

@@ -66,14 +66,24 @@ function swSideHead(ctx, o) {
   P.bezierCurveTo(24, 26, 21, 30, 15, 31);
   P.bezierCurveTo(8, 32, 2, 30, -2, 27);
   P.closePath();
+  /* under a fez or a cap hair is cut to the region below the rim, which
+     behind the head runs down along the skull, so nothing shows above or
+     around the hat */
+  const rim = hair === 'hijab' ? null : hat === 'fez'
+    ? 'M-90 40 L-37 20 C-34 6 -31 -2 -28 -8 Q-3 -20 20 -14 L90 -14 L90 140 L-90 140 Z'
+    : hat === 'cap' ? 'M-90 40 L-38 20 C-36 8 -33 1 -31 -4 C-16 -14 6 -17 22 -12 L90 -12 L90 140 L-90 140 Z' : null;
+  const underRim = draw => {
+    if (!rim) { draw(); return; }
+    ctx.save(); ctx.clip(new Path2D(rim)); draw(); ctx.restore();
+  };
   /* hair behind the head (long hair falls behind the shoulders) */
   ctx.fillStyle = hairC;
-  if (hair === 'long' || hair === 'bob') {
+  if (hair === 'long' || hair === 'bob') underRim(() => {
     ctx.beginPath();
     ctx.moveTo(4, -32); ctx.bezierCurveTo(-26, -40, -40, -14, -32, hair === 'long' ? 40 + lagX * 0.3 : 20);
     ctx.lineTo(hair === 'long' ? -10 + lagX * 0.3 : -14, hair === 'long' ? 60 : 26);
     ctx.bezierCurveTo(-20, 20, -14, 0, 4, -20); ctx.closePath(); ctx.fill();
-  }
+  });
   if (hair === 'hijab') {
     ctx.beginPath();
     ctx.moveTo(22, -24); ctx.bezierCurveTo(14, -44, -34, -44, -36, -6); ctx.bezierCurveTo(-38, 24, -30, 46, -16, 56);
@@ -145,20 +155,21 @@ function swSideHead(ctx, o) {
   }
   /* hair over the head (under a hat only what shows below its rim) */
   ctx.fillStyle = hairC;
-  if ((hair === 'short' || hair === 'bob' || hair === 'long' || hair === 'bun') && hat && hat !== 'turban') {
-    /* under a fez or a cap only the hair below the rim shows, at the back */
-    ctx.beginPath(); ctx.moveTo(-28, -9); ctx.bezierCurveTo(-32, 0, -29, 10, -23, 14); ctx.bezierCurveTo(-21, 6, -19, -1, -16, -7); ctx.closePath(); ctx.fill();
-  } else if (hair === 'short' || hair === 'bob' || hair === 'long' || hair === 'bun') {
-    ctx.beginPath();
-    ctx.moveTo(20, -21); ctx.bezierCurveTo(12, -40, -24, -40, -30, -12); ctx.bezierCurveTo(-32, 0, -28, 10, -22, 14);
-    ctx.bezierCurveTo(-20, 4, -14, -4, -8, -8); ctx.bezierCurveTo(0, -14, 10, -16, 20, -21); ctx.closePath(); ctx.fill();
-    if (hair === 'bun') { ctx.beginPath(); ctx.arc(-22, -28, 9, 0, Math.PI * 2); ctx.fill(); }
-  } else if (hair === 'curly') {
-    for (const [cx, cy, r] of [[14, -28, 8], [2, -34, 9], [-11, -33, 9], [-22, -24, 9], [-28, -11, 8], [-26, 2, 7], [-8, -24, 8]]) {
-      if (hat && cy < -20) continue;
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  underRim(() => {
+    if (rim && hair !== 'bald') {
+      /* under a fez or a cap only the hair below the rim shows, at the back;
+         curls are small bumps along its edge, never a clump behind the head */
+      ctx.beginPath(); ctx.moveTo(-28, -9); ctx.bezierCurveTo(-32, 0, -29, 10, -23, 14); ctx.bezierCurveTo(-21, 6, -19, -1, -16, -7); ctx.closePath(); ctx.fill();
+      if (hair === 'curly') for (const [cx, cy] of [[-27.5, -4], [-28, 2.5], [-26.5, 8.5], [-23.5, 12.5]]) { ctx.beginPath(); ctx.arc(cx, cy, 3.6, 0, Math.PI * 2); ctx.fill(); }
+    } else if (hair === 'short' || hair === 'bob' || hair === 'long' || hair === 'bun') {
+      ctx.beginPath();
+      ctx.moveTo(20, -21); ctx.bezierCurveTo(12, -40, -24, -40, -30, -12); ctx.bezierCurveTo(-32, 0, -28, 10, -22, 14);
+      ctx.bezierCurveTo(-20, 4, -14, -4, -8, -8); ctx.bezierCurveTo(0, -14, 10, -16, 20, -21); ctx.closePath(); ctx.fill();
+      if (hair === 'bun') { ctx.beginPath(); ctx.arc(-22, -28, 9, 0, Math.PI * 2); ctx.fill(); }
+    } else if (hair === 'curly') {
+      for (const [cx, cy, r] of [[14, -28, 8], [2, -34, 9], [-11, -33, 9], [-22, -24, 9], [-28, -11, 8], [-26, 2, 7], [-8, -24, 8]]) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); }
     }
-  }
+  });
   /* headwear */
   if (hat === 'turban') {
     ctx.fillStyle = hatC;
