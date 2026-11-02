@@ -29,6 +29,9 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
             if let Some(sp) = w.speaker() {
                 o.set("speaker", Value::str(sp));
             }
+            if let Some(n) = w.turn() {
+                o.set("turn", Value::Int(n));
+            }
             o
         })
         .collect();

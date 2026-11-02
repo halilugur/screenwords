@@ -171,22 +171,43 @@ function swStory(ctx, opts) {
   const heads = {};
   for (const m of people) heads[m.cast] = { x: pos[m.cast].x, y: floorY - (170 + 140) * s * ecN(m.scale, 1) };
 
-  /* Camera: ease toward whoever speaks (never past the set's edges). */
+  /* Camera: shots with a purpose. Wide while the scene opens, while
+     anyone walks, for the narrator and for short reactions; a close shot
+     on the face of a character speaking a line of 3 s or more; a two-shot
+     framing both people through an action. Moves ease between shots and
+     the frame never leaves the set. */
   const ease = q => { q = ecClamp(q, 0, 1); return q * q * (3 - 2 * q); };
-  let zoom = 1, cx = W / 2;
-  if ((sc.camera || opts.camera) !== 'wide' && speaking && pos[speaking]) {
-    const held = SWDraw.follow(tm => (SWDraw.speakerAt(words, tm) === speaking ? 1 : 0), time, { freq: 1.2, damping: 1, window: 2, steps: 40 });
-    zoom = 1 + 0.14 * ease(held);
-    cx = W / 2 + (pos[speaking].x - W / 2) * 0.6 * ease(held);
-  }
+  const wide = { z: 1, x: W / 2, y: H / 2 };
+  /* A face's height at time t: lower while its owner sits at home. */
+  const headY = (m, k, cid, t) => {
+    const P = swStoryAt(plans[cid], t);
+    return floorY - 268 * k + (m.seated && Math.abs(P.x - plans[cid].home) < 2 && P.walking < 0.05 ? SWDraw.seatDrop('flat') * k : 0);
+  };
+  const shotAt = t => {
+    if ((sc.camera || opts.camera) === 'wide' || t < a + 2.2 || t > b - 0.6) return wide;
+    for (const id in plans) if (swStoryAt(plans[id], t).walking > 0.05) return wide;
+    for (const act of actions) {
+      if (t < act.t - 0.6 || t > act.t + 2.4 || !plans[act.a] || !plans[act.b]) continue;
+      const xa = swStoryAt(plans[act.a], act.t).x, xb = swStoryAt(plans[act.b], act.t).x;
+      return { z: portrait ? 1.22 : 1.32, x: (xa + xb) / 2, y: floorY - 190 * s };
+    }
+    const line = lines.find(l => t >= l.start + 0.35 && t <= l.end + 0.25);
+    if (!line || line.end - line.start < 3 || !plans[line.id]) return wide;
+    const m = people.find(x => x.cast === line.id) || {}, k = s * ecN(m.scale, 1);
+    return { z: portrait ? 1.25 : 1.38, x: swStoryAt(plans[line.id], t).x, y: headY(m, k, line.id, t) + 40 * k };
+  };
+  const smoothCam = key => SWDraw.follow(t => shotAt(t)[key], time, { freq: 0.9, damping: 1, window: 2.4, steps: 48 });
+  const zoom = Math.max(1, smoothCam('z'));
+  let fx = smoothCam('x'), fy = smoothCam('y');
   ctx.save();
   if (zoom > 1.001) {
-    const fx = ecClamp(cx, W / (2 * zoom), W - W / (2 * zoom)), fy = floorY - H * 0.25;
-    ctx.translate(W / 2, fy);
+    fx = ecClamp(fx, W / (2 * zoom), W - W / (2 * zoom));
+    fy = ecClamp(fy, H / (2 * zoom), H - H / (2 * zoom));
+    ctx.translate(W / 2, H / 2);
     ctx.scale(zoom, zoom);
     ctx.translate(-fx, -fy);
   }
-  const camX = (cx - W / 2) * 0.15;
+  const camX = 0;
   SWDraw.set(ctx, sc.set, { W, H, time, night: !!sc.night, colors: sc.colors, layer: 'back', camX });
 
   /* Which way someone sitting faces: toward the others. */
@@ -200,7 +221,7 @@ function swStory(ctx, opts) {
   /* A table whose sitter has got up stands behind everyone. */
   for (const m of people) {
     const ms = s * ecN(m.scale, 1), P = pos[m.cast];
-    if (m.seated && !(Math.abs(P.x - plans[m.cast].home) < 2 && P.walking < 0.05)) {
+    if (m.seated && (m.table === true || (m.table !== false && sc.set === 'cafe')) && !(Math.abs(P.x - plans[m.cast].home) < 2 && P.walking < 0.05)) {
       swStoryTable(ctx, plans[m.cast].home + (m.facing ? m.facing : facingHome(m.cast)) * 34 * ms, floorY, ms, sc.night);
     }
   }
@@ -287,7 +308,7 @@ function swStory(ctx, opts) {
     SWDraw.character(ctx, o);
     /* Someone seated sits at a small table, which says "sitting" from the
        front far better than legs do. */
-    if (o.seated) swStoryTable(ctx, plans[id].home + (m.facing ? m.facing : facingHome(id)) * 34 * ms, floorY, ms, sc.night);
+    if (o.seated && (m.table === true || (m.table !== false && sc.set === 'cafe'))) swStoryTable(ctx, plans[id].home + (m.facing ? m.facing : facingHome(id)) * 34 * ms, floorY, ms, sc.night);
   }
   SWDraw.set(ctx, sc.set, { W, H, time, night: !!sc.night, colors: sc.colors, layer: 'front', camX });
   ctx.restore();

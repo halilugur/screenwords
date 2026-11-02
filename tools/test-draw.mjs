@@ -460,6 +460,8 @@ function check(name, ok, detail) {
     { set: 'park', cast: [{ cast: 'ada', x: 0.3, enter: 'left' }, { cast: 'kaan', x: 0.7 }], actions: [{ line: 2, type: 'handshake', a: 'ada', b: 'kaan' }] },
     { startLine: 3, set: 'cafe', night: true, cast: [{ cast: 'ada', x: 0.3, exit: 'right' }, { cast: 'kaan', x: 0.7, seated: true }], actions: [{ line: 4, type: 'give', a: 'ada', b: 'kaan', prop: 'mug' }] }
   ];
+  const turnWords = [{ speaker: 'n', turn: 0, text: 'Bir.', start: 0, end: 1 }, { speaker: 'n', turn: 1, text: 'İki.', start: 1.2, end: 2 }, { speaker: 'a', turn: 2, text: 'Üç.', start: 2.2, end: 3 }];
+  check('story: line n is the n-th turn even when one speaker talks twice', SWDraw.conversationPlan(turnWords).lines.length === 3);
   const tl = SWDraw.storyScenes(scenes, lines, words, 16);
   check('story: two scenes, the second at its line', tl.length === 2 && tl[0].a === 0 && Math.abs(tl[1].a - (10 - 0.15)) < 1e-6 && tl[0].b === tl[1].a, JSON.stringify(tl.map(x => [x.a, x.b])));
   const W = 1920, sc = 1.0;

@@ -2070,7 +2070,7 @@ fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
        has one voice. `gap` (seconds, -1.5..3) is the pause before the turn;
        negative overlaps the previous one (a quick "Aynen!" over its end).
        Otherwise `text` is one narrator. */
-    let mut tokens: Vec<(String, Option<String>, bool, Option<f64>)> = Vec::new();
+    let mut tokens: Vec<(String, Option<String>, bool, Option<f64>, Option<usize>)> = Vec::new();
     if let Some(turns) = args.get("turns") {
         let list = turns.as_array().ok_or_else(|| EditError::Validation {
             path: "turns".into(),
@@ -2106,7 +2106,7 @@ fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
             };
             let last = ws.len() - 1;
             for (j, w) in ws.into_iter().enumerate() {
-                tokens.push((w.to_string(), Some(speaker.to_string()), j == last, if j == 0 { gap } else { None }));
+                tokens.push((w.to_string(), Some(speaker.to_string()), j == last, if j == 0 { gap } else { None }, Some(i)));
             }
         }
     } else {
@@ -2114,7 +2114,7 @@ fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
             path: "text".into(),
             message: "required (the story), or turns".into(),
         })?;
-        tokens = text.split_whitespace().map(|w| (w.to_string(), None, false, None)).collect();
+        tokens = text.split_whitespace().map(|w| (w.to_string(), None, false, None, None)).collect();
     }
     let words = tokens;
     if words.is_empty() {
@@ -2139,7 +2139,7 @@ fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
     let mut counter = root.get("wordCounter").and_then(Value::as_i64).unwrap_or(0);
     let mut seg_speaker: Option<String> = None;
     let mut seg_gap: Option<f64> = None;
-    for (w, speaker, turn_end, gap) in words.iter() {
+    for (w, speaker, turn_end, gap, turn) in words.iter() {
         if gap.is_some() {
             seg_gap = *gap;
         }
@@ -2157,6 +2157,11 @@ fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
         if let Some(sp) = speaker {
             word.set("speaker", Value::str(sp));
             seg_speaker = Some(sp.clone());
+        }
+        // The turn a word belongs to, so "line n" means the n-th turn as
+        // written even when one speaker has two turns in a row.
+        if let Some(n) = turn {
+            word.set("turn", Value::Int(*n as i64));
         }
         word_values.push(word);
         segment_word_ids.push(Value::str(&id));
@@ -2491,6 +2496,8 @@ mod tests {
         let words = t.get("words").and_then(Value::as_array).unwrap();
         let speakers: Vec<&str> = words.iter().map(|w| w.get("speaker").and_then(Value::as_str).unwrap()).collect();
         assert_eq!(speakers, ["ada", "ada", "ada", "kaan", "kaan"]);
+        let turns: Vec<i64> = words.iter().map(|w| w.get("turn").and_then(Value::as_i64).unwrap()).collect();
+        assert_eq!(turns, [0, 0, 0, 1, 1]);
         // "Merhaba!" ends a sentence, "geldiniz" ends ada's turn without one.
         let segs = t.get("segments").and_then(Value::as_array).unwrap();
         let seg_speakers: Vec<&str> = segs.iter().map(|s| s.get("speaker").and_then(Value::as_str).unwrap()).collect();

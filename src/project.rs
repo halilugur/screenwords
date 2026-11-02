@@ -265,6 +265,11 @@ impl<'a> Word<'a> {
         self.raw.get("id").and_then(Value::as_str).unwrap_or("")
     }
 
+    /// The index of the authored turn this word belongs to, if any.
+    pub fn turn(&self) -> Option<i64> {
+        self.raw.get("turn").and_then(Value::as_i64)
+    }
+
     /// The speaker id of a multi-speaker transcript (`turns`), if any.
     pub fn speaker(&self) -> Option<&str> {
         self.raw.get("speaker").and_then(Value::as_str)

@@ -421,6 +421,20 @@ function swToonProp(ctx, prop, hand, accent, ink) {
     ctx.fillRect(-5, -10, 3, 14);
     ctx.strokeStyle = 'rgba(248,250,252,0.35)'; ctx.lineWidth = 1.4;
     ctx.beginPath(); ctx.moveTo(-2, -16); ctx.quadraticCurveTo(-5, -20, -1, -24); ctx.stroke();
+  } else if (prop === 'book') {
+    /* A closed sketchbook held upright: a cloth cover, an elastic band and
+       the page edges along one side. */
+    const w = 20, h = 26;
+    ctx.translate(0, -h * 0.3);
+    ctx.rotate(Math.cos(a) >= 0 ? -0.1 : 0.1);
+    ctx.fillStyle = '#F1E9DA';
+    ctx.beginPath(); ctx.roundRect(-w / 2 + 2, -h / 2 + 1.5, w, h - 3, 2); ctx.fill();
+    ctx.fillStyle = swMix(accent, '#7A2E2E', 0.5);
+    ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, 2.5); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(w / 2 - 6, -h / 2, 2, h);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.beginPath(); ctx.roundRect(-w / 2 + 4, -h / 2 + 5, w - 10, 6, 1.5); ctx.fill();
   } else if (prop === 'phone' || prop === 'tablet') {
     /* Held upright in the palm, screen to the viewer: a dark body, a lit
        screen and a camera notch read as a phone at any size. */

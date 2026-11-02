@@ -15,14 +15,15 @@
      for reactions.
    ========================================================================== */
 
-/* Lines as spoken: contiguous words of one speaker. */
+/* Lines as spoken: one per authored turn (words carry `turn`), else
+   contiguous words of one speaker. */
 function swConversationLines(words) {
   const lines = [];
   for (const w of words || []) {
     if (!w || !w.speaker) continue;
     const last = lines[lines.length - 1];
-    if (last && last.id === w.speaker) { last.end = Math.max(last.end, ecN(w.end, last.end)); last.words.push(w); }
-    else lines.push({ id: w.speaker, start: ecN(w.start, 0), end: ecN(w.end, 0), words: [w] });
+    if (last && last.id === w.speaker && (w.turn == null || w.turn === last.turn)) { last.end = Math.max(last.end, ecN(w.end, last.end)); last.words.push(w); }
+    else lines.push({ id: w.speaker, turn: w.turn, start: ecN(w.start, 0), end: ecN(w.end, 0), words: [w] });
   }
   return lines;
 }
