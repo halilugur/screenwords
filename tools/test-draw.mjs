@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'assets', 'components');
-const src = ['00-registry.js', '01-catalog.js', '02-helpers.js', '02a-vector.js', '02b-figure.js', '02c-toon.js', '02d-kit.js', '02e-conversation.js', '02f-sets.js', '02g-story.js']
+const src = ['00-registry.js', '01-catalog.js', '02-helpers.js', '02a-vector.js', '02b-figure.js', '02c-toon.js', '02d-kit.js', '02e-conversation.js', '02f-sets.js', '02g-story.js', '02h-fx.js']
   .map(f => readFileSync(join(dir, f), 'utf8')).join('\n');
 /* A recording stand-in for the canvas: every coordinate handed to it must
    be finite (canvas silently drops NaN geometry, so a NaN shows up as a
@@ -518,6 +518,19 @@ function check(name, ok, detail) {
     SWDraw.set(c, set, { W: 1080, H: 1920, time: 3, night, camX: 40 });
     if (c.depth !== 0 || bad.length !== b0) check(`set ${set}${night ? ' night' : ''} draws cleanly`, false, bad.slice(b0, b0 + 2).join('; '));
   }
+}
+
+// Effects draw cleanly with junk, and ink grows with its progress.
+{
+  const b0 = bad.length;
+  for (const type of ['rays', 'glow', 'dust', 'sparkle', 'ink']) for (const o of [{}, { x: 'a', r: NaN, count: 1e9, time: -3 }, { x: 500, y: 300, size: 300, progress: 0.5, count: 30, time: 2.5 }]) {
+    const c = new MockCtx();
+    try { SWDraw.fx[type](c, o); if (c.depth !== 0) check(`fx ${type} leaves save() open`, false, c.depth); }
+    catch (e) { check(`fx ${type} throws`, false, String(e)); }
+  }
+  check('fx draw finite geometry', bad.length === b0, bad.slice(b0, b0 + 3).join('; '));
+  const strokes = p => { let n = 0; const c = new MockCtx(); c.stroke = () => { n++; }; SWDraw.fx.ink(c, { x: 0, y: 0, size: 200, progress: p, seed: 4 }); return n; };
+  check('ink grows: more branches as progress rises', strokes(0) === 0 && strokes(0.3) < strokes(0.7) && strokes(0.7) < strokes(1), [strokes(0.3), strokes(0.7), strokes(1)].join(' '));
 }
 
 // Word-stress beats: on at a word's start, off 0.4 s later, stronger when

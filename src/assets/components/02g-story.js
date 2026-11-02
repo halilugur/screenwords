@@ -192,6 +192,31 @@ function swStoryFloorThing(ctx, prop, x, y, s, rot) {
   ctx.restore();
 }
 
+/* Effects of a scene: [{ type: rays | glow | dust | sparkle | ink, start |
+   line | at (+ offset), duration | end, layer: 'back' | 'front', x, y and
+   sizes as 0..1 of the frame or px, the effect's own params }], each
+   fading in and out over 0.4 s. */
+function swStoryEffects(ctx, list, layer, time, a, b, lines, words, W, H) {
+  const U = Math.min(W, H);
+  const fx = v => (Math.abs(v) <= 1.5 ? v * W : v), fy = v => (Math.abs(v) <= 1.5 ? v * H : v), fu = v => (Math.abs(v) <= 1.5 ? v * U : v);
+  for (const e of Array.isArray(list) ? list : []) {
+    if (!e || !SWDraw.fx[e.type] || (e.layer === 'back') !== (layer === 'back')) continue;
+    const start = swStoryTime(e, lines, words, a);
+    const end = typeof e.end === 'number' ? e.end : start + ecN(e.duration, b - start);
+    if (!(time >= start && time <= end)) continue;
+    const q = Math.min(ecClamp((time - start) / 0.4, 0, 1), ecClamp((end - time) / 0.4, 0, 1));
+    const o = Object.assign({}, e, { time: time - start });
+    o.x = fx(ecN(e.x, 0.5)); o.y = fy(ecN(e.y, 0.3));
+    for (const key of ['r', 'size', 'length', 'w', 'h']) if (typeof e[key] === 'number') o[key] = fu(e[key]);
+    if (e.type === 'ink') o.progress = ecClamp((time - start) / Math.max(0.1, ecN(e.grow, 3)), 0, 1);
+    if (e.type === 'dust' && typeof e.w === 'number') o.x -= o.w / 2;
+    ctx.save();
+    ctx.globalAlpha *= q;
+    SWDraw.fx[e.type](ctx, o);
+    ctx.restore();
+  }
+}
+
 /* A small round café table with a cup, standing on the floor at x. */
 function swStoryTable(ctx, x, floorY, s, night) {
   const top = floorY - 128 * s;
@@ -296,6 +321,7 @@ function swStory(ctx, opts) {
   };
   /* People, back to front by x so overlaps read left to right. */
   const order = people.slice().sort((p, q) => pos[p.cast].x - pos[q.cast].x);
+  swStoryEffects(ctx, sc.effects, 'back', time, a, b, lines, words, W, H);
   const hugHands = [];
   /* Things on the floor, and things falling to it. */
   for (const it of items) {
@@ -437,7 +463,64 @@ function swStory(ctx, opts) {
     ctx.restore();
   }
   SWDraw.set(ctx, sc.set, { W, H, time, night: !!sc.night, colors: sc.colors, layer: 'front', camX });
+  swStoryEffects(ctx, sc.effects, 'front', time, a, b, lines, words, W, H);
   ctx.restore();
+
+  /* Speech bubbles (bubbles: true on the scene or the story): the line
+     being spoken, sentence by sentence, over the speaker's head with their
+     name — drawn in screen space so it stays readable in close shots. */
+  if (sc.bubbles || (opts.bubbles && sc.bubbles !== false)) {
+    const line = lines.find(l => time >= l.start - 0.1 && time <= l.end + 0.5 && plans[l.id]);
+    if (line) {
+      const m = people.find(x => x.cast === line.id) || {}, k = s * ecN(m.scale, 1);
+      const P = swStoryAt(plans[line.id], time);
+      const seatedNow = m.seated && Math.abs(P.x - plans[line.id].home) < 2 && P.walking < 0.05;
+      const toScreen = (x, y) => (zoom > 1.001 ? { x: W / 2 + (x - fx) * zoom, y: H / 2 + (y - fy) * zoom } : { x, y });
+      const head = toScreen(P.x, floorY - 312 * k + (seatedNow ? SWDraw.seatDrop('flat') * k : 0));
+      /* the sentence under the playhead */
+      const sentences = [];
+      let cur = [];
+      for (const w of line.words) { cur.push(w); if (/[.!?…]$/.test(String(w.text || ''))) { sentences.push(cur); cur = []; } }
+      if (cur.length) sentences.push(cur);
+      const sent = sentences.find(sn => time <= sn[sn.length - 1].end + 0.35) || sentences[sentences.length - 1];
+      const text = sent.map(w => String(w.text || '')).join(' ');
+      const member = castTable[line.id] || {};
+      const name = String(member.name || line.id);
+      const fs = Math.round(U * 0.026), nfs = Math.round(U * 0.02);
+      ctx.save();
+      ctx.font = '500 ' + fs + 'px ' + font;
+      const maxW = Math.min(W * 0.42, U * 0.62);
+      const wordsOf = text.split(' '), rows = [];
+      let row = '';
+      for (const w of wordsOf) {
+        const tryRow = row ? row + ' ' + w : w;
+        if (ctx.measureText(tryRow).width > maxW && row) { rows.push(row); row = w; } else row = tryRow;
+      }
+      if (row) rows.push(row);
+      const pad = U * 0.022, lh = fs * 1.3;
+      const bw = Math.max(...rows.map(r => ctx.measureText(r).width)) + pad * 2;
+      const bh = nfs * 1.5 + rows.length * lh + pad * 1.4;
+      const bx = ecClamp(head.x - bw / 2, U * 0.02, W - bw - U * 0.02);
+      const by = ecClamp(head.y - bh - U * 0.04, U * 0.02, H - bh - U * 0.02);
+      const q = Math.min(ease((time - line.start + 0.1) / 0.2), ease((line.end + 0.5 - time) / 0.2));
+      ctx.globalAlpha *= q;
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.beginPath(); ctx.roundRect(bx + 3, by + 4, bw, bh, U * 0.016); ctx.fill();
+      ctx.fillStyle = '#FBF7EE';
+      ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, U * 0.016); ctx.fill();
+      /* the tail points at the speaker */
+      const tx = ecClamp(head.x, bx + U * 0.03, bx + bw - U * 0.03);
+      ctx.beginPath(); ctx.moveTo(tx - U * 0.014, by + bh - 1); ctx.lineTo(tx + U * 0.014, by + bh - 1); ctx.lineTo(tx + (head.x - tx) * 0.3, by + bh + U * 0.022); ctx.fill();
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = member.accentColor || member.jacketColor || '#B45309';
+      ctx.font = '700 ' + nfs + 'px ' + font;
+      ctx.fillText(name, bx + pad, by + pad * 0.6 + nfs);
+      ctx.fillStyle = '#1F2937';
+      ctx.font = '500 ' + fs + 'px ' + font;
+      rows.forEach((r, i) => ctx.fillText(r, bx + pad, by + pad * 0.6 + nfs * 1.5 + (i + 1) * lh - fs * 0.25));
+      ctx.restore();
+    }
+  }
 
   /* Scene card */
   if (sc.title) {
