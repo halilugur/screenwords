@@ -18,15 +18,19 @@ const SW_SET_PALETTES = {
   office: { wall: '#E7EEF5', wallShade: '#D2DEEA', floor: '#8E9AAF', floorShade: '#76839A', accent: '#3A86FF', accent2: '#FFBE0B', window: '#CDE7F7', ink: '#1F2A37' },
   street: { sky: '#9AD4F5', sky2: '#E9F6FD', bldg: '#E9C46A', bldg2: '#F4A261', bldg3: '#8AB6D6', floor: '#9CA3AF', floorShade: '#6B7280', accent: '#E76F51', window: '#FFF3C4', ink: '#1F2937' },
   park: { sky: '#A7DCF7', sky2: '#EEF8FD', hill: '#8FCB72', hill2: '#6DB35A', floor: '#7FBF5E', floorShade: '#5E9E45', path: '#E3C99A', accent: '#F4A261', tree: '#3E8E41', trunk: '#7A5233', ink: '#2D3B2D' },
-  cafe: { wall: '#2F3E46', wallShade: '#263238', floor: '#8D6E63', floorShade: '#6D4C41', accent: '#F4A261', accent2: '#E9C46A', window: '#CFE8F3', counter: '#A1887F', ink: '#1B1B1B' },
+  cafe: { brick: '#B5654A', brickShade: '#A7573D', brickLine: '#8E4A35', wood: '#7B4F35', floor: '#A0724F', floorShade: '#7E5638', counterTop: '#D7CCC8', accent: '#2F6F4E', accent2: '#E9C46A', window: '#CFE8F3', ink: '#1B1B1B' },
   studio: { wall: '#1E293B', wallShade: '#0F172A', floor: '#334155', floorShade: '#1E293B', accent: '#38BDF8', accent2: '#A78BFA', ink: '#0B1224' }
 };
 const SW_SET_FLOOR = { room: 0.8, office: 0.8, street: 0.82, park: 0.82, cafe: 0.8, studio: 0.8 };
 
-/* Night: the same palette, darker and bluer, with lit windows. */
-function swSetNight(c) {
+/* Night: outdoors the palette goes dark and blue with lit windows; a lit
+   interior only dims a little and warms, and its windows go dark. */
+function swSetNight(c, interior) {
   const o = {};
-  for (const k in c) o[k] = /window/.test(k) ? '#FFD27A' : swMix(c[k], '#0B1530', 0.62);
+  for (const k in c) {
+    if (/window/.test(k)) o[k] = interior ? '#1B2A4E' : '#FFD27A';
+    else o[k] = interior ? swMix(c[k], '#2A1A1A', 0.22) : swMix(c[k], '#0B1530', 0.62);
+  }
   if (c.sky) { o.sky = '#0F1B3D'; o.sky2 = '#25345F'; }
   return o;
 }
@@ -319,41 +323,116 @@ const SW_SETS = {
   cafe: {
     back(ctx, W, H, fy, c, o) {
       const U = Math.min(W, H), s = U / 1080, cx = W / 2 - o.camX * 0.6;
-      swSetInterior(ctx, W, H, fy, c, o.camX);
-      /* big shop window */
-      swSetWindow(ctx, cx - U * 0.5, fy - U * 0.72, U * 0.42, U * 0.42, { window: c.window }, o.night, swShade(c.wall, 0.3));
-      /* chalk menu board */
-      swSetRect(ctx, cx + U * 0.1, fy - U * 0.78, U * 0.32, U * 0.24, '#1F2A2E', 8);
-      swSetRect(ctx, cx + U * 0.1, fy - U * 0.78, U * 0.32, U * 0.24, 'rgba(0,0,0,0)', 8);
-      ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 3 * s; ctx.lineCap = 'round';
-      for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(cx + U * 0.14, fy - U * 0.72 + i * U * 0.04); ctx.lineTo(cx + U * (0.3 + 0.08 * ecHash(i)), fy - U * 0.72 + i * U * 0.04); ctx.stroke(); }
-      /* counter with a coffee machine */
-      const kx = cx + U * 0.02, ky = fy - U * 0.22;
-      swSetRect(ctx, kx, ky, U * 0.5, U * 0.22, c.counter, 6);
-      swSetRect(ctx, kx - U * 0.01, ky - U * 0.02, U * 0.52, U * 0.03, swShade(c.counter, 0.2), 4);
-      swSetRect(ctx, kx + U * 0.3, ky - U * 0.13, U * 0.12, U * 0.11, '#CFD8DC', 6);
-      swSetRect(ctx, kx + U * 0.32, ky - U * 0.05, U * 0.08, U * 0.03, '#455A64', 2);
-      /* pendant lamps, glowing */
+      /* Warm brick above a wooden wainscot, a plank floor. */
+      ctx.fillStyle = c.brick;
+      ctx.fillRect(0, 0, W, fy);
+      const bh = U * 0.035, bw = U * 0.11;
+      ctx.fillStyle = c.brickLine;
+      for (let row = 0, y = 0; y < fy; row++, y += bh) {
+        ctx.fillRect(0, y, W, 2 * s);
+        for (let x = (row % 2 ? -bw / 2 : 0) - ((o.camX * 0.6) % bw); x < W; x += bw) ctx.fillRect(x, y, 2 * s, bh);
+      }
+      ctx.fillStyle = c.brickShade;
+      for (let i = 0; i < 40; i++) {
+        const x = ((ecHash(i) * W * 1.4 - o.camX * 0.6) % W + W) % W, y = Math.floor(ecHash(i + 40) * fy / bh) * bh;
+        ctx.fillRect(x, y + 2 * s, bw - 2 * s, bh - 2 * s);
+      }
+      swSetRect(ctx, 0, fy - U * 0.2, W, U * 0.2, c.wood);
+      ctx.fillStyle = swShade(c.wood, -0.18);
+      for (let x = -((o.camX * 0.6) % (U * 0.12)); x < W; x += U * 0.12) ctx.fillRect(x, fy - U * 0.2, 3 * s, U * 0.2);
+      swSetRect(ctx, 0, fy - U * 0.205, W, U * 0.014, swShade(c.wood, 0.18));
+      const fg = ctx.createLinearGradient(0, fy, 0, H);
+      fg.addColorStop(0, c.floor); fg.addColorStop(1, c.floorShade);
+      ctx.fillStyle = fg; ctx.fillRect(0, fy, W, H - fy);
+      ctx.strokeStyle = swShade(c.floor, -0.15); ctx.lineWidth = 2 * s;
+      for (let y = fy + U * 0.03; y < H; y += U * 0.05) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+      /* Shop window with an awning stripe and the street beyond. */
+      const wh = U * 0.44, wy = Math.max(fy - U * 0.78, U * 0.11), wx = cx - U * 0.62, ww = U * 0.36;
+      swSetWindow(ctx, wx, wy, ww, wh, { window: c.window }, o.night, swShade(c.wood, -0.1));
+      for (let k = 0; k < 6; k++) swSetRect(ctx, wx - 8 + k * (ww + 16) / 6, wy - U * 0.07, (ww + 16) / 6, U * 0.05, k % 2 ? '#F8F5EE' : c.accent, 0);
+
+      /* Menu board: chalk lines beside a cup pictogram. */
+      const mx = cx + U * 0.2, my = Math.max(fy - U * 0.82, U * 0.06);
+      swSetRect(ctx, mx - 8 * s, my - 8 * s, U * 0.34 + 16 * s, U * 0.22 + 16 * s, swShade(c.wood, -0.2), 8 * s);
+      swSetRect(ctx, mx, my, U * 0.34, U * 0.22, '#23302C', 4 * s);
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 3 * s; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.roundRect(mx + U * 0.03, my + U * 0.06, U * 0.06, U * 0.06, 6 * s); ctx.stroke();
+      ctx.beginPath(); ctx.arc(mx + U * 0.095, my + U * 0.085, U * 0.015, -Math.PI / 2, Math.PI / 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(mx + U * 0.045, my + U * 0.045); ctx.quadraticCurveTo(mx + U * 0.035, my + U * 0.03, mx + U * 0.05, my + U * 0.02); ctx.stroke();
+      ctx.lineWidth = 2.4 * s;
+      for (let i = 0; i < 4; i++) {
+        const y = my + U * (0.05 + i * 0.042);
+        ctx.beginPath(); ctx.moveTo(mx + U * 0.15, y); ctx.lineTo(mx + U * (0.25 + 0.03 * ecHash(i + 3)), y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(mx + U * 0.29, y); ctx.lineTo(mx + U * 0.31, y); ctx.stroke();
+      }
+
+      /* Shelf of cups and jars. */
+      const sx = cx - U * 0.18, sy = fy - U * 0.62;
+      swSetRect(ctx, sx, sy, U * 0.34, 8 * s, swShade(c.wood, -0.1), 2);
+      for (let i = 0; i < 6; i++) {
+        const x = sx + U * 0.02 + i * U * 0.055;
+        if (i % 3 === 2) { swSetRect(ctx, x, sy - U * 0.06, U * 0.035, U * 0.06, 'rgba(255,255,255,0.35)', 6 * s); swSetRect(ctx, x + 3 * s, sy - U * 0.035, U * 0.035 - 6 * s, U * 0.032, '#6D4C41', 4 * s); }
+        else { swSetRect(ctx, x, sy - U * 0.035, U * 0.035, U * 0.035, i % 2 ? '#F8F5EE' : c.accent2, 5 * s); }
+      }
+
+      /* Counter: wood front, glass pastry case, espresso machine. */
+      const kx = cx - U * 0.2, ky = fy - U * 0.24, kw = U * 0.78;
+      /* the counter front stands out from the wainscot: painted panels,
+         a dark kick at the floor and a cast shadow */
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(kx + kw, ky + U * 0.02, U * 0.03, U * 0.22);
+      swSetRect(ctx, kx, ky, kw, U * 0.24, c.accent, 6 * s);
+      for (let x = kx + U * 0.025; x + U * 0.11 < kx + kw; x += U * 0.13) {
+        swSetRect(ctx, x, ky + U * 0.035, U * 0.11, U * 0.16, swShade(c.accent, 0.1), 4 * s);
+      }
+      swSetRect(ctx, kx, fy - U * 0.025, kw, U * 0.025, swShade(c.accent, -0.35));
+      swSetRect(ctx, kx - U * 0.01, ky - U * 0.02, kw + U * 0.02, U * 0.03, c.counterTop, 4 * s);
+      /* pastry case */
+      const px0 = kx + U * 0.04, pw = U * 0.3, ph = U * 0.1;
+      swSetRect(ctx, px0, ky - ph, pw, ph, 'rgba(220,240,250,0.35)', 6 * s);
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2 * s;
+      ctx.beginPath(); ctx.roundRect(px0, ky - ph, pw, ph, 6 * s); ctx.stroke();
+      for (let i = 0; i < 5; i++) {
+        const x = px0 + U * 0.035 + i * U * 0.055, y = ky - U * 0.03;
+        ctx.fillStyle = ['#D9A066', '#C0392B', '#F3D6A4', '#8E5B3A', '#E8B4BC'][i];
+        ctx.beginPath(); ctx.ellipse(x, y, U * 0.022, U * 0.016, 0, Math.PI, 0); ctx.fill();
+        ctx.fillRect(x - U * 0.022, y, U * 0.044, U * 0.008);
+      }
+      /* espresso machine */
+      const ex = kx + U * 0.46, ey = ky - U * 0.2;
+      swSetRect(ctx, ex, ey, U * 0.22, U * 0.18, '#B0BEC5', 10 * s);
+      swSetRect(ctx, ex + U * 0.012, ey + U * 0.012, U * 0.196, U * 0.05, '#ECEFF1', 6 * s);
+      swSetRect(ctx, ex, ey + U * 0.14, U * 0.22, U * 0.04, '#78909C', 6 * s);
+      for (let k = 0; k < 2; k++) {
+        const gx = ex + U * (0.055 + k * 0.11);
+        swSetRect(ctx, gx - U * 0.02, ey + U * 0.075, U * 0.04, U * 0.025, '#37474F', 4 * s);
+        swSetRect(ctx, gx - U * 0.006, ey + U * 0.1, U * 0.012, U * 0.02, '#263238');
+        swSetRect(ctx, gx - U * 0.016, ey + U * 0.12, U * 0.032, U * 0.022, '#FFFFFF', 3 * s);
+      }
+      for (let k = 0; k < 3; k++) swSetRect(ctx, ex + U * (0.03 + k * 0.06), ey - U * 0.025, U * 0.035, U * 0.025, '#F8F5EE', 3 * s);
+      /* steam over the cups */
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 2 * s;
+      for (let k = 0; k < 2; k++) { const gx = ex + U * (0.055 + k * 0.11), t = o.time * 0.8 + k; ctx.beginPath(); ctx.moveTo(gx, ey + U * 0.12); ctx.quadraticCurveTo(gx - 6 * s + Math.sin(t) * 4 * s, ey + U * 0.09, gx + Math.sin(t * 1.3) * 5 * s, ey + U * 0.07); ctx.stroke(); }
+
+      /* Pendant lamps glowing warm. */
       for (let i = 0; i < 3; i++) {
-        const px = cx - U * 0.3 + i * U * 0.35, py = Math.max(fy - U * 0.95, fy * 0.1);
-        ctx.strokeStyle = c.ink; ctx.lineWidth = 2 * s;
-        ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, py); ctx.stroke();
-        ctx.fillStyle = c.accent;
-        ctx.beginPath(); ctx.moveTo(px - U * 0.04, py + U * 0.05); ctx.lineTo(px + U * 0.04, py + U * 0.05); ctx.lineTo(px + U * 0.015, py); ctx.lineTo(px - U * 0.015, py); ctx.fill();
-        const gl = ctx.createRadialGradient(px, py + U * 0.06, 2, px, py + U * 0.06, U * 0.25);
-        gl.addColorStop(0, 'rgba(255,214,140,' + (0.3 + 0.05 * Math.sin(o.time * 3 + i)).toFixed(3) + ')');
-        gl.addColorStop(1, 'rgba(255,214,140,0)');
-        ctx.fillStyle = gl; ctx.fillRect(px - U * 0.25, py - U * 0.2, U * 0.5, U * 0.5);
+        const lx = cx - U * 0.3 + i * U * 0.38, ly = Math.max(fy - U * 0.95, fy * 0.08);
+        ctx.strokeStyle = '#2B2B2B'; ctx.lineWidth = 2 * s;
+        ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, ly); ctx.stroke();
+        const gl = ctx.createRadialGradient(lx, ly + U * 0.05, 2, lx, ly + U * 0.05, U * 0.3);
+        gl.addColorStop(0, 'rgba(255,200,120,' + (0.32 + 0.04 * Math.sin(o.time * 2.6 + i)).toFixed(3) + ')');
+        gl.addColorStop(1, 'rgba(255,200,120,0)');
+        ctx.fillStyle = gl; ctx.fillRect(lx - U * 0.3, ly - U * 0.25, U * 0.6, U * 0.6);
+        ctx.fillStyle = '#2B2B2B';
+        ctx.beginPath(); ctx.moveTo(lx - U * 0.045, ly + U * 0.05); ctx.lineTo(lx + U * 0.045, ly + U * 0.05); ctx.lineTo(lx + U * 0.018, ly); ctx.lineTo(lx - U * 0.018, ly); ctx.fill();
+        ctx.fillStyle = '#FFE0A3';
+        ctx.beginPath(); ctx.arc(lx, ly + U * 0.052, U * 0.014, 0, Math.PI); ctx.fill();
       }
     },
     front(ctx, W, H, fy, c, o) {
-      const U = Math.min(W, H), s = U / 1080;
-      /* a small round table with cups, in front of the cast */
-      const tx = U * 0.12 - o.camX * 1.1, ty = H - (H - fy) * 0.35;
-      swSetRect(ctx, tx - 5 * s, ty, 10 * s, H - ty, '#3E2723');
-      ctx.fillStyle = '#5D4037';
-      ctx.beginPath(); ctx.ellipse(tx, ty, U * 0.1, U * 0.022, 0, 0, Math.PI * 2); ctx.fill();
-      swSetRect(ctx, tx - U * 0.03, ty - U * 0.035, U * 0.03, U * 0.035, '#FFFFFF', 4);
+      const U = Math.min(W, H);
+      swSetPlant(ctx, W - U * 0.09 - o.camX * 1.15, H - (H - fy) * 0.12, 1.5 * U / 1080, Object.assign({}, c, { accent: '#B85C38', leaf: '#4C8C4A' }), o.time);
     }
   }
 };
@@ -365,7 +444,7 @@ function swSet(ctx, name, o) {
   const W = ecN(o.W, 1080), H = ecN(o.H, 1920);
   const fy = ecClamp(ecN(o.floor, SW_SET_FLOOR[key]), 0.3, 0.98) * H;
   let c = Object.assign({}, SW_SET_PALETTES[key], o.colors && typeof o.colors === 'object' ? o.colors : {});
-  if (o.night) c = Object.assign(swSetNight(c), o.colors && typeof o.colors === 'object' ? o.colors : {});
+  if (o.night) c = Object.assign(swSetNight(c, key === 'room' || key === 'office' || key === 'cafe' || key === 'studio'), o.colors && typeof o.colors === 'object' ? o.colors : {});
   const opt = { time: ecN(o.time, 0), camX: ecN(o.camX, 0), night: !!o.night };
   ctx.save();
   if (o.layer !== 'front') SW_SETS[key].back(ctx, W, H, fy, c, opt);

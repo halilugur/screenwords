@@ -560,7 +560,8 @@ const SW_EMOTIONS = {
   focused: { lid: 0.8, brow: -0.35, browTilt: 0.5, smile: 0.05, blush: 0, squint: 0.2 },
   sad: { lid: 0.86, brow: 0.25, browTilt: -0.6, smile: -0.55, blush: 0, squint: 0 },
   confident: { lid: 0.9, brow: 0.1, browTilt: 0.1, smile: 0.6, blush: 0.15, squint: 0.2, asym: 0.4 },
-  laugh: { lid: 0.7, brow: 0.6, browTilt: -0.25, smile: 1, blush: 0.6, squint: 0.85 }
+  laugh: { lid: 0.7, brow: 0.6, browTilt: -0.25, smile: 1, blush: 0.6, squint: 0.85 },
+  content: { lid: 0.6, brow: 0.25, browTilt: -0.2, smile: 0.8, blush: 0.55, squint: 0.75 }
 };
 
 Object.assign(SWDraw, {

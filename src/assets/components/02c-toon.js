@@ -422,12 +422,23 @@ function swToonProp(ctx, prop, hand, accent, ink) {
     ctx.strokeStyle = 'rgba(248,250,252,0.35)'; ctx.lineWidth = 1.4;
     ctx.beginPath(); ctx.moveTo(-2, -16); ctx.quadraticCurveTo(-5, -20, -1, -24); ctx.stroke();
   } else if (prop === 'phone' || prop === 'tablet') {
-    const w = prop === 'phone' ? 9 : 22, h = prop === 'phone' ? 17 : 16;
-    ctx.rotate(a + Math.PI / 2);
-    ctx.fillStyle = ink;
-    ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, 2.5); ctx.fill();
-    ctx.fillStyle = swMix(accent, '#0B1224', 0.35);
-    ctx.fillRect(-w / 2 + 1.4, -h / 2 + 1.6, w - 2.8, h - 3.2);
+    /* Held upright in the palm, screen to the viewer: a dark body, a lit
+       screen and a camera notch read as a phone at any size. */
+    const w = prop === 'phone' ? 13 : 30, h = prop === 'phone' ? 24 : 22;
+    ctx.translate(0, -h * 0.28);
+    ctx.rotate(Math.cos(a) >= 0 ? -0.12 : 0.12);
+    ctx.fillStyle = '#111827';
+    ctx.beginPath(); ctx.roundRect(-w / 2, -h / 2, w, h, 3.2); ctx.fill();
+    const g = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+    g.addColorStop(0, '#BFDBFE');
+    g.addColorStop(1, swMix(accent, '#E0F2FE', 0.55));
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.roundRect(-w / 2 + 1.5, -h / 2 + 2.2, w - 3, h - 4.4, 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillRect(-w / 2 + 3, -h / 2 + 5, w * 0.35, 2);
+    ctx.fillRect(-w / 2 + 3, -h / 2 + 9, w * 0.55, 2);
+    ctx.fillStyle = '#111827';
+    ctx.beginPath(); ctx.arc(0, -h / 2 + 1.6, 0.9, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
 }

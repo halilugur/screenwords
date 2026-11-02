@@ -79,10 +79,14 @@ function swStoryBlocking(sc, a, b, W, s, lines, words) {
     if (!PA || !PB) continue;
     const xa = PA.legs.length ? PA.legs[PA.legs.length - 1].x1 : PA.start;
     const xb = PB.legs.length ? PB.legs[PB.legs.length - 1].x1 : PB.start;
-    const gap = (act.type === 'hug' ? 40 : 78) * s, side = xa <= xb ? 1 : -1;
-    /* A seated person stays put and the other comes to them. */
-    const seatA = people.find(m => m.cast === act.a && m.seated), seatB = people.find(m => m.cast === act.b && m.seated);
-    const mid = seatB && !seatA ? xb - side * gap : seatA && !seatB ? xa + side * gap : (xa + xb) / 2;
+    const gap = (act.type === 'hug' ? 24 : act.type === 'give' ? 56 : 60) * s, side = xa <= xb ? 1 : -1;
+    /* A seated person stays put and the other comes to them — except for a
+       hug, where the one sitting gets up and goes to the other. */
+    const hug = act.type === 'hug';
+    const seatA = !hug && people.find(m => m.cast === act.a && m.seated), seatB = !hug && people.find(m => m.cast === act.b && m.seated);
+    const upA = hug && people.find(m => m.cast === act.a && m.seated), upB = hug && people.find(m => m.cast === act.b && m.seated);
+    const mid = seatB && !seatA ? xb - side * gap : seatA && !seatB ? xa + side * gap
+      : upB && !upA ? xa + side * gap : upA && !upB ? xb - side * gap : (xa + xb) / 2;
     const ta = seatA ? xa : mid - side * gap, tb = seatB ? xb : mid + side * gap;
     const lead = Math.max(Math.abs(ta - xa), Math.abs(tb - xb)) / pace;
     walkTo(act.a, act.t - lead - 0.1, ta);
@@ -119,6 +123,26 @@ function swStoryActions(sc, lines, words, a) {
   return (Array.isArray(sc.actions) ? sc.actions : [])
     .filter(x => x && typeof x.a === 'string' && typeof x.b === 'string' && /^(handshake|give|hug)$/.test(String(x.type)))
     .map(x => ({ type: x.type, a: x.a, b: x.b, prop: x.prop || 'phone', t: swStoryTime(x, lines, words, a + 1) }));
+}
+
+/* A small round café table with a cup, standing on the floor at x. */
+function swStoryTable(ctx, x, floorY, s, night) {
+  const top = floorY - 128 * s;
+  ctx.save();
+  ctx.fillStyle = night ? '#2B1B14' : '#4E342E';
+  ctx.fillRect(x - 5 * s, top, 10 * s, floorY - top - 6 * s);
+  ctx.beginPath(); ctx.ellipse(x, floorY - 4 * s, 34 * s, 7 * s, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = night ? '#4A3328' : '#8D6E63';
+  ctx.beginPath(); ctx.roundRect(x - 62 * s, top - 7 * s, 124 * s, 14 * s, 7 * s); ctx.fill();
+  ctx.fillStyle = night ? '#5D4037' : '#A1887F';
+  ctx.beginPath(); ctx.roundRect(x - 62 * s, top - 7 * s, 124 * s, 5 * s, 3 * s); ctx.fill();
+  /* a cup and saucer */
+  ctx.fillStyle = '#F5F5F4';
+  ctx.beginPath(); ctx.ellipse(x + 18 * s, top - 8 * s, 14 * s, 3 * s, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(x + 10 * s, top - 22 * s, 16 * s, 14 * s, 3 * s); ctx.fill();
+  ctx.strokeStyle = '#F5F5F4'; ctx.lineWidth = 2.4 * s;
+  ctx.beginPath(); ctx.arc(x + 28 * s, top - 15 * s, 4 * s, -Math.PI / 2, Math.PI / 2); ctx.stroke();
+  ctx.restore();
 }
 
 /* Draw the story at time t. opts: W, H, time, words, castTable, scenes,
@@ -165,8 +189,21 @@ function swStory(ctx, opts) {
   const camX = (cx - W / 2) * 0.15;
   SWDraw.set(ctx, sc.set, { W, H, time, night: !!sc.night, colors: sc.colors, layer: 'back', camX });
 
+  /* Which way someone sitting faces: toward the others. */
+  const facingHome = id => {
+    const others = people.filter(o => o.cast !== id);
+    const cx = others.length ? others.reduce((acc, o) => acc + plans[o.cast].home, 0) / others.length : W / 2;
+    return cx >= plans[id].home ? 1 : -1;
+  };
   /* People, back to front by x so overlaps read left to right. */
   const order = people.slice().sort((p, q) => pos[p.cast].x - pos[q.cast].x);
+  /* A table whose sitter has got up stands behind everyone. */
+  for (const m of people) {
+    const ms = s * ecN(m.scale, 1), P = pos[m.cast];
+    if (m.seated && !(Math.abs(P.x - plans[m.cast].home) < 2 && P.walking < 0.05)) {
+      swStoryTable(ctx, plans[m.cast].home + (m.facing ? m.facing : facingHome(m.cast)) * 34 * ms, floorY, ms, sc.night);
+    }
+  }
   for (const m of order) {
     const p = pos[m.cast], id = m.cast, ms = s * ecN(m.scale, 1);
     const others = people.filter(o => o.cast !== id);
@@ -180,47 +217,77 @@ function swStory(ctx, opts) {
     const o = {
       cast: id, castTable, words, W, H, time, localTime: time,
       x: p.x, y: floorY - 170 * ms, scale: ms, facing,
-      walkAmount: p.walking, vx: p.vx, seated: !!m.seated && p.walking < 0.05,
+      walkAmount: p.walking, vx: p.vx, seated: !!m.seated && Math.abs(p.x - plans[id].home) < 2 && p.walking < 0.05,
       prop: m.prop, pose: p.walking > 0.05 ? 'walk' : 'auto', lookAt: 'speaker', seatHeads: heads
     };
-    /* Interactions in progress */
+    let hugging = false;
+    /* Interactions in progress, as two-person poses. Heights are in the
+       figure's frame: the hip at floor - 140·s, the waist at floor - 166·s,
+       the shoulders at floor - 227·s. */
     for (const act of actions) {
       const dt = time - act.t;
-      if (dt < -0.4 || dt > 2.2) continue;
+      if (dt < -0.5 || dt > 2.4) continue;
       const partner = act.a === id ? act.b : act.b === id ? act.a : null;
       if (!partner || !pos[partner]) continue;
-      const q = ease((dt + 0.4) / 0.5) * ease((2.2 - dt) / 0.4);
-      /* Hands meet between the two chests, lower when someone sits. */
-      const chestOf = cid => {
-        const mm = people.find(x => x.cast === cid) || {}, k = s * ecN(mm.scale, 1);
-        return floorY - (170 + 50) * k + (mm.seated && pos[cid].walking < 0.05 ? SWDraw.seatDrop('flat') * k : 0);
-      };
-      const px = pos[partner].x, chestY = (chestOf(id) + chestOf(partner)) / 2;
-      const meet = (p.x + px) / 2;
-      o.facing = px >= p.x ? 1 : -1;
+      const q = ease((dt + 0.5) / 0.5) * ease((2.4 - dt) / 0.45);
+      const px = pos[partner].x, toward = px >= p.x ? 1 : -1;
+      const pm = people.find(x => x.cast === partner) || {}, pk = s * ecN(pm.scale, 1);
+      const sitDrop = (mm, k, cid) => (mm.seated && pos[cid].walking < 0.05 ? SWDraw.seatDrop('flat') * k : 0);
+      const myDrop = sitDrop(m, ms, id), theirDrop = sitDrop(pm, pk, partner);
+      o.facing = toward;
+      o.pose = 'idle';
+      o.lookAt = { x: px, y: floorY - 275 * pk + theirDrop };
+      const lerp = (u, v) => u + (v - u) * q;
       if (act.type === 'handshake') {
-        o.rightHand = { x: p.x + (meet - p.x) * q + (1 - q) * o.facing * 30 * ms, y: chestY + 30 * ms + Math.sin(time * 12) * 4 * ms * q };
-        o.rightHandPose = 'open';
+        /* Right hands clasp between them at the waist and pump twice. */
+        const meetX = (p.x + px) / 2, meetY = (floorY - 160 * ms + myDrop + floorY - 160 * pk + theirDrop) / 2;
+        const pump = dt > 0 && dt < 1.3 ? Math.sin(dt * Math.PI * 2 / 0.65) * 5 * ms : 0;
+        const rest = { x: p.x + toward * 20 * ms, y: floorY - 120 * ms + myDrop };
+        o.rightHand = { x: lerp(rest.x, meetX - toward * 12 * ms), y: lerp(rest.y, meetY + pump) };
+        o.rightHandPose = 'hold';
         o.emotion = 'happy';
       } else if (act.type === 'give') {
-        o.rightHand = { x: p.x + (meet - p.x) * q, y: chestY + 20 * ms };
-        o.rightHandPose = 'hold';
+        /* The giver holds the thing out; the receiver opens a palm under it. */
+        const meetX = (p.x + px) / 2, meetY = (floorY - 175 * ms + myDrop + floorY - 175 * pk + theirDrop) / 2;
+        const rest = { x: p.x + toward * 20 * ms, y: floorY - 120 * ms + myDrop };
+        const giver = act.a === id;
+        o.rightHand = { x: lerp(rest.x, meetX - toward * (giver ? 16 : 6) * ms), y: lerp(rest.y, meetY + (giver ? 0 : 8 * ms)) };
+        o.rightHandPose = giver ? 'hold' : 'open';
       } else if (act.type === 'hug') {
-        o.rightHand = { x: px + o.facing * 14 * ms, y: chestY - 8 * ms };
-        o.leftHand = { x: px - o.facing * 4 * ms, y: chestY + 18 * ms };
-        o.rightHandPose = o.leftHandPose = 'relaxed';
-        o.emotion = 'happy';
+        /* An embrace: whoever is drawn behind wraps both arms round the
+           other's back (hands showing at their far side); the one in front
+           puts an arm over the other's shoulder. Heads lean in, eyes close. */
+        const behind = pos[id].x < pos[partner].x || (pos[id].x === pos[partner].x && id < partner);
+        const shoulderY = floorY - 215 * pk + theirDrop, waistY = floorY - 170 * pk + theirDrop;
+        if (behind) {
+          o.rightHand = { x: lerp(p.x + toward * 20 * ms, px + toward * 30 * pk), y: lerp(floorY - 120 * ms, shoulderY + 6 * pk) };
+          o.leftHand = { x: lerp(p.x - toward * 20 * ms, px + toward * 24 * pk), y: lerp(floorY - 120 * ms, waistY) };
+          o.rightHandPose = o.leftHandPose = 'relaxed';
+        } else {
+          o.rightHand = { x: lerp(p.x + toward * 20 * ms, px - toward * 26 * pk), y: lerp(floorY - 120 * ms, shoulderY + 4 * pk) };
+          o.rightHandPose = 'relaxed';
+        }
+        o.headTilt = 0.55 * q;
+        /* Nobody hugs from a chair, or with a phone in hand. */
+        o.seated = false;
+        o.prop = null;
+        hugging = true;
+        o.emotion = q > 0.5 ? 'content' : 'happy';
         o.lookAt = undefined;
+        o.headTurn = 0.6;
       }
     }
     /* A given thing is in the giver's hand until the hand-over, then in the
        receiver's. */
     for (const act of actions) {
-      if (act.type !== 'give' || (act.a !== id && act.b !== id)) continue;
+      if (hugging || act.type !== 'give' || (act.a !== id && act.b !== id)) continue;
       const has = act.a === id ? time < act.t + 0.9 : time >= act.t + 0.9;
       o.prop = has ? act.prop : (o.prop === act.prop ? null : o.prop);
     }
     SWDraw.character(ctx, o);
+    /* Someone seated sits at a small table, which says "sitting" from the
+       front far better than legs do. */
+    if (o.seated) swStoryTable(ctx, plans[id].home + (m.facing ? m.facing : facingHome(id)) * 34 * ms, floorY, ms, sc.night);
   }
   SWDraw.set(ctx, sc.set, { W, H, time, night: !!sc.night, colors: sc.colors, layer: 'front', camX });
   ctx.restore();
