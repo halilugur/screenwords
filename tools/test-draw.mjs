@@ -654,7 +654,7 @@ function check(name, ok, detail) {
     actions: [{ line: 1, type: 'hug', a: 'a', b: 'b' }, { line: 2, type: 'give', a: 'a', b: 'b', prop: 'book' }] });
   const hugT = lines[1].start;
   const gapOf = view => { const B = swStoryBlocking(Object.assign(scene(view), { cast: [{ cast: 'a', x: 0.25 }, { cast: 'b', x: 0.75 }] }), 0, 14, 1920, 1, lines, words); return Math.abs(swStoryAt(B.plans.a, hugT).x - swStoryAt(B.plans.b, hugT).x); };
-    check('profile: a face-to-face embrace stands a touch further apart than a side hug', gapOf('side') > gapOf('front') && gapOf('side') < 70, `${gapOf('side')} ${gapOf('front')}`);
+    check('profile: an embrace closes in chest to chest (the front head hides the other face)', gapOf('side') < gapOf('front') && gapOf('side') < 40, `${gapOf('side')} ${gapOf('front')}`);
   const seen = [];
   const orig = SWDraw.character;
   SWDraw.character = (ctx, o) => { seen.push({ cast: o.cast, view: o.view, walk: o.walkAmount, hand: o.rightHand, t: o.time }); return orig(ctx, o); };
@@ -724,6 +724,59 @@ function check(name, ok, detail) {
     prev = { x, z };
   }
   check('story camera: no frame-to-frame shake', flips <= 2 && worst < 40, `flips ${flips}, jerk ${worst.toFixed(2)}`);
+}
+
+// Walks are booked in story order: an exit written for a later line must
+// not push an earlier handshake's approach after it (the two would greet
+// from across the set).
+{
+  const L = (speaker, text, start, end) => text.split(' ').map((t, i, a) => ({ id: speaker + start + i, speaker, text: t, start: start + (end - start) * i / a.length, end: start + (end - start) * (i + 1) / a.length }));
+  const words = [].concat(L('a', 'Hello there.', 0.5, 2), L('b', 'Welcome, welcome.', 3, 5), L('a', 'Let us go.', 8, 10));
+  const lines = SWDraw.conversationPlan(words).lines;
+  for (const view of ['front', 'auto']) {
+    const sc = { set: 'park', view, cast: [{ cast: 'a', x: 0.25 }, { cast: 'b', x: 0.75 }],
+      moves: [{ line: 2, cast: 'a', x: 1.2 }, { line: 2, cast: 'b', x: 1.2 }],
+      actions: [{ line: 1, offset: 1, type: 'handshake', a: 'a', b: 'b' }] };
+    const B = swStoryBlocking(sc, 0, 12, 1920, 1.6, lines, words, undefined);
+    const t = lines[1].start + 1, pa = swStoryAt(B.plans.a, t), pb = swStoryAt(B.plans.b, t);
+    const gap = Math.abs(pa.x - pb.x);
+    check(`story ${view}: a handshake happens at arm's length despite a later exit`, gap < 260 && gap > (view === 'auto' ? 220 : 150) && pa.walking < 0.05 && pb.walking < 0.05, gap.toFixed(0));
+  }
+}
+
+// Crowds keep perspective: an extra standing further back (feet higher up
+// the floor) is smaller, and one in front is never smaller than one behind.
+{
+  const seen = [];
+  const orig = SWDraw.character;
+  SWDraw.character = (ctx, o) => { seen.push(o); return orig(ctx, o); };
+  try {
+    SWDraw.story(new MockCtx(), { W: 1920, H: 1080, time: 1, words: [], castTable: { a: { kit: 'editorial' } }, duration: 5,
+      scenes: [{ set: 'street', crowd: { count: 14, walkers: 0.3, seed: 5 }, cast: [{ cast: 'a', x: 0.5 }] }] });
+  } finally { SWDraw.character = orig; }
+  const extras = seen.filter(o => !o.cast).map(o => ({ feet: o.y + 170 * o.scale, k: o.scale })).sort((p, q) => p.feet - q.feet);
+  const cast = seen.find(o => o.cast === 'a');
+  const ordered = extras.every((e, i) => i === 0 || e.k >= extras[i - 1].k - 1e-9);
+  const behind = extras.every(e => e.feet <= cast.y + 170 * cast.scale + 1e-6);
+  check('crowd: further back is smaller, in order', extras.length === 14 && ordered && behind, JSON.stringify(extras.slice(0, 3)));
+  check('crowd: the nearest extras are near the cast\'s size', extras[extras.length - 1].k > 0.85 * cast.scale, `${extras[extras.length - 1].k} vs ${cast.scale}`);
+}
+
+// Crowds dress by custom: a headscarf only on a woman, and women in
+// dresses; a fez is red felt.
+{
+  const seen = [];
+  const orig = SWDraw.character;
+  SWDraw.character = (ctx, o) => { seen.push(o); return orig(ctx, o); };
+  try {
+    for (const seed of [1, 2, 3, 4, 5, 6]) SWDraw.story(new MockCtx(), { W: 1920, H: 1080, time: 1, words: [], castTable: {}, duration: 5,
+      scenes: [{ set: 'street', crowd: { count: 20, seed, outfits: ['robe', 'tshirt', 'blazer'], hats: ['turban', 'fez', 'cap', 'none'] } }] });
+  } finally { SWDraw.character = orig; }
+  const scarves = seen.filter(o => o.hair === 'hijab');
+  check('crowd: a headscarf is worn only with a dress, never with a beard', scarves.length > 0 && scarves.every(o => o.outfit === 'dress' && (o.beard === 'none' || !o.beard) && (o.hat === 'none' || !o.hat)), JSON.stringify(scarves.find(o => o.outfit !== 'dress')));
+  check('crowd: dresses only on women (no beard, no hat)', seen.filter(o => o.outfit === 'dress').every(o => (o.beard === 'none' || !o.beard) && (o.hat === 'none' || !o.hat)));
+  const reds = seen.filter(o => o.hat === 'fez').map(o => (String(o.hatColor).match(/\d+/g) || []).map(Number));
+  check('crowd: a fez is red', reds.length > 0 && reds.every(c => c.length === 3 && c[0] > c[1] + 60 && c[0] > c[2] + 60), JSON.stringify(reds.slice(0, 3)));
 }
 
 if (failed) {

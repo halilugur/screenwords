@@ -19,9 +19,9 @@ const SW_KIT_BEARDS = { long: {"d":"M-27 4 C-28 28 -17 58 0 66 C17 58 28 28 27 4
 /* A headscarf: draped behind the shoulders and framing the face (the face
    opening is cut with evenodd), worn in the member's hairColor. */
 SW_KIT_HAIR.hijab = {
-  back: [{ d: 'M-38 -6 C-40 -42 40 -42 38 -6 C38 22 37 42 31 52 L-31 52 C-37 42 -38 22 -38 -6 Z', fill: '$hair' }],
+  back: [{ d: 'M-39 -6 C-41 -52 41 -52 39 -6 C39 22 38 42 31 52 L-31 52 C-38 42 -39 22 -39 -6 Z', fill: '$hair' }],
   front: [
-    { d: 'M-36 -4 C-38 -40 38 -40 36 -4 C36 16 32 32 22 40 L-22 40 C-32 32 -36 16 -36 -4 Z M-25 -8 C-25 -26 25 -26 25 -8 C25 10 17 26 0 29 C-17 26 -25 10 -25 -8 Z', fill: '$hair', fillRule: 'evenodd' },
+    { d: 'M-37 -4 C-39 -50 39 -50 37 -4 C37 16 33 32 22 40 L-22 40 C-33 32 -37 16 -37 -4 Z M-25 -8 C-25 -26 25 -26 25 -8 C25 10 17 26 0 29 C-17 26 -25 10 -25 -8 Z', fill: '$hair', fillRule: 'evenodd' },
     { d: 'M-25 -8 C-25 -26 25 -26 25 -8', stroke: '$hairLight', lineWidth: 2, opacity: 0.5 },
     { d: 'M14 30 Q24 38 20 50', stroke: '$hairLight', lineWidth: 1.6, opacity: 0.45 }
   ]
@@ -127,13 +127,14 @@ const SW_KIT_HATS = {
     { d: 'M-32 -24 C-16 -34 16 -36 32 -24 M-30 -38 C-14 -48 14 -50 30 -38 M-22 -52 C-8 -58 10 -58 22 -52', stroke: '$hatDark', lineWidth: 2, lineCap: 'round' },
     { d: 'M2 -31 a4.5 4.5 0 1 0 9 0 a4.5 4.5 0 1 0 -9 0 Z', fill: '$accent' }],
   fez: [
-    { d: 'M-20 -28 L-16 -62 L16 -62 L20 -28 C10 -32 -10 -32 -20 -28 Z', fill: '$hat' },
-    { d: 'M-20 -28 L-19.4 -34 C-10 -38 10 -38 19.4 -34 L20 -28 C10 -32 -10 -32 -20 -28 Z', fill: '$hatDark' },
-    { d: 'M0 -62 Q14 -60 15 -46', stroke: '$ink', lineWidth: 2, lineCap: 'round' },
-    { d: 'M12 -48 L18 -48 L16 -38 L13 -38 Z', fill: '$ink' }],
+    { d: 'M-27 -16 L-21 -56 L21 -56 L27 -16 C14 -21 -14 -21 -27 -16 Z', fill: '$hat' },
+    { d: 'M-27 -16 L-26 -23 C-14 -28 14 -28 26 -23 L27 -16 C14 -21 -14 -21 -27 -16 Z', fill: '$hatDark' },
+    { d: 'M0 -56 Q16 -54 18 -38', stroke: '$ink', lineWidth: 2, lineCap: 'round' },
+    { d: 'M15 -40 L21 -40 L19 -29 L16 -29 Z', fill: '$ink' }],
   cap: [
-    { d: 'M-28 -24 C-27 -44 27 -44 28 -24 C16 -29 -16 -29 -28 -24 Z', fill: '$hat' },
-    { d: 'M-18 -34 h3 M-6 -37 h3 M6 -37 h3 M18 -34 h3', stroke: '$hatDark', lineWidth: 2.2, lineCap: 'round' }]
+    { d: 'M-33 -15 C-35 -54 35 -54 33 -15 C20 -21 -20 -21 -33 -15 Z', fill: '$hat' },
+    { d: 'M-33 -15 C-20 -21 20 -21 33 -15 L33 -11 C20 -17 -20 -17 -33 -11 Z', fill: '$hatDark' },
+    { d: 'M-21 -27 h3 M-8 -31 h3 M5 -31 h3 M18 -27 h3', stroke: '$hatDark', lineWidth: 2.2, lineCap: 'round' }]
 };
 
 /* Glasses, drawn at the head's eye anchor. */

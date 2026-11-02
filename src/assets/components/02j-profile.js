@@ -126,15 +126,38 @@ function swSideHead(ctx, o) {
     ctx.closePath(); ctx.fill();
     ctx.beginPath(); ctx.moveTo(16, 13); ctx.quadraticCurveTo(22, 11, 27, 13); ctx.lineTo(26, 14.5); ctx.quadraticCurveTo(21, 13.5, 16, 15); ctx.fill();
   }
-  /* hair over the head */
+  /* a headscarf covers the crown, the back of the head, the ear and the
+     neck, leaving the face open from the brow to the chin */
+  if (hair === 'hijab') {
+    ctx.fillStyle = hairC;
+    ctx.beginPath();
+    ctx.moveTo(25, -24);
+    ctx.bezierCurveTo(16, -48, -36, -48, -39, -6);
+    ctx.bezierCurveTo(-41, 24, -33, 46, -16, 56);
+    ctx.lineTo(18, 50);
+    ctx.bezierCurveTo(22, 42, 20, 35, 14, 32);
+    ctx.bezierCurveTo(4, 27, 1, 12, 2, -2);
+    ctx.bezierCurveTo(3, -14, 11, -21, 25, -24);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = swShade(hairC, 0.25); ctx.globalAlpha = 0.45; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(4, 6); ctx.bezierCurveTo(4, -10, 10, -19, 24, -23); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  /* hair over the head (under a hat only what shows below its rim) */
   ctx.fillStyle = hairC;
-  if (hair === 'short' || hair === 'bob' || hair === 'long' || hair === 'bun') {
+  if ((hair === 'short' || hair === 'bob' || hair === 'long' || hair === 'bun') && hat && hat !== 'turban') {
+    /* under a fez or a cap only the hair below the rim shows, at the back */
+    ctx.beginPath(); ctx.moveTo(-28, -9); ctx.bezierCurveTo(-32, 0, -29, 10, -23, 14); ctx.bezierCurveTo(-21, 6, -19, -1, -16, -7); ctx.closePath(); ctx.fill();
+  } else if (hair === 'short' || hair === 'bob' || hair === 'long' || hair === 'bun') {
     ctx.beginPath();
     ctx.moveTo(20, -21); ctx.bezierCurveTo(12, -40, -24, -40, -30, -12); ctx.bezierCurveTo(-32, 0, -28, 10, -22, 14);
     ctx.bezierCurveTo(-20, 4, -14, -4, -8, -8); ctx.bezierCurveTo(0, -14, 10, -16, 20, -21); ctx.closePath(); ctx.fill();
     if (hair === 'bun') { ctx.beginPath(); ctx.arc(-22, -28, 9, 0, Math.PI * 2); ctx.fill(); }
   } else if (hair === 'curly') {
-    for (const [cx, cy, r] of [[14, -28, 8], [2, -34, 9], [-11, -33, 9], [-22, -24, 9], [-28, -11, 8], [-26, 2, 7], [-8, -24, 8]]) { ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); }
+    for (const [cx, cy, r] of [[14, -28, 8], [2, -34, 9], [-11, -33, 9], [-22, -24, 9], [-28, -11, 8], [-26, 2, 7], [-8, -24, 8]]) {
+      if (hat && cy < -20) continue;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    }
   }
   /* headwear */
   if (hat === 'turban') {
@@ -145,11 +168,15 @@ function swSideHead(ctx, o) {
     ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(16, -30, 4, 0, Math.PI * 2); ctx.fill();
   } else if (hat === 'fez') {
     ctx.fillStyle = hatC;
-    ctx.beginPath(); ctx.moveTo(-20, -20); ctx.lineTo(-13, -52); ctx.lineTo(13, -50); ctx.lineTo(17, -19); ctx.quadraticCurveTo(0, -25, -20, -20); ctx.fill();
-    ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(1, -51); ctx.quadraticCurveTo(-15, -50, -17, -36); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-28, -8); ctx.lineTo(-20, -50); ctx.lineTo(12, -50); ctx.lineTo(20, -14); ctx.quadraticCurveTo(-3, -20, -28, -8); ctx.fill();
+    ctx.fillStyle = swShade(hatC, -0.22);
+    ctx.beginPath(); ctx.moveTo(-28, -8); ctx.quadraticCurveTo(-3, -20, 20, -14); ctx.lineTo(19, -20); ctx.quadraticCurveTo(-3, -26, -27, -14); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-4, -50); ctx.quadraticCurveTo(-20, -49, -24, -32); ctx.stroke();
   } else if (hat === 'cap') {
     ctx.fillStyle = hatC;
-    ctx.beginPath(); ctx.moveTo(-26, -20); ctx.bezierCurveTo(-24, -40, 14, -42, 18, -24); ctx.quadraticCurveTo(-4, -28, -26, -20); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-31, -8); ctx.bezierCurveTo(-36, -50, 16, -58, 22, -16); ctx.bezierCurveTo(6, -21, -16, -18, -31, -8); ctx.fill();
+    ctx.fillStyle = swShade(hatC, -0.22);
+    ctx.beginPath(); ctx.moveTo(-31, -8); ctx.bezierCurveTo(-16, -18, 6, -21, 22, -16); ctx.lineTo(22, -12); ctx.bezierCurveTo(6, -17, -16, -14, -31, -4); ctx.closePath(); ctx.fill();
   }
   if (glasses) {
     ctx.strokeStyle = ink; ctx.lineWidth = 1.6;

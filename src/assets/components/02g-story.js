@@ -78,9 +78,16 @@ function swStoryBlocking(sc, a, b, W, s, lines, words, view) {
     if (Math.abs(x1 - prev) < 2) return;
     P.legs.push({ t0, x0: prev, x1, t1: t0 + Math.abs(x1 - prev) / pace });
   };
+  /* Every walk is scheduled in story order — moves, pickups and the
+     approach before an action alike — since each starts from wherever its
+     walker stands by then. (Scheduled by kind, an exit written for a later
+     line was booked first and pushed an earlier handshake's approach after
+     it: the two greeted each other from across the set.) Ties keep the
+     order below: moves, then drops and pickups, then actions. */
+  const events = [];
   for (const mv of (Array.isArray(sc.moves) ? sc.moves : [])) {
     if (!mv || typeof mv.cast !== 'string') continue;
-    walkTo(mv.cast, swStoryTime(mv, lines, words, a), ecN(mv.x, 0.5) * W);
+    events.push({ t: swStoryTime(mv, lines, words, a), k: 0, run: () => walkTo(mv.cast, swStoryTime(mv, lines, words, a), ecN(mv.x, 0.5) * W) });
   }
   /* Things on the floor: declared with the scene (items), dropped (they
      fall from the dropper's bag where they walk) and picked up (the picker
@@ -88,9 +95,9 @@ function swStoryBlocking(sc, a, b, W, s, lines, words, view) {
   const items = (Array.isArray(sc.items) ? sc.items : []).filter(it => it && typeof it.prop === 'string')
     .map(it => ({ prop: it.prop, x: ecN(it.x, 0.5) * W, from: -Infinity, until: Infinity, fall: null }));
   const solo = swStoryActions(sc, lines, words, a).filter(act => act.type === 'drop' || act.type === 'pickup').sort((p, q) => p.t - q.t);
-  for (const act of solo) {
+  for (const act of solo) events.push({ t: act.t, k: 1, run: () => {
     const P = plans[act.a];
-    if (!P) continue;
+    if (!P) return;
     if (act.type === 'drop') {
       const at = swStoryAt(P, act.t), dir = Math.sign(at.vx) || 1;
       items.push({ prop: act.prop, x: at.x + dir * 34 * s, from: act.t, until: Infinity, fall: { x0: at.x + dir * 34 * s, dir } });
@@ -98,7 +105,7 @@ function swStoryBlocking(sc, a, b, W, s, lines, words, view) {
       const here = swStoryAt(P, act.t - 0.6).x;
       const it = items.filter(x => x.prop === act.prop && x.from <= act.t && x.until > act.t)
         .sort((p, q) => Math.abs(p.x - here) - Math.abs(q.x - here))[0];
-      if (!it) continue;
+      if (!it) return;
       act.x = it.x;
       const side = it.x >= here ? 1 : -1, stand = it.x - side * 30 * s;
       walkTo(act.a, act.t - 0.35 - Math.abs(stand - (P.legs.length ? P.legs[P.legs.length - 1].x1 : P.start)) / pace, stand);
@@ -107,17 +114,22 @@ function swStoryBlocking(sc, a, b, W, s, lines, words, view) {
       if (last) act.t = Math.max(act.t, last.t1 + 0.4);
       it.until = act.t + 0.55;
     }
-  }
+  } });
   /* Actions bring the two together a moment before they happen. */
-  for (const act of swStoryActions(sc, lines, words, a)) {
-    if (act.type === 'drop' || act.type === 'pickup') continue;
+  for (const act of swStoryActions(sc, lines, words, a)) events.push({ t: act.t, k: 2, run: () => {
+    if (act.type === 'drop' || act.type === 'pickup') return;
     const PA = plans[act.a], PB = plans[act.b];
-    if (!PA || !PB) continue;
+    if (!PA || !PB) return;
     const xa = PA.legs.length ? PA.legs[PA.legs.length - 1].x1 : PA.start;
     const xb = PB.legs.length ? PB.legs[PB.legs.length - 1].x1 : PB.start;
     /* in profile two people embrace face to face, a little closer */
     const prof = id => { const mm = people.find(m => m.cast === id) || {}; return /^(side|auto)$/.test(String(mm.view || sc.view || view || '')); };
-    const gap = (act.type === 'hug' ? (prof(act.a) && prof(act.b) ? 31 : 27) : act.type === 'give' ? 56 : 60) * s, side = xa <= xb ? 1 : -1;
+    /* In profile the pair face each other. A handshake or a hand-over is
+       done at a full arm's length, so the faces stay well apart (closer,
+       two faces in profile read as a kiss). An embrace closes right in:
+       the one in front then hides the other's face behind their head. */
+    const both = prof(act.a) && prof(act.b);
+    const gap = (act.type === 'hug' ? (both ? 10 : 27) : act.type === 'give' ? (both ? 70 : 56) : (both ? 74 : 60)) * s, side = xa <= xb ? 1 : -1;
     /* A seated person stays put and the other comes to them — except for a
        hug, where the one sitting gets up and goes to the other. */
     const hug = act.type === 'hug';
@@ -134,7 +146,8 @@ function swStoryBlocking(sc, a, b, W, s, lines, words, view) {
       walkTo(act.a, act.t + 2.6, ta - side * 40 * s);
       walkTo(act.b, act.t + 2.6, tb + side * 40 * s);
     }
-  }
+  } });
+  events.map((e, i) => Object.assign(e, { i })).sort((p, q) => p.t - q.t || p.k - q.k || p.i - q.i).forEach(e => e.run());
   for (const m of people) {
     if (m.exit === 'left' || m.exit === 'right') {
       const P = plans[m.cast];
@@ -226,7 +239,8 @@ function swStoryEffects(ctx, list, layer, time, a, b, lines, words, W, H) {
 /* Extras: people who fill a scene without lines — some standing about,
    some walking through — each with a look drawn from a seed, a little
    behind and smaller than the cast. crowd: { count, walkers (0..1 of
-   them), outfits, hats, colors, scale, seed }. */
+   them), outfits, hats, colors, scale, seed }. Women wear dresses (a
+   headscarf is theirs alone); outfits and hats are the men's. */
 const SW_CROWD_SKIN = ['#F2C4A2', '#E8B48F', '#D9A27A', '#C68642', '#A86B45', '#8D5A3B', '#6B4226'];
 const SW_CROWD_HAIR = ['#1A1110', '#2B2233', '#3B2416', '#5A3A22', '#7A3B1E', '#C8C6C2'];
 const SW_CROWD_CLOTH = ['#2E4A8B', '#2F6B4F', '#7A2E2E', '#5B3A29', '#8E6E3B', '#4B4E7A', '#7A6A4F', '#2A6F77', '#8E3B5A', '#B5653A'];
@@ -238,11 +252,17 @@ function swStoryCrowd(ctx, crowd, people, time, W, H, floorY, s, words, heads, s
   const hats = Array.isArray(crowd.hats) && crowd.hats.length ? crowd.hats : ['none'];
   const cloth = Array.isArray(crowd.colors) && crowd.colors.length ? crowd.colors : SW_CROWD_CLOTH;
   const walkers = ecClamp(ecN(crowd.walkers, 0.3), 0, 1);
-  const ks = s * ecN(crowd.scale, 0.84), depth = Math.min(W, H) * ecN(crowd.depth, 0.035);
+  /* Perspective: an extra further back stands higher up the floor and is
+     smaller, by how far their feet are from the horizon — never just
+     smaller on the cast's own line, which reads as tiny people. */
+  const ks = s * ecN(crowd.scale, 1), depth = Math.min(W, H) * ecClamp(ecN(crowd.depth, 0.1), 0, 0.3);
+  const horizon = Math.min(floorY - Math.min(W, H) * 0.2, H * 0.42);
   const list = [];
   for (let i = 0; i < n; i++) {
-    const outfit = outfits[Math.floor(rnd() * outfits.length)];
-    const female = outfit === 'dress' || rnd() < 0.4;
+    const picked = outfits[Math.floor(rnd() * outfits.length)];
+    const female = picked === 'dress' || rnd() < 0.4;
+    const menWear = outfits.filter(o => o !== 'dress');
+    const outfit = female ? 'dress' : picked !== 'dress' ? picked : (menWear[Math.floor(rnd() * menWear.length)] || 'tshirt');
     const look = {
       kit: 'editorial', outfit,
       hair: female ? ['long', 'bun', 'bob', 'hijab'][Math.floor(rnd() * 4)] : ['short', 'curly', 'bald'][Math.floor(rnd() * 3)],
@@ -254,6 +274,9 @@ function swStoryCrowd(ctx, crowd, people, time, W, H, floorY, s, words, heads, s
       accentColor: cloth[Math.floor(rnd() * cloth.length)], hatColor: rnd() < 0.6 ? '#F3EEE2' : cloth[Math.floor(rnd() * cloth.length)],
       age: rnd() < 0.15 ? 'elder' : rnd() < 0.1 ? 'child' : 'adult'
     };
+    /* a fez is felt red, never the turban's white; a headscarf is cloth */
+    if (look.hat === 'fez') look.hatColor = ['#9E1B1B', '#B3261E', '#7F1D1D'][Math.floor(rnd() * 3)];
+    if (look.hair === 'hijab') look.hairColor = cloth[Math.floor(rnd() * cloth.length)];
     const walking = rnd() < walkers;
     const x0 = (i + 0.5 + (rnd() - 0.5) * 0.6) / n * W, dir = rnd() < 0.5 ? -1 : 1, pace = (200 + rnd() * 80) * ks;
     const span = W * 1.3;
@@ -273,7 +296,7 @@ function swStoryCrowd(ctx, crowd, people, time, W, H, floorY, s, words, heads, s
   for (const e of list) for (const k of ['skinColor', 'hairColor', 'jacketColor', 'shirtColor', 'accentColor', 'hatColor']) e.look[k] = pale(e.look[k]);
   ctx.save();
   for (const e of list) {
-    const k = ks * (0.94 + 0.06 * e.row), yFeet = floorY - depth * (1 - e.row * 0.5);
+    const yFeet = floorY - depth * (0.3 + 0.7 * (1 - e.row)), k = ks * (yFeet - horizon) / (floorY - horizon);
     SWDraw.character(ctx, Object.assign({}, e.look, {
       W, H, time, localTime: time, x: e.x, y: yFeet - 170 * k, scale: k,
       facing: e.walking ? e.dir : (speaking && heads[speaking] ? (heads[speaking].x >= e.x ? 1 : -1) : (e.x < W / 2 ? 1 : -1)),
@@ -494,18 +517,18 @@ function swStory(ctx, opts) {
         o.rightHand = { x: lerp(rest.x, meetX - toward * (giver ? 16 : 6) * ms), y: lerp(rest.y, meetY + (giver ? 0 : 8 * ms)) };
         o.rightHandPose = giver ? 'hold' : 'open';
       } else if (act.type === 'hug' && side && sideFor(pm, partner)) {
-        /* Face to face: each wraps the near arm round the other's back —
-           one over the shoulder, one at the waist — with the hand shown on
-           the back (laid on afterwards, over both). */
+        /* An embrace in profile: chest to chest, so close that the one in
+           front (drawn last) hides the other's face behind their head —
+           their chin over the other's shoulder, eyes closed. The faces never
+           meet in view. Each wraps the near arm round the other's back, one
+           high and one low, the hands shown on the backs (laid on after). */
         const high = pos[id].x < pos[partner].x || (pos[id].x === pos[partner].x && id < partner);
         const back = { x: px + toward * 14 * pk, y: floorY - (high ? 214 : 172) * pk };
         const rest = { x: p.x + toward * 20 * ms, y: floorY - 120 * ms };
         o.rightHand = { x: lerp(rest.x, back.x), y: lerp(rest.y, back.y) };
         o.rightHandPose = 'relaxed';
         if (q > 0.2) hugHands.push({ x: back.x, y: back.y, angle: Math.PI / 2 - toward * 0.6, s: ms, skin: (castTable[id] && castTable[id].skinColor) || '#F2C4A2', q });
-        /* the one in front lays a cheek on the other's shoulder, the other
-           looks over it, so the faces never collide */
-        o.headTilt = (high ? 0.1 : 0.75) * q;
+        o.headTilt = (high ? -0.2 : 0.3) * q;
         o.seated = false;
         o.prop = null;
         hugging = true;
