@@ -186,13 +186,16 @@ async function openPage() {
 
 /* ffmpeg reads JPEG frames from stdin; the writer waits on the pipe so a
    slow encoder never piles frames up in memory. */
-function startEncoder(info, audioPath, hw, h264In) {
+function startEncoder(info, audioPath, hw, h264In, frames) {
   const a = ['-hide_banner', '-loglevel', 'error', '-y'];
-  if (h264In) a.push('-fflags', '+genpts', '-f', 'h264', '-r', String(fps), '-i', 'pipe:0');
+  if (h264In) a.push('-f', 'h264', '-r', String(fps), '-i', 'pipe:0');
   else a.push('-f', 'image2pipe', '-c:v', 'mjpeg', '-framerate', String(fps), '-i', 'pipe:0');
-  if (audioPath) a.push('-i', audioPath);
+  if (audioPath) a.push('-i', audioPath, '-map', '0:v', '-map', '1:a');
   if (h264In) {
-    a.push('-c:v', 'copy');
+    /* raw H.264 carries no timestamps: stamp frame N at N / fps (the
+       in-page encoder makes no B-frames, so decode order is display
+       order). Without them the muxer dropped the narration. */
+    a.push('-c:v', 'copy', '-bsf:v', `setts=ts=N/(${fps}*TB)`);
   } else if (hw) {
     const kbps = Math.round(info.width * info.height * fps * 0.12 / 1000);
     a.push('-c:v', 'h264_videotoolbox', '-b:v', kbps + 'k', '-maxrate', Math.round(kbps * 1.5) + 'k', '-bufsize', kbps * 2 + 'k',
@@ -201,7 +204,8 @@ function startEncoder(info, audioPath, hw, h264In) {
     a.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-threads', '2');
   }
   if (!h264In) a.push('-pix_fmt', 'yuv420p');
-  if (audioPath) a.push('-c:a', 'aac', '-b:a', '192k', '-shortest');
+  /* the video's own length, not -shortest: the narration is cut to it */
+  if (audioPath) a.push('-c:a', 'aac', '-b:a', '192k', '-t', (frames / fps).toFixed(4));
   a.push('-movflags', '+faststart', outPath);
   const ff = spawn(FFMPEG, a, { stdio: ['pipe', 'ignore', 'pipe'] });
   children.push(ff);
@@ -311,7 +315,7 @@ async function renderFast(page, info, frames, audioPath, started) {
   console.log(`rendering ${frames} frames at ${info.width}x${info.height} ${fps}fps (in-page ${how})`);
   await page.send('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
   const clip = { x: 0, y: 0, width: info.width, height: info.height, scale: 1 };
-  const enc = startEncoder(info, audioPath, false, true);
+  const enc = startEncoder(info, audioPath, false, true, frames);
   enc.done.catch(() => {});
   let i = 0, snaps = 0, shown = 0;
   const flush = async () => { const b = await page.evaluate('__fast.take()'); if (b) await enc.write(Buffer.from(b, 'base64')); };
@@ -338,6 +342,25 @@ async function renderFast(page, info, frames, audioPath, started) {
   return true;
 }
 
+/* The output must hold what was asked for: every frame and, when the page
+   has narration, the sound. */
+function verify(frames, wantAudio) {
+  return new Promise((res, rej) => {
+    const p = spawn(FFMPEG.replace(/ffmpeg$/, 'ffprobe'), ['-v', 'error', '-show_entries', 'stream=codec_type,nb_frames', '-of', 'csv=p=0', outPath]);
+    let out = '';
+    p.stdout.on('data', d => { out += d; });
+    p.on('error', () => res());
+    p.on('close', () => {
+      const rows = out.trim().split('\n').map(l => l.split(','));
+      const v = rows.find(r => r[0] === 'video'), a = rows.find(r => r[0] === 'audio');
+      if (!v) return rej(new Error('the video has no picture stream'));
+      if (v[1] && Number(v[1]) !== frames) return rej(new Error(`the video has ${v[1]} frames, not ${frames}`));
+      if (wantAudio && !a) return rej(new Error('the narration is missing from the video'));
+      res();
+    });
+  });
+}
+
 try {
   const started = Date.now();
   const page = await openPage();
@@ -354,6 +377,7 @@ try {
   }
 
   if (mode !== 'screenshot' && await renderFast(page, info, frames, audioPath, started)) {
+    await verify(frames, !!audioPath);
     console.log(`done ${outPath} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
     cleanup();
     process.exit(0);
@@ -362,7 +386,7 @@ try {
   const hw = encoderPick === 'x264' ? false : encoderPick === 'hw' ? true : await hasHardwareEncoder();
   console.log(`rendering ${frames} frames at ${info.width}x${info.height} ${fps}fps (screenshots, ${hw ? 'hardware H.264' : 'libx264'})`);
 
-  const enc = startEncoder(info, audioPath, hw);
+  const enc = startEncoder(info, audioPath, hw, false, frames);
   enc.done.catch(() => {});
   const clip = { x: 0, y: 0, width: info.width, height: info.height, scale: 1 };
   for (let i = 0; i < frames; i++) {
@@ -376,6 +400,7 @@ try {
   }
   page.ws.close();
   await enc.end();
+  await verify(frames, !!audioPath);
   console.log(`done ${outPath} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   cleanup();
 } catch (e) {
