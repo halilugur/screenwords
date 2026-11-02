@@ -473,8 +473,12 @@ function swToonCharacter(ctx, opts, styleName) {
     const xa = nrmX(ecN(swAnim(xKeys, lt - 0.05, 0), 0)), xb = nrmX(ecN(swAnim(xKeys, lt + 0.05, 0), 0));
     opts.vx = (xb - xa) / 0.1;
   }
-  const x = nrmX(ecN(opts.x, 0.22)), y = nrmY(ecN(opts.y, 0.62));
-  const sc = ecClamp(ecN(opts.scale, 1), 0.05, 20);
+  const x = nrmX(ecN(opts.x, 0.22)), y0 = nrmY(ecN(opts.y, 0.62));
+  const sc0 = ecClamp(ecN(opts.scale, 1), 0.05, 20);
+  /* heightScale (a child is 0.68) shrinks the figure with its feet kept on
+     the same floor */
+  const sc = sc0 * ecClamp(ecN(opts.heightScale, 1), 0.3, 1.5);
+  const y = y0 + 170 * (sc0 - sc);
   const GROUND = 170;
   const geo = styleName === 'geo';
 
@@ -1136,7 +1140,7 @@ function swAge(opts) {
   if (!opts || !opts.age) return opts;
   const age = String(opts.age).toLowerCase();
   if (age === 'child') {
-    return Object.assign({}, opts, { scale: ecN(opts.scale, 1) * 0.68, rig: Object.assign({ head: [35, 38] }, opts.rig || {}) });
+    return Object.assign({}, opts, { heightScale: 0.68, rig: Object.assign({ head: [35, 38] }, opts.rig || {}) });
   }
   if (age === 'elder') {
     return Object.assign({ hairColor: '#C8C6C2' }, opts, { stoop: ecN(opts.stoop, 1) });
