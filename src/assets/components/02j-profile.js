@@ -71,7 +71,7 @@ function swSideHead(ctx, o) {
      around the hat */
   const rim = hair === 'hijab' ? null : hat === 'fez'
     ? 'M-90 40 L-37 20 C-34 6 -31 -2 -28 -8 Q-3 -20 20 -14 L90 -14 L90 140 L-90 140 Z'
-    : hat === 'cap' ? 'M-90 40 L-38 20 C-36 8 -33 1 -31 -4 C-16 -14 6 -17 22 -12 L90 -12 L90 140 L-90 140 Z' : null;
+    : hat === 'cap' ? 'M-90 40 L-38 20 C-36 8 -33 1 -31 -4 C-16 -14 8 -17 26 -11 L90 -11 L90 140 L-90 140 Z' : null;
   const underRim = draw => {
     if (!rim) { draw(); return; }
     ctx.save(); ctx.clip(new Path2D(rim)); draw(); ctx.restore();
@@ -185,9 +185,10 @@ function swSideHead(ctx, o) {
     ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-4, -50); ctx.quadraticCurveTo(-20, -49, -24, -32); ctx.stroke();
   } else if (hat === 'cap') {
     ctx.fillStyle = hatC;
-    ctx.beginPath(); ctx.moveTo(-31, -8); ctx.bezierCurveTo(-36, -50, 16, -58, 22, -16); ctx.bezierCurveTo(6, -21, -16, -18, -31, -8); ctx.fill();
+    /* the crown comes down over the forehead to the brow's line */
+    ctx.beginPath(); ctx.moveTo(-31, -8); ctx.bezierCurveTo(-36, -52, 22, -60, 26, -15); ctx.bezierCurveTo(8, -21, -16, -18, -31, -8); ctx.fill();
     ctx.fillStyle = swShade(hatC, -0.22);
-    ctx.beginPath(); ctx.moveTo(-31, -8); ctx.bezierCurveTo(-16, -18, 6, -21, 22, -16); ctx.lineTo(22, -12); ctx.bezierCurveTo(6, -17, -16, -14, -31, -4); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-31, -8); ctx.bezierCurveTo(-16, -18, 8, -21, 26, -15); ctx.lineTo(26, -11); ctx.bezierCurveTo(8, -17, -16, -14, -31, -4); ctx.closePath(); ctx.fill();
   }
   if (glasses) {
     ctx.strokeStyle = ink; ctx.lineWidth = 1.6;

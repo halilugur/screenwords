@@ -845,6 +845,14 @@ function check(name, ok, detail) {
     check(`profile: ${hair} hair under a ${hat} is clipped to the rim`, cl > plainCl, `${cl} clips, ${plainCl} bare`);
     if (hair === 'curly') check(`profile: no big curls around a ${hat}`, big === 0 && plainBig > 0, `${big} under the hat, ${plainBig} bare`);
   }
+  // profile: the cap comes forward over the forehead (which reaches x 24
+  // at the brow), not stopping short of it
+  {
+    const c3 = new MockCtx(); let front = -Infinity;
+    c3.bezierCurveTo = function (...a) { if (this.fillStyle === '#123456') front = Math.max(front, a[4]); };
+    SWDraw.character(c3, { kit: 'editorial', view: 'side', hair: 'curly', hat: 'cap', hatColor: '#123456', age: 'child', time: 1, W: 1080, H: 1920 });
+    check('profile: the cap covers the forehead', front >= 25, front);
+  }
 }
 
 if (failed) {
