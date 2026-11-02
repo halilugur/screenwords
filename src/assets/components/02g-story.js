@@ -79,10 +79,14 @@ function swStoryBlocking(sc, a, b, W, s, lines, words) {
     if (!PA || !PB) continue;
     const xa = PA.legs.length ? PA.legs[PA.legs.length - 1].x1 : PA.start;
     const xb = PB.legs.length ? PB.legs[PB.legs.length - 1].x1 : PB.start;
-    const mid = (xa + xb) / 2, gap = (act.type === 'hug' ? 40 : 78) * s, side = xa <= xb ? 1 : -1;
-    const lead = Math.max(Math.abs(mid - side * gap - xa), Math.abs(mid + side * gap - xb)) / pace;
-    walkTo(act.a, act.t - lead - 0.1, mid - side * gap);
-    walkTo(act.b, act.t - lead - 0.1, mid + side * gap);
+    const gap = (act.type === 'hug' ? 40 : 78) * s, side = xa <= xb ? 1 : -1;
+    /* A seated person stays put and the other comes to them. */
+    const seatA = people.find(m => m.cast === act.a && m.seated), seatB = people.find(m => m.cast === act.b && m.seated);
+    const mid = seatB && !seatA ? xb - side * gap : seatA && !seatB ? xa + side * gap : (xa + xb) / 2;
+    const ta = seatA ? xa : mid - side * gap, tb = seatB ? xb : mid + side * gap;
+    const lead = Math.max(Math.abs(ta - xa), Math.abs(tb - xb)) / pace;
+    walkTo(act.a, act.t - lead - 0.1, ta);
+    walkTo(act.b, act.t - lead - 0.1, tb);
   }
   for (const m of people) {
     if (m.exit === 'left' || m.exit === 'right') {
@@ -186,7 +190,12 @@ function swStory(ctx, opts) {
       const partner = act.a === id ? act.b : act.b === id ? act.a : null;
       if (!partner || !pos[partner]) continue;
       const q = ease((dt + 0.4) / 0.5) * ease((2.2 - dt) / 0.4);
-      const px = pos[partner].x, chestY = floorY - (170 + 50) * ms;
+      /* Hands meet between the two chests, lower when someone sits. */
+      const chestOf = cid => {
+        const mm = people.find(x => x.cast === cid) || {}, k = s * ecN(mm.scale, 1);
+        return floorY - (170 + 50) * k + (mm.seated && pos[cid].walking < 0.05 ? SWDraw.seatDrop('flat') * k : 0);
+      };
+      const px = pos[partner].x, chestY = (chestOf(id) + chestOf(partner)) / 2;
       const meet = (p.x + px) / 2;
       o.facing = px >= p.x ? 1 : -1;
       if (act.type === 'handshake') {

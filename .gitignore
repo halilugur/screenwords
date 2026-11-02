@@ -23,3 +23,7 @@ examples/*/*.wav
 # Built by examples/podcast/build.mjs (the narration is embedded, ~9 MB)
 examples/podcast/project.json
 examples/podcast/revision.json
+
+# Built by examples/story/build.mjs
+examples/story/project.json
+examples/story/revision.json

@@ -110,6 +110,13 @@ async function openPage(workerPort) {
   await send('Emulation.setDeviceMetricsOverride', { width: 1600, height: 2400, deviceScaleFactor: 1, mobile: false });
   await send('Page.navigate', { url: pathToFileURL(resolve(htmlPath)).href });
   await sleep(1200);
+  /* The window must hold the whole stage: a landscape project (1920 wide)
+     overflowed the default 1600 px and the capture caught only a strip. */
+  const dims = JSON.parse(await evaluate(`JSON.stringify({ w: D.width || 1080, h: D.height || 1920 })`));
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: Math.max(1600, dims.w + 400), height: Math.max(2400, dims.h + 800), deviceScaleFactor: 1, mobile: false
+  });
+  await sleep(300);
 
   const info = JSON.parse(await evaluate(`(() => {
     const box = document.getElementById('stage-box');
@@ -118,7 +125,9 @@ async function openPage(workerPort) {
     box.style.height = H + 'px';
     /* exactly the ratio fit() uses, WITHOUT its 2.2 clamp: at project
        resolution the clamp would shrink every DOM overlay by ~30% */
-    box.style.setProperty('--sx', (W / 340).toFixed(4));
+    /* the DOM overlays scale with the short side, so a landscape frame
+       does not blow captions up by its width */
+    box.style.setProperty('--sx', Math.min(W / 340, H / 604).toFixed(4));
     box.style.setProperty('--sy', (H / 604).toFixed(4));
     /* the player's own chrome must not end up in the video */
     ['play-overlay', 'hint', 'bar'].forEach(id => {
