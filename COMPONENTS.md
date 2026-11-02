@@ -598,7 +598,12 @@ line) or `startWord` (a word id); the first starts at 0. `set` is one of
 the windows and lamps, `colors` overrides the palette). Each cast entry
 stands at `x` (0..1) on the set's floor at a scale that fits the set;
 `enter` / `exit` (`left` | `right`) walk them in and out, `moves` walk them
-across, `seated` and `prop` work as on the character. `actions` —
+across, `seated`, `prop` and `bag` (a crossbody bag) work as on the character.
+`items` puts things on the floor; `drop` lets a thing fall from someone's
+bag where they walk (it stays on the floor, into later scenes via `items`)
+and `pickup` walks someone to it, crouches and puts it in their hand; the
+camera cuts in close on both. Any time takes `offset` seconds after its
+line. `actions` —
 `handshake`, `give` (the `prop` changes hands) and `hug` (a side hug: shoulder to shoulder, heads together) — first bring the
 two together, then play. Characters face whoever they talk to, act their
 own lines and look at the speaker; the camera eases toward the speaker
