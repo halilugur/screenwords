@@ -953,9 +953,10 @@ pub fn export_player(project: &crate::project::Project, base: &std::path::Path) 
     Ok(r)
 }
 
-/// A real render to `<slug>.mp4` next to the project: headless Chrome draws
-/// every frame at i/fps, ffmpeg encodes, and the narration embedded in the
-/// page is muxed in. One render at a time.
+/// A real render to `<slug>.mp4` next to the project: one headless Chrome
+/// draws every frame at i/fps and streams it to ffmpeg (the hardware encoder
+/// where there is one), and the narration embedded in the page is muxed in.
+/// One render at a time.
 pub fn render_video(project: &crate::project::Project, base: &std::path::Path) -> Result<Value, String> {
     if MP4_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) {
         return Err("a render is already running".into());
@@ -975,9 +976,6 @@ pub fn render_video(project: &crate::project::Project, base: &std::path::Path) -
             .arg(&mp4)
             .arg("--fps")
             .arg(format!("{:.0}", project.settings().fps()))
-            // frames are independent: spread them over 4 browsers
-            .arg("--workers")
-            .arg("4")
             .output()
             .map_err(|e| format!("cannot start node: {e}"))?;
         let _ = std::fs::remove_file(&player);
