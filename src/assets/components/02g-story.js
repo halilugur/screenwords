@@ -257,10 +257,18 @@ function swStoryCrowd(ctx, crowd, people, time, W, H, floorY, s, words, heads, s
     const walking = rnd() < walkers;
     const x0 = (i + 0.5 + (rnd() - 0.5) * 0.6) / n * W, dir = rnd() < 0.5 ? -1 : 1, pace = (200 + rnd() * 80) * ks;
     const span = W * 1.3;
-    const x = walking ? ((x0 + dir * pace * time) % span + span) % span - W * 0.15 : x0;
+    let x = walking ? ((x0 + dir * pace * time) % span + span) % span - W * 0.15 : x0;
+    /* those standing about keep clear of where the cast stand */
+    if (!walking) people.forEach((m, k) => {
+      const hx = ecN(m.x, (k + 1) / (people.length + 1)) * W, room = 120 * ks;
+      if (Math.abs(x - hx) < room) x = hx + (x >= hx ? 1 : -1) * room;
+    });
     list.push({ look, walking, x, dir, pace, row: rnd() });
   }
   list.sort((p, q) => p.row - q.row);
+  /* a little paler than the cast, so the eye finds the story first */
+  ctx.save();
+  if ('filter' in ctx) ctx.filter = 'saturate(0.7) brightness(1.04)';
   for (const e of list) {
     const k = ks * (0.94 + 0.06 * e.row), yFeet = floorY - depth * (1 - e.row * 0.5);
     SWDraw.character(ctx, Object.assign({}, e.look, {
@@ -273,6 +281,7 @@ function swStoryCrowd(ctx, crowd, people, time, W, H, floorY, s, words, heads, s
       view: view === 'side' || (view === 'auto' && e.walking) ? 'side' : undefined
     }));
   }
+  ctx.restore();
 }
 
 /* A small round café table with a cup, standing on the floor at x. */

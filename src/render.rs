@@ -441,16 +441,16 @@ mod tests {
     #[test]
     fn player_data_carries_language_speakers_and_cast() {
         let p = Project::parse(r#"{"schemaVersion":2,"id":"p","name":"P","tracks":[],
-            "settings":{"cast":{"ada":{"style":"flat"}}},
+            "settings":{"cast":{"host":{"style":"flat"}}},
             "transcripts":[{"language":"tr","segments":[],"words":[
-              {"id":"w1","text":"Merhaba","speaker":"ada","start":{"value":0,"timescale":1000},"end":{"value":500,"timescale":1000}},
+              {"id":"w1","text":"Merhaba","speaker":"host","start":{"value":0,"timescale":1000},"end":{"value":500,"timescale":1000}},
               {"id":"w2","text":"selam","start":{"value":600,"timescale":1000},"end":{"value":900,"timescale":1000}}]}]}"#).unwrap();
         let d = render_data(&p);
         assert_eq!(d.get("lang").and_then(Value::as_str), Some("tr"));
         let words = d.get("words").and_then(Value::as_array).unwrap();
-        assert_eq!(words[0].get("speaker").and_then(Value::as_str), Some("ada"));
+        assert_eq!(words[0].get("speaker").and_then(Value::as_str), Some("host"));
         assert!(words[1].get("speaker").is_none());
-        assert_eq!(d.get("cast").and_then(|c| c.get("ada")).and_then(|a| a.get("style")).and_then(Value::as_str), Some("flat"));
+        assert_eq!(d.get("cast").and_then(|c| c.get("host")).and_then(|a| a.get("style")).and_then(Value::as_str), Some("flat"));
         assert!(include_str!("assets/player.html").contains("document.documentElement.lang = D.lang"));
     }
 

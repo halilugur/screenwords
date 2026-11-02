@@ -292,6 +292,9 @@ const SW_SCENERY_PIECES = {
   }
 };
 
+/* Default sizes [w, h] (0..1 of the short side) where a piece's own differ. */
+const SW_SCENERY_SIZE = { flowers: [0.14, 0.08], well: [0.14, 0.16], lamp: [0.1, 0.3], rug: [0.4, 0.05] };
+
 function swScenery(ctx, spec, o) {
   spec = spec && typeof spec === 'object' ? spec : {};
   o = o || {};
@@ -306,7 +309,7 @@ function swScenery(ctx, spec, o) {
   const tint = col => (col && night ? swMix(col, spec.inside ? '#2A1A1A' : '#0B1530', spec.inside ? 0.25 : 0.6) : col);
   const place = (p, par) => Object.assign({}, p, {
     color: tint(p.color),
-    cx: ecN(p.x, 0.5) * W - camX * par, w: fu(ecN(p.w, 0.2)), h: fu(ecN(p.h, 0.3)),
+    cx: ecN(p.x, 0.5) * W - camX * par, w: fu(ecN(p.w, (SW_SCENERY_SIZE[p.part] || [0.2])[0])), h: fu(ecN(p.h, (SW_SCENERY_SIZE[p.part] || [0, 0.3])[1])),
     top: typeof p.top === 'number' ? p.top * H : undefined, y: typeof p.y === 'number' ? fu(p.y) : 0
   });
   const layerOf = p => p.layer || (p.part === 'flowers' ? 'front' : 'mid');
@@ -330,6 +333,8 @@ function swScenery(ctx, spec, o) {
       const fg = ctx.createLinearGradient(0, fy, 0, H);
       fg.addColorStop(0, c.floor); fg.addColorStop(1, swShade(c.floor, -0.25));
       ctx.fillStyle = fg; ctx.fillRect(0, fy, W, H - fy);
+      /* windows, shelves and hangings stand against the back wall */
+      for (const p of pieces) if (layerOf(p) === 'far') SW_SCENERY_PIECES[p.part](ctx, place(p, 0.3), c, fy, opt);
     } else {
       const g = ctx.createLinearGradient(0, 0, 0, fy);
       g.addColorStop(0, c.sky); g.addColorStop(1, c.sky2);

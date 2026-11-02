@@ -1150,7 +1150,7 @@ function swAge(opts) {
 
 /* In a conversation each word carries its speaker; a character only lip-
    syncs and gestures on its own words. The speaker id defaults to the cast
-   name, so turns written for 'ada' drive cast member 'ada'. */
+   name, so turns written for 'host' drive cast member 'host'. */
 function swOwnWords(opts) {
   if (!opts || !Array.isArray(opts.words) || !opts.words.some(w => w && w.speaker)) return opts;
   const who = opts.speaker || (typeof opts.cast === 'string' ? opts.cast : null);

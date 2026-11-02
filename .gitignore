@@ -27,3 +27,6 @@ examples/podcast/revision.json
 # Built by examples/story/build.mjs
 examples/story/project.json
 examples/story/revision.json
+# Built by examples/tale/build.mjs
+examples/tale/project.json
+examples/tale/revision.json

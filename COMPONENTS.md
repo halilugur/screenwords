@@ -482,11 +482,17 @@ eyes, brows, visemes, hands for every pose) that takes the member's palette:
 ```
 
 `hair` is `bob`, `short`, `long`, `curly`, `bun`, `hijab` (a headscarf in
-the hairColor) or `bald`; `beard: 'full'` adds a beard; `glasses: true`;
+the hairColor) or `bald`; `beard` is `full` or `long`; `glasses: true`;
 `outfit` is `blazer` (jacketColor over shirtColor), `hoodie` or `tshirt`
-(both in shirtColor); `blush: false` drops the cheek blush (a beard drops it
-too). Any character can also sit (`seated: true`, on a chair unless
-`chair: false`) and hold a `prop`: `mug`, `phone` or `tablet`.
+(both in shirtColor), `robe` (a long robe in jacketColor over shirtColor
+with an accentColor sash) or `dress` (shirtColor, to the ankles); `hat` is
+`turban`, `fez` or `cap` (hatColor); `shoes` is `sneaker`, `boot` or
+`slipper` (robes and dresses default to slippers); `age` is `child`
+(shorter, a larger head), `adult` or `elder` (grey hair, a slight stoop);
+`blush: false` drops the cheek blush (a beard drops it too). Any character
+can also sit (`seated: true`, on a chair unless `chair: false`), carry a
+`bag`, and hold a `prop`: `mug`, `phone`, `tablet` or `book`. `view: 'side'`
+draws the same character in profile.
 Other colours: `skinColor`, `hairColor`, `eyeColor`, `pantsColor`,
 `shoeColor`, `accentColor`. `SWDraw.kits` lists what a kit offers.
 [`examples/cast/`](examples/cast/) holds four such members.
@@ -494,10 +500,10 @@ Other colours: `skinColor`, `hairColor`, `eyeColor`, `pantsColor`,
 ### The project's cast
 
 Characters are decided once per project, not per scene. `set_project_settings
-{ cast: { ada: {...}, kaan: {...} } }` stores them in `settings.cast` (a
+{ cast: { host: {...}, guest: {...} } }` stores them in `settings.cast` (a
 member set to `null` leaves; names are 1-40 letters, digits, `_` or `-`), and
-every scene draws them with `sw.character(ctx, { cast: 'ada', pose: 'point' })`
-or a `{ type: 'character', cast: 'ada' }` scene node. A member is any set of
+every scene draws them with `sw.character(ctx, { cast: 'host', pose: 'point' })`
+or a `{ type: 'character', cast: 'host' }` scene node. A member is any set of
 the options above: `style`, colours, `hairStyle`, `outfit`, `glasses`…
 
 A member can also bring its own art as `parts`, so a real illustrator's
@@ -538,7 +544,7 @@ A conversation is data, and the engine directs it:
    end of the previous line (quick reactions, greetings and goodbyes said
    together). Without it the voice track pauses naturally: an answer follows
    a question quickly, other replies a little later.
-3. **Voices** — `synthesize_speech { lang, voices: { ada: 'F1', kaan: 'M1' } }`
+3. **Voices** — `synthesize_speech { lang, voices: { host: 'F1', guest: 'M1' } }`
    speaks each line in its speaker's voice (Supertonic M1-M5 / F1-F5), trims
    the model's silences, levels every voice to one speech loudness, mixes
    overlapping lines through a soft limiter and aligns every word.
@@ -583,12 +589,12 @@ character in the scene is a narrator), staged by one `story` component:
 ```json
 { "scenes": [
   { "set": "park", "title": "Bir sabah",
-    "cast": [{ "cast": "ada", "x": 0.3, "enter": "left" }, { "cast": "kaan", "x": 0.7, "enter": "right" }],
-    "actions": [{ "line": 2, "type": "handshake", "a": "ada", "b": "kaan" }] },
+    "cast": [{ "cast": "host", "x": 0.3, "enter": "left" }, { "cast": "guest", "x": 0.7, "enter": "right" }],
+    "actions": [{ "line": 2, "type": "handshake", "a": "host", "b": "guest" }] },
   { "startLine": 3, "set": "cafe", "night": true,
-    "cast": [{ "cast": "ada", "x": 0.32 }, { "cast": "kaan", "x": 0.68, "seated": true }],
-    "actions": [{ "line": 4, "type": "give", "a": "ada", "b": "kaan", "prop": "phone" },
-                { "at": 18.8, "type": "hug", "a": "ada", "b": "kaan" }] }
+    "cast": [{ "cast": "host", "x": 0.32 }, { "cast": "guest", "x": 0.68, "seated": true }],
+    "actions": [{ "line": 4, "type": "give", "a": "host", "b": "guest", "prop": "phone" },
+                { "at": 18.8, "type": "hug", "a": "host", "b": "guest" }] }
 ] }
 ```
 
@@ -604,8 +610,41 @@ bag where they walk (it stays on the floor, into later scenes via `items`)
 and `pickup` walks someone to it, crouches and puts it in their hand; the
 camera cuts in close on both. Any time takes `offset` seconds after its
 line. `actions` —
-`handshake`, `give` (the `prop` changes hands) and `hug` (a side hug: shoulder to shoulder, heads together) — first bring the
-two together, then play. Characters face whoever they talk to, act their
+`handshake`, `give` (the `prop` changes hands) and `hug` (from the front a
+side hug, shoulder to shoulder; in profile face to face, cheek to cheek) —
+first bring the two together, then play.
+
+`view` on a scene, a cast entry or the story itself turns people side-on:
+`front` (the default), `side` (always in profile) or `auto` (in profile
+while walking or acting together, facing front otherwise). Profile figures
+are the same kit (hair, beards, hats, robes, dresses, shoes, ages) drawn
+side-on; walkers swing their arms with the elbow folding forward.
+
+`set` may also describe a place from parts instead of naming one:
+
+```json
+{ "theme": "sand", "frame": true, "pieces": [
+  { "part": "wall", "x": 0.5, "w": 1.2, "layer": "far" },
+  { "part": "dome", "x": 0.62, "layer": "far" }, { "part": "palm", "x": 0.12 },
+  { "part": "stall", "x": 0.82, "layer": "mid" } ] }
+```
+
+Themes are `sand`, `verdant`, `stone` and `modern`; `inside: true` gives a
+wall, a tile band and a floor instead of sky and hills; `sun`, `moon`,
+`clouds`, `hills` and `path` can be switched off. Outdoor parts: wall,
+gate, tower, dome, minaret, house, stall, tree, cypress, palm, flowers,
+well, banner; indoor parts: arch, column, divan, rug, lamp, shelf, table,
+curtain. `x` is the centre (0..1), `w` / `h` are 0..1 of the short side,
+`layer` is `far`, `mid` or `front` (in front of the people).
+
+`bubbles: true` (on a scene or the story) shows the sentence being spoken
+in a bubble over the speaker with their name. `crowd: { count, walkers,
+outfits, hats, colors, scale, seed, view }` fills the scene with extras
+standing about or walking through. `effects` play at a time like an action:
+`{ type: 'rays' | 'glow' | 'dust' | 'sparkle' | 'ink', line | start | word,
+offset, duration, x, y, ... , layer: 'back' }` — light through a window, a
+halo, motes in the light, sparkles, ink growing into branches (`grow`
+seconds). Characters face whoever they talk to, act their
 own lines and look at the speaker; the camera eases toward the speaker
 (`camera: 'wide'` holds still); a `title` card opens the scene; scenes dip
 through black. Sets alone are `SWDraw.set(ctx, name, { W, H, time, night,

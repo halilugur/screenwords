@@ -1403,7 +1403,7 @@ fn set_project_settings(root: &mut Value, args: &Value) -> Result<(), EditError>
 }
 
 /// The project's cast: named characters every scene draws the same way
-/// (`sw.character({ cast: 'ada', pose })`). `cast` maps a name to the
+/// (`sw.character({ cast: 'host', pose })`). `cast` maps a name to the
 /// member's look (style, colours, hair, outfit, or SVG `parts`); a member
 /// set to null leaves the cast, and members not named are kept.
 fn merge_cast(current: Option<&Value>, cast: &Value) -> Result<Value, EditError> {
@@ -2489,7 +2489,7 @@ mod tests {
         let mut a = crate::json::Value::obj();
         a.set(
             "turns",
-            Value::parse(r#"[{"speaker":"ada","text":"Merhaba! Hoş geldiniz"},{"speaker":"kaan","text":"Selam herkese."}]"#).unwrap(),
+            Value::parse(r#"[{"speaker":"host","text":"Merhaba! Hoş geldiniz"},{"speaker":"guest","text":"Selam herkese."}]"#).unwrap(),
         );
         a.set("language", Value::str("tr"));
         a.set("replace", Value::Bool(true));
@@ -2497,13 +2497,13 @@ mod tests {
         let t = &d.project().transcripts()[0];
         let words = t.get("words").and_then(Value::as_array).unwrap();
         let speakers: Vec<&str> = words.iter().map(|w| w.get("speaker").and_then(Value::as_str).unwrap()).collect();
-        assert_eq!(speakers, ["ada", "ada", "ada", "kaan", "kaan"]);
+        assert_eq!(speakers, ["host", "host", "host", "guest", "guest"]);
         let turns: Vec<i64> = words.iter().map(|w| w.get("turn").and_then(Value::as_i64).unwrap()).collect();
         assert_eq!(turns, [0, 0, 0, 1, 1]);
-        // "Merhaba!" ends a sentence, "geldiniz" ends ada's turn without one.
+        // "Merhaba!" ends a sentence, "geldiniz" ends host's turn without one.
         let segs = t.get("segments").and_then(Value::as_array).unwrap();
         let seg_speakers: Vec<&str> = segs.iter().map(|s| s.get("speaker").and_then(Value::as_str).unwrap()).collect();
-        assert_eq!(seg_speakers, ["ada", "ada", "kaan"]);
+        assert_eq!(seg_speakers, ["host", "host", "guest"]);
         let mut bad = crate::json::Value::obj();
         bad.set("turns", Value::parse(r#"[{"speaker":"a b","text":"x"}]"#).unwrap());
         let err = d.apply_edits(Some("bad"), None, &[EditOp::new("author_transcript", bad)]).unwrap_err();
@@ -2534,16 +2534,16 @@ mod tests {
             s.set("cast", Value::parse(json).unwrap());
             s
         };
-        d.apply_edits(Some("cast"), None, &[EditOp::new("set_project_settings", settings(r##"{"ada": {"style": "flat", "skinColor": "#E8B48F"}, "kaan": {"style": "geo"}}"##))])
+        d.apply_edits(Some("cast"), None, &[EditOp::new("set_project_settings", settings(r##"{"host": {"style": "flat", "skinColor": "#E8B48F"}, "guest": {"style": "geo"}}"##))])
             .unwrap();
         // A later call replaces one member and removes another; the rest stays.
-        d.apply_edits(Some("cast"), None, &[EditOp::new("set_project_settings", settings(r#"{"ada": {"style": "cartoon"}, "kaan": null}"#))])
+        d.apply_edits(Some("cast"), None, &[EditOp::new("set_project_settings", settings(r#"{"host": {"style": "cartoon"}, "guest": null}"#))])
             .unwrap();
         let cast = cast_of(&d).unwrap();
-        assert_eq!(cast.get("ada").and_then(|a| a.get("style")).and_then(Value::as_str), Some("cartoon"));
-        assert!(cast.get("kaan").is_none());
+        assert_eq!(cast.get("host").and_then(|a| a.get("style")).and_then(Value::as_str), Some("cartoon"));
+        assert!(cast.get("guest").is_none());
         // Bad names and non-object members are refused without a change.
-        for bad in [r#"{"a b": {}}"#, r#"{"ada": "flat"}"#, r#"["ada"]"#] {
+        for bad in [r#"{"a b": {}}"#, r#"{"host": "flat"}"#, r#"["host"]"#] {
             let err = d.apply_edits(Some("cast"), None, &[EditOp::new("set_project_settings", settings(bad))]).unwrap_err();
             assert!(err.message().contains("cast"), "{bad}: {}", err.message());
         }

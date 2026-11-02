@@ -1573,10 +1573,10 @@ mod tests {
 
     #[test]
     fn provider_search_picks_the_first_portrait_photo() {
-        let pexels = r#"{"photos":[{"src":{"large2x":"https://images.pexels.com/a.jpg"},"photographer":"Ada","url":"https://pexels.com/p/1"}]}"#;
+        let pexels = r#"{"photos":[{"src":{"large2x":"https://images.pexels.com/a.jpg"},"photographer":"Host","url":"https://pexels.com/p/1"}]}"#;
         let (url, credit, link) = fb_provider_image("pexels", pexels).unwrap();
         assert_eq!(url, "https://images.pexels.com/a.jpg");
-        assert_eq!(credit, "Ada");
+        assert_eq!(credit, "Host");
         assert_eq!(link, "https://pexels.com/p/1");
 
         let unsplash = r#"{"results":[{"urls":{"regular":"https://images.unsplash.com/b.jpg"},"user":{"name":"Grace"},"links":{"html":"https://unsplash.com/photos/2"}}]}"#;
