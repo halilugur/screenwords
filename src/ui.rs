@@ -1660,11 +1660,11 @@ mod tests {
         let res = handle(&ui, &request("GET", "/api/catalog", ""));
         assert_eq!(res.status, 200);
         let json = Value::parse(&String::from_utf8_lossy(&res.body)).unwrap();
-        assert_eq!(json.get("total").and_then(Value::as_i64), Some(601));
+        assert_eq!(json.get("total").and_then(Value::as_i64), Some(602));
         let cats = json.get("categories").and_then(Value::as_array).unwrap();
         assert_eq!(cats.len(), 9);
         let comps = json.get("components").and_then(Value::as_array).unwrap();
-        assert_eq!(comps.len(), 601);
+        assert_eq!(comps.len(), 602);
     }
 
     #[test]

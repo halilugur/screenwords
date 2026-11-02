@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'assets', 'components');
-const src = ['00-registry.js', '01-catalog.js', '02-helpers.js', '02a-vector.js', '02b-figure.js', '02c-toon.js', '02d-kit.js', '02e-conversation.js', '02f-sets.js']
+const src = ['00-registry.js', '01-catalog.js', '02-helpers.js', '02a-vector.js', '02b-figure.js', '02c-toon.js', '02d-kit.js', '02e-conversation.js', '02f-sets.js', '02g-story.js']
   .map(f => readFileSync(join(dir, f), 'utf8')).join('\n');
 /* A recording stand-in for the canvas: every coordinate handed to it must
    be finite (canvas silently drops NaN geometry, so a NaN shows up as a
@@ -70,8 +70,8 @@ for (const op of [...PATH_OPS, 'beginPath', 'fill', 'stroke', 'clip', 'fillRect'
 }
 
 const ctx = vm.createContext({ console, Math, Map, Array, Object, String, Number, JSON, isFinite, parseFloat, parseInt, Path2D, DOMMatrix });
-vm.runInContext(src + '\n;globalThis.__sw = { SWDraw, swParsePath, swTrim, swBox, swBeat, swAutoDirect };', ctx);
-const { SWDraw, swParsePath, swTrim, swBeat, swAutoDirect } = ctx.__sw;
+vm.runInContext(src + '\n;globalThis.__sw = { SWDraw, swParsePath, swTrim, swBox, swBeat, swAutoDirect, swStoryBlocking, swStoryAt };', ctx);
+const { SWDraw, swParsePath, swTrim, swBeat, swAutoDirect, swStoryBlocking, swStoryAt } = ctx.__sw;
 
 let failed = 0;
 const near = (a, b, eps) => Math.abs(a - b) <= (eps ?? 1e-6);
@@ -447,6 +447,51 @@ function check(name, ok, detail) {
   let glances = 0;
   for (let t = 3.0; t < 6.2; t += 0.05) if (JSON.stringify(look('elif', t)) === JSON.stringify(heads.ada)) glances++;
   check('listeners only glance away briefly', glances < 40, glances);
+}
+
+// Stories: scenes start where they say, people walk in from off stage,
+// come together for an action, and the whole stage draws in any frame and
+// with junk scenes.
+{
+  const L = (speaker, text, start, end) => text.split(' ').map((t, i, a) => ({ id: speaker + start + i, speaker, text: t, start: start + (end - start) * i / a.length, end: start + (end - start) * (i + 1) / a.length }));
+  const words = [].concat(L('narrator', 'Bir sabah parkta karşılaştılar.', 0, 3), L('ada', 'Merhaba Kaan!', 5, 6.5), L('kaan', 'Selam Ada.', 7, 8.5), L('narrator', 'Akşam oldu.', 10, 12), L('ada', 'Al bakalım.', 13, 14.5));
+  const lines = SWDraw.conversationPlan(words).lines;
+  const scenes = [
+    { set: 'park', cast: [{ cast: 'ada', x: 0.3, enter: 'left' }, { cast: 'kaan', x: 0.7 }], actions: [{ line: 2, type: 'handshake', a: 'ada', b: 'kaan' }] },
+    { startLine: 3, set: 'cafe', night: true, cast: [{ cast: 'ada', x: 0.3, exit: 'right' }, { cast: 'kaan', x: 0.7, seated: true }], actions: [{ line: 4, type: 'give', a: 'ada', b: 'kaan', prop: 'mug' }] }
+  ];
+  const tl = SWDraw.storyScenes(scenes, lines, words, 16);
+  check('story: two scenes, the second at its line', tl.length === 2 && tl[0].a === 0 && Math.abs(tl[1].a - (10 - 0.15)) < 1e-6 && tl[0].b === tl[1].a, JSON.stringify(tl.map(x => [x.a, x.b])));
+  const W = 1920, sc = 1.0;
+  const block = swStoryBlocking(scenes[0], 0, tl[0].b, W, sc, lines, words);
+  const ada0 = swStoryAt(block.plans.ada, 0), adaHome = swStoryAt(block.plans.ada, 4);
+  check('story: an entrance starts off stage and walks', ada0.x < 0 && swStoryAt(block.plans.ada, 0.6).walking > 0, JSON.stringify(ada0));
+  const tShake = lines[2].start - 0.15;
+  const pa = swStoryAt(block.plans.ada, tShake), pk = swStoryAt(block.plans.kaan, tShake);
+  check('story: the pair stand together for a handshake', Math.abs(pk.x - pa.x) > 100 && Math.abs(pk.x - pa.x) < 220 && pa.walking < 0.05, `${pa.x} ${pk.x} ${pa.walking}`);
+  check('story: before the action they stood where placed', Math.abs(adaHome.x - 0.3 * W) < 1, adaHome.x);
+  const b2 = swStoryBlocking(scenes[1], tl[1].a, 16, W, sc, lines, words);
+  check('story: an exit walks off before the scene ends', swStoryAt(b2.plans.ada, 15.95).x > W, swStoryAt(b2.plans.ada, 15.95).x);
+  const castTable = { ada: { kit: 'editorial' }, kaan: { kit: 'editorial', hair: 'short', outfit: 'hoodie' } };
+  const before = bad.length;
+  for (const [Wd, Hd] of [[1080, 1920], [1920, 1080]]) for (let t = 0; t < 16; t += 0.37) {
+    const c = new MockCtx();
+    try {
+      SWDraw.story(c, { W: Wd, H: Hd, time: t, words, castTable, scenes, duration: 16 });
+      if (c.depth !== 0) check(`story ${Wd}x${Hd}@${t.toFixed(2)} leaves save() open`, false, c.depth);
+    } catch (e) { check(`story ${Wd}x${Hd}@${t.toFixed(2)} throws`, false, e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : String(e)); }
+  }
+  check('story: finite geometry throughout', bad.length === before, bad.slice(before, before + 3).join('; '));
+  for (const junk of [null, [], [null], [{ set: 'moon', cast: [null, { cast: 5 }, { cast: 'ghost' }], actions: [{ type: 'dance', a: 'ada' }, { type: 'hug', a: 'ada', b: 'nobody' }] }]]) {
+    const c = new MockCtx();
+    try { SWDraw.story(c, { W: 1080, H: 1920, time: 1, words, castTable, scenes: junk }); if (c.depth !== 0) check('story junk leaves save() open', false, JSON.stringify(junk)); }
+    catch (e) { check('story tolerates junk scenes', false, JSON.stringify(junk) + ' ' + String(e)); }
+  }
+  for (const set of SWDraw.sets) for (const night of [false, true]) {
+    const c = new MockCtx(), b0 = bad.length;
+    SWDraw.set(c, set, { W: 1080, H: 1920, time: 3, night, camX: 40 });
+    if (c.depth !== 0 || bad.length !== b0) check(`set ${set}${night ? ' night' : ''} draws cleanly`, false, bad.slice(b0, b0 + 2).join('; '));
+  }
 }
 
 // Word-stress beats: on at a word's start, off 0.4 s later, stronger when

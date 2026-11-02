@@ -376,6 +376,7 @@ pub const COMPONENTS: &str = concat!(
     include_str!("assets/components/02d-kit.js"),
     include_str!("assets/components/02e-conversation.js"),
     include_str!("assets/components/02f-sets.js"),
+    include_str!("assets/components/02g-story.js"),
     include_str!("assets/components/03-extras.js"),
     include_str!("assets/components/04-backdrop.js"),
     include_str!("assets/components/05-common.js"),
@@ -594,13 +595,13 @@ mod tests {
         let mut rendered = quoted_ids(block_between(COMPONENTS, "const RENDERED_IDS", "];"));
         let extra = pack_ids(COMPONENTS);
         let scene = quoted_ids(block_between(COMPONENTS, "const SW_SCENE_IDS", "];"));
-        assert_eq!(scene, ["conversation"], "the scene registry");
+        assert_eq!(scene, ["conversation", "story"], "the scene registry");
         assert_eq!(rendered.len(), 68, "the legacy registry must list the original 68 ids");
         assert_eq!(extra.len(), 532, "the packs must declare exactly 532 ids (232 + 300 pack 3)");
         let unique: std::collections::HashSet<&&str> = extra.iter().collect();
         assert_eq!(unique.len(), extra.len(), "the pack repeats an id");
         let catalog = crate::catalog::all_ids();
-        assert_eq!(catalog.len(), 601, "catalog size");
+        assert_eq!(catalog.len(), 602, "catalog size");
         rendered.extend(scene);
         for id in &catalog {
             assert!(

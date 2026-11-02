@@ -1,9 +1,9 @@
 # Component catalog
 
-`list_components` reports **601** built-in ids: the original 68 plus 532
+`list_components` reports **602** built-in ids: the original 68 plus 532
 procedural components (100 in the first pack, 132 in the second, 300 in the
 third — twelve families of twenty-five, added 2026-10-30) and the
-`conversation` scene (below). Every id has a
+`conversation` and `story` scenes (below). Every id has a
 renderer, so anything `add_component` accepts paints a picture in both the
 exported player and the editor stage.
 
@@ -574,6 +574,37 @@ The same direction is available to code overlays: `sw.character(ctx, { cast,
 pose: 'auto', lookAt: 'speaker', seatHeads })`, `sw.speakerAt(t)` and
 `sw.conversationPlan(words)` (lines, per-speaker pose and emotion tracks,
 shots).
+
+### Stories: scenes on illustrated sets
+
+A story is the same cast and turns as a conversation (a speaker with no
+character in the scene is a narrator), staged by one `story` component:
+
+```json
+{ "scenes": [
+  { "set": "park", "title": "Bir sabah",
+    "cast": [{ "cast": "ada", "x": 0.3, "enter": "left" }, { "cast": "kaan", "x": 0.7, "enter": "right" }],
+    "actions": [{ "line": 2, "type": "handshake", "a": "ada", "b": "kaan" }] },
+  { "startLine": 3, "set": "cafe", "night": true,
+    "cast": [{ "cast": "ada", "x": 0.32 }, { "cast": "kaan", "x": 0.68, "seated": true }],
+    "actions": [{ "line": 4, "type": "give", "a": "ada", "b": "kaan", "prop": "phone" },
+                { "at": 18.8, "type": "hug", "a": "ada", "b": "kaan" }] }
+] }
+```
+
+A scene starts at `start` (seconds), `startLine` (the index of a spoken
+line) or `startWord` (a word id); the first starts at 0. `set` is one of
+`room`, `office`, `street`, `park`, `cafe`, `studio` (`night: true` lights
+the windows and lamps, `colors` overrides the palette). Each cast entry
+stands at `x` (0..1) on the set's floor at a scale that fits the set;
+`enter` / `exit` (`left` | `right`) walk them in and out, `moves` walk them
+across, `seated` and `prop` work as on the character. `actions` —
+`handshake`, `give` (the `prop` changes hands) and `hug` — first bring the
+two together, then play. Characters face whoever they talk to, act their
+own lines and look at the speaker; the camera eases toward the speaker
+(`camera: 'wide'` holds still); a `title` card opens the scene; scenes dip
+through black. Sets alone are `SWDraw.set(ctx, name, { W, H, time, night,
+camX, layer })` for code overlays.
 
 ### Other helpers
 

@@ -26,7 +26,7 @@ const RENDERED_IDS = [
 ];
 
 /* Scene components drawn by the character modules (02e-conversation.js). */
-const SW_SCENE_IDS = ['conversation'];
+const SW_SCENE_IDS = ['conversation', 'story'];
 
 /* The player presents these six through styled DOM overlays; any renderer
    without those overlays paints the canvas fallback instead. */

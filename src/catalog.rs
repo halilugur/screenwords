@@ -203,7 +203,7 @@ pub const CATALOG: &[(&str, &[&str])] = &[
     ),
     // Whole scenes acted by the project's cast (settings.cast), directed from
     // a transcript authored with turns.
-    ("scene", &["conversation"]),
+    ("scene", &["conversation", "story"]),
 ];
 
 pub fn all_ids() -> Vec<&'static str> {
@@ -237,7 +237,7 @@ pub fn category_of(component_id: &str) -> Option<&'static str> {
 
 /// How to make characters and conversations — returned by list_components so
 /// an agent learns the workflow from the tool itself.
-pub const HOW_TO: &str = "Characters: decide them once per project with apply_edits [{tool: set_project_settings, arguments: {cast: {ada: {name: 'Ada', kit: 'editorial', hair: 'bob' | 'short' | 'long' | 'curly' | 'bun' | 'bald', beard?: 'full', outfit?: 'blazer' | 'hoodie' | 'tshirt', glasses?: true, skinColor, hairColor, jacketColor, shirtColor, pantsColor}}}}]; a member set to null leaves. Conversations (podcast, interview): 1) author_transcript {turns: [{speaker: 'ada', text, gap?}], language} — the speaker is a cast name, a negative gap overlaps the previous line; 2) synthesize_speech {lang, voices: {ada: 'F1', kaan: 'M1'}}; 3) add_component conversation {seats: [{cast, role?}], title?, subtitle?, liveLabel?} plus kineticWords for captions. Gestures, listening, looks, lower thirds and the camera edit come from the speakers. Deliver with export_html (player) and render_video (MP4). One character anywhere: a codeOverlay_<slug> whose params.code calls sw.character(ctx, {cast: 'ada', x, y, scale, pose, pointAt, emotion}). list_components {componentId} gives a component's params.";
+pub const HOW_TO: &str = "Characters: decide them once per project with apply_edits [{tool: set_project_settings, arguments: {cast: {ada: {name: 'Ada', kit: 'editorial', hair: 'bob' | 'short' | 'long' | 'curly' | 'bun' | 'bald', beard?: 'full', outfit?: 'blazer' | 'hoodie' | 'tshirt', glasses?: true, skinColor, hairColor, jacketColor, shirtColor, pantsColor}}}}]; a member set to null leaves. Conversations (podcast, interview): 1) author_transcript {turns: [{speaker: 'ada', text, gap?}], language} — the speaker is a cast name, a negative gap overlaps the previous line; 2) synthesize_speech {lang, voices: {ada: 'F1', kaan: 'M1'}}; 3) add_component conversation {seats: [{cast, role?}], title?, subtitle?, liveLabel?} plus kineticWords for captions. Gestures, listening, looks, lower thirds and the camera edit come from the speakers. Stories: the same cast and turns, then add_component story {scenes: [{startLine, set: 'park', cast: [{cast: 'ada', enter: 'left'}], actions?: [{line, type: 'handshake', a, b}]}]} — see list_components {componentId: 'story'}. Deliver with export_html (player) and render_video (MP4). One character anywhere: a codeOverlay_<slug> whose params.code calls sw.character(ctx, {cast: 'ada', x, y, scale, pose, pointAt, emotion}). list_components {componentId} gives a component's params.";
 
 /// The params of the components whose shape an agent cannot guess.
 pub fn params_doc(component_id: &str) -> Option<&'static str> {
@@ -246,6 +246,7 @@ pub fn params_doc(component_id: &str) -> Option<&'static str> {
     }
     match component_id {
         "conversation" => Some("A podcast / interview studio acted by the project's cast and directed from a transcript authored with turns. params: seats [{cast (a settings.cast name, also the speaker id), role?, color? (#hex), name?}] (1-6), title?, subtitle?, liveLabel? (e.g. 'LIVE'), camera?: 'auto' (close-ups on long lines, wide on reactions) | 'wide', lowerThirds? (default true: name and role the first time a seat speaks), intro? (default true: the title band slides in). Seats lay out for portrait and landscape. Pair with kineticWords {speakerColors?: {cast: '#hex'}} for captions."),
+        "story" => Some("A story acted by the project's cast on illustrated sets, directed from a transcript authored with turns (a speaker with no character in a scene is a narrator). params: scenes [{start (s) | startLine (index of a spoken line) | startWord (word id) — the first scene starts at 0; set: room | office | street | park | cafe | studio; night?; colors?; cast: [{cast, x? (0..1), enter?: 'left' | 'right', exit?: 'left' | 'right', seated?, prop?: 'mug' | 'phone' | 'tablet', facing?, scale?}]; moves?: [{line | at, cast, x}]; actions?: [{line | at, type: 'handshake' | 'give' | 'hug', a, b, prop?}]; title? (a card as the scene opens); camera?: 'auto' | 'wide'}]. Characters walk in and out, face whoever they talk to, act their own lines, look at the speaker; the camera eases toward the speaker; scenes dip through black. Pair with kineticWords for captions."),
         _ => None,
     }
 }
@@ -324,7 +325,7 @@ mod tests {
     #[test]
     fn catalog_carries_the_extra_component_pack() {
         let ids = all_ids();
-        assert_eq!(ids.len(), 601, "68 original + 232 pack + 300 pack 3 components + the conversation scene");
+        assert_eq!(ids.len(), 602, "68 original + 232 pack + 300 pack 3 components + the conversation and story scenes");
         let mut sorted = ids.clone();
         sorted.sort_unstable();
         for pair in sorted.windows(2) {

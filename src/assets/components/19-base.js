@@ -176,6 +176,13 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
       }));
     }
 
+    // 0c. story: the cast acting scenes on illustrated sets, directed from the transcript
+    else if (c.componentId === 'story') {
+      SWDraw.story(ctx, Object.assign({}, p, {
+        W, H, time, words: opts.words || [], castTable: opts.cast || {}, theme: T, duration: c.end
+      }));
+    }
+
     // 1. circleShape (pulse, sonar, orbit, ring, halo)
     else if (c.componentId === 'circleShape') {
       const x = (p.position?.x ?? 0.5) * W, y = (p.position?.y ?? 0.5) * H;

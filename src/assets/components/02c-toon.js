@@ -595,7 +595,9 @@ function swToonCharacter(ctx, opts, styleName) {
       }
       let u = spec.u, f = spec.f;
       /* A walking arm swings from the shoulder, against its leg. */
-      if (u < 20 && walkAmt > 0) { const sw = walkAmt * Math.sin(legPh) * 24; u += sw; f += sw * 1.1; }
+      /* Seen nearly from the front, a walking arm swings mostly in depth:
+         only a few degrees show across the body. */
+      if (u < 20 && walkAmt > 0) { const sw = walkAmt * Math.sin(legPh) * 7; u += sw; f = Math.max(f + sw * 1.2, 0); }
       if (name === 'explain') f += osc(2.6, 7, side > 0 ? 0 : Math.PI);
       if (name === 'present' && side > 0) f += osc(2.2, 5);
       if (P.wave && side > 0) f += osc(8, 9);
@@ -724,7 +726,8 @@ function swToonCharacter(ctx, opts, styleName) {
     /* Standing, each foot sits right under its hip joint so the leg is
        straight; only the walk cycle bends the knees. */
     const rest = side * hipW * 0.55;
-    const fx = rest * (1 - walkAmt) + hipX + walkAmt * Math.sin(phs) * 30;
+    /* Feet stay hip-width apart; the stride shows as a short swing. */
+    const fx = rest + hipX + walkAmt * Math.sin(phs) * 14;
     const lift = walkAmt * Math.max(0, Math.cos(phs)) * 14;
     return { x: fx, y: ankleY - lift };
   };
