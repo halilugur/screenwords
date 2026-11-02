@@ -105,6 +105,8 @@ const TOOLS: &[ToolSpec] = &[
     ToolSpec { name: "set_theme", description: "Set the project's visual theme (document data, not engine defaults): preset? (midnight | editorial | meadow | noir | candy | sunset | glacier) and/or overrides paper/ink/accent/accent2/accentInk (hex) and bg.{style} color arrays. Component colour params still win over the theme." },
     ToolSpec { name: "synthesize_speech", description: "On-device TTS (ONNX): speak the transcript (or text?) in lang, voice?, seed?; writes a WAV asset into the bundle, places it on the Voice track and fits the project duration. English uses Phonon and Turkish EMA unless a Supertonic voice is chosen; Supertonic 3 covers 31 languages with voices M1-M5 / F1-F5 (voices? {speakerId: voice} speaks a transcript authored with turns in one voice per speaker, levelled to one loudness; bed? 'ambient' adds a quiet music bed ducked under the speech): en ko ja ar bg cs da de el es et fi fr hi hr hu id it lt lv nl pl pt ro ru sk sl sv tr uk vi (anything else falls back to <na>)." },
     ToolSpec { name: "find_background", description: "Place a real photo behind the story as a full-frame, moving background. Providers: unsplash (Unsplash License, commercial use, no attribution required) or pexels; a query is searched with UNSPLASH_ACCESS_KEY / PEXELS_API_KEY in the environment. Or pass url (an image URL) or file (a local image path). The image is embedded as a data URI and animated: motion kenburns | zoomin | zoomout | panleft | panright | drift | parallax | ripple | pulse, atmosphere sheen | rain | snow | dust | embers | bokeh | rays | fog | none, grade dark | warm | cool | violet | green | light | none. Motion and atmosphere are inferred from the query when omitted." },
+    ToolSpec { name: "export_html", description: "Write the self-contained HTML5 player next to the project (<name>.html): plays anywhere, narration embedded. Returns path, bytes, durationSeconds." },
+    ToolSpec { name: "render_video", description: "Render the project to MP4 next to it (<name>.mp4): every frame drawn deterministically at the project fps by headless Chrome, encoded by ffmpeg with the narration. Takes about the video's length or longer; one render at a time. Returns path, bytes, durationSeconds." },
     ToolSpec { name: "undo", description: "One undo step; expectLabel? refuses unless the step has this label." },
     ToolSpec { name: "redo", description: "One redo step." },
 ];
@@ -463,6 +465,21 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
         }
         "export_subtitles" => reads::export_subtitles(doc.project(), args),
         "get_history" => Ok(reads::get_history(doc, args.get("limit").and_then(Value::as_i64).map(|l| l as usize))),
+        "export_html" | "render_video" => {
+            let Some(base) = server.bundle_path.clone() else {
+                return Err(EditError::Validation {
+                    path: "project".into(),
+                    message: "exporting needs an on-disk project (screenwords app or screenwords mcp <bundle>)".into(),
+                });
+            };
+            let project = doc.project().clone();
+            let out = if name == "export_html" {
+                crate::ui::export_player(&project, &base)
+            } else {
+                crate::ui::render_video(&project, &base)
+            };
+            out.map_err(|message| EditError::Validation { path: "project".into(), message })
+        }
         "list_components" => {
             if let Some(id) = args.get("componentId").and_then(Value::as_str) {
                 if !crate::catalog::exists(id) {
@@ -1492,6 +1509,28 @@ mod tests {
         assert_eq!(soft_limit(0.5), 0.5);
         assert!(soft_limit(1.7) < 1.0 && soft_limit(1.7) > 0.95 && soft_limit(-1.7) > -1.0);
         assert!(soft_limit(0.9) < 0.9 && soft_limit(0.9) > soft_limit(0.85));
+    }
+
+    #[test]
+    fn export_html_is_an_mcp_tool_and_needs_a_bundle() {
+        let (server, _) = McpServer::new(Document::new(blank_project("Bundle Test", true)));
+        {
+            let mut doc = server.document.lock().unwrap();
+            let err = call_tool(&server, &mut doc, "export_html", &Value::obj()).unwrap_err();
+            assert!(err.message().contains("on-disk project"), "{}", err.message());
+        }
+        let dir = std::env::temp_dir().join(format!("sw-export-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let shared = std::sync::Arc::new(Mutex::new(Document::new(blank_project("Bundle Test", true))));
+        let (server, _) = McpServer::new_shared(shared, Some(dir.clone()));
+        let mut doc = server.document.lock().unwrap();
+        let out = call_tool(&server, &mut doc, "export_html", &Value::obj()).unwrap();
+        let path = out.get("path").and_then(Value::as_str).unwrap().to_string();
+        let html = std::fs::read_to_string(&path).unwrap();
+        assert!(html.contains("<canvas") && html.len() as i64 == out.get("bytes").and_then(Value::as_i64).unwrap());
+        assert!(TOOLS.iter().any(|t| t.name == "render_video"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

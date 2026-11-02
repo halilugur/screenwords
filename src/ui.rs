@@ -405,25 +405,10 @@ fn route(ui: &Ui, request: &Request) -> Response {
                 );
             };
             let project = ui.document.lock().unwrap().project().clone();
-            let html = crate::render::render_html_in(&project, Some(base.as_path()));
-            let name = format!("{}.html", slug(project.name()));
-            let path = base.join(&name);
-            if let Err(e) = std::fs::write(&path, html.as_bytes()) {
-                return Response::json(
-                    400,
-                    json_error("io", &format!("cannot write {}: {e}", path.display())),
-                );
+            match export_player(&project, &base) {
+                Ok(r) => Response::json(200, r.to_string_pretty(false)),
+                Err(message) => Response::json(400, json_error("io", &message)),
             }
-            let mut r = Value::obj();
-            r.set("name", Value::str(&name));
-            r.set("path", Value::str(&path.to_string_lossy()));
-            r.set("bytes", Value::Int(html.len() as i64));
-            let duration = crate::render::render_data_in(&project, Some(base.as_path()))
-                .get("duration")
-                .and_then(Value::as_f64)
-                .unwrap_or(0.0);
-            r.set("durationSeconds", Value::from_f64((duration * 100.0).round() / 100.0));
-            Response::json(200, r.to_string_pretty(false))
         }
         ("POST", "/api/render-mp4") => {
             // A real render: headless Chrome draws every frame at i/fps, ffmpeg
@@ -434,48 +419,8 @@ fn route(ui: &Ui, request: &Request) -> Response {
                     json_error("badRequest", "rendering needs an on-disk project (screenwords app)"),
                 );
             };
-            if MP4_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                return Response::json(409, json_error("busy", "a render is already running"));
-            }
-            let result = (|| -> Result<Value, String> {
-                let project = ui.document.lock().unwrap().project().clone();
-                let html = crate::render::render_html_in(&project, Some(base.as_path()));
-                let slug = slug(project.name());
-                let player = base.join(format!(".{slug}-player.html"));
-                std::fs::write(&player, html.as_bytes())
-                    .map_err(|e| format!("cannot write the player: {e}"))?;
-                let mp4 = base.join(format!("{slug}.mp4"));
-                let tool = render_tool()?;
-                let out = std::process::Command::new("node")
-                    .arg(&tool)
-                    .arg("--html")
-                    .arg(&player)
-                    .arg("--out")
-                    .arg(&mp4)
-                    .arg("--fps")
-                    .arg(format!("{:.0}", project.settings().fps()))
-                    // frames are independent: spread them over 4 browsers
-                    .arg("--workers")
-                    .arg("4")
-                    .output()
-                    .map_err(|e| format!("cannot start node: {e}"))?;
-                let _ = std::fs::remove_file(&player);
-                if !out.status.success() {
-                    let err = String::from_utf8_lossy(&out.stderr);
-                    return Err(format!("render failed: {}", err.trim().lines().last().unwrap_or("no output")));
-                }
-                let bytes = std::fs::metadata(&mp4).map(|m| m.len()).unwrap_or(0);
-                let mut r = Value::obj();
-                r.set("name", Value::str(&format!("{slug}.mp4")));
-                r.set("path", Value::str(&mp4.to_string_lossy()));
-                r.set("bytes", Value::Int(bytes as i64));
-                r.set(
-                    "durationSeconds",
-                    Value::from_f64(project.settings().target_duration().map(|t| t.seconds()).unwrap_or(0.0)),
-                );
-                Ok(r)
-            })();
-            MP4_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+            let project = ui.document.lock().unwrap().project().clone();
+            let result = render_video(&project, &base);
             match result {
                 Ok(v) => Response::json(200, v.to_string_pretty(false)),
                 Err(message) => Response::json(400, json_error("renderFailed", &message)),
@@ -988,6 +933,69 @@ fn frame_size(args: &Value) -> Result<(f64, f64), String> {
 /// One render at a time: Chrome + ffmpeg are heavy and the second caller
 /// would only fight the first for the debugging port.
 static MP4_BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The deliverable player: the self-contained page `screenwords render`
+/// writes, saved next to the project as `<slug>.html`.
+pub fn export_player(project: &crate::project::Project, base: &std::path::Path) -> Result<Value, String> {
+    let html = crate::render::render_html_in(project, Some(base));
+    let name = format!("{}.html", slug(project.name()));
+    let path = base.join(&name);
+    std::fs::write(&path, html.as_bytes()).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    let mut r = Value::obj();
+    r.set("name", Value::str(&name));
+    r.set("path", Value::str(&path.to_string_lossy()));
+    r.set("bytes", Value::Int(html.len() as i64));
+    let duration = crate::render::render_data_in(project, Some(base)).get("duration").and_then(Value::as_f64).unwrap_or(0.0);
+    r.set("durationSeconds", Value::from_f64((duration * 100.0).round() / 100.0));
+    Ok(r)
+}
+
+/// A real render to `<slug>.mp4` next to the project: headless Chrome draws
+/// every frame at i/fps, ffmpeg encodes, and the narration embedded in the
+/// page is muxed in. One render at a time.
+pub fn render_video(project: &crate::project::Project, base: &std::path::Path) -> Result<Value, String> {
+    if MP4_BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return Err("a render is already running".into());
+    }
+    let result = (|| -> Result<Value, String> {
+        let html = crate::render::render_html_in(project, Some(base));
+        let slug = slug(project.name());
+        let player = base.join(format!(".{slug}-player.html"));
+        std::fs::write(&player, html.as_bytes()).map_err(|e| format!("cannot write the player: {e}"))?;
+        let mp4 = base.join(format!("{slug}.mp4"));
+        let tool = render_tool()?;
+        let out = std::process::Command::new("node")
+            .arg(&tool)
+            .arg("--html")
+            .arg(&player)
+            .arg("--out")
+            .arg(&mp4)
+            .arg("--fps")
+            .arg(format!("{:.0}", project.settings().fps()))
+            // frames are independent: spread them over 4 browsers
+            .arg("--workers")
+            .arg("4")
+            .output()
+            .map_err(|e| format!("cannot start node: {e}"))?;
+        let _ = std::fs::remove_file(&player);
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr);
+            return Err(format!("render failed: {}", err.trim().lines().last().unwrap_or("no output")));
+        }
+        let bytes = std::fs::metadata(&mp4).map(|m| m.len()).unwrap_or(0);
+        let mut r = Value::obj();
+        r.set("name", Value::str(&format!("{slug}.mp4")));
+        r.set("path", Value::str(&mp4.to_string_lossy()));
+        r.set("bytes", Value::Int(bytes as i64));
+        r.set(
+            "durationSeconds",
+            Value::from_f64(project.settings().target_duration().map(|t| t.seconds()).unwrap_or(0.0)),
+        );
+        Ok(r)
+    })();
+    MP4_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+    result
+}
 
 /// Where tools/render-mp4.mjs lives: next to the binary, or in the source tree
 /// when running out of target/debug.
