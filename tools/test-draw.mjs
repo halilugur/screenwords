@@ -489,6 +489,30 @@ function check(name, ok, detail) {
     try { SWDraw.story(c, { W: 1080, H: 1920, time: 1, words, castTable, scenes: junk }); if (c.depth !== 0) check('story junk leaves save() open', false, JSON.stringify(junk)); }
     catch (e) { check('story tolerates junk scenes', false, JSON.stringify(junk) + ' ' + String(e)); }
   }
+  /* Dropping and picking up: the thing lands where the dropper walked and
+     stays; the picker reaches only after arriving next to it. */
+  {
+    const dw = [].concat(L('elif', 'Geç kaldım!', 0.5, 2), L('narrator', 'Defter düştü.', 2.5, 6), L('mert', 'Bu da ne?', 7, 9));
+    const dl = SWDraw.conversationPlan(dw).lines;
+    const sc1 = { set: 'street', cast: [{ cast: 'elif', x: 0.3, bag: true }], moves: [{ line: 1, cast: 'elif', x: 1.15 }], actions: [{ line: 1, offset: 1.2, type: 'drop', a: 'elif', prop: 'book' }] };
+    const bl = swStoryBlocking(sc1, 0, 7, 1920, 1, dl, dw);
+    const dropT = dl[1].start - 0.15 + 1.2;
+    const it = bl.items[0];
+    check('drop: the thing falls where she walks and stays', it && it.prop === 'book' && Math.abs(it.from - dropT) < 1e-6 && it.until === Infinity && Math.abs(it.x - (swStoryAt(bl.plans.elif, dropT).x + 34)) < 1, JSON.stringify(it));
+    const sc2 = { set: 'street', items: [{ prop: 'book', x: 0.5 }], cast: [{ cast: 'mert', x: 0.8, enter: 'right' }], actions: [{ line: 2, type: 'pickup', a: 'mert', prop: 'book' }] };
+    const b2 = swStoryBlocking(sc2, 6.5, 12, 1920, 1, dl, dw);
+    const pk = b2.solo[0];
+    const there = swStoryAt(b2.plans.mert, pk.t);
+    check('pickup: the reach waits for the arrival', there.walking < 0.05 && Math.abs(there.x - (960 + 30)) < 1, JSON.stringify(there));
+    check('pickup: the thing leaves the floor after the reach', Math.abs(b2.items[0].until - (pk.t + 0.55)) < 1e-6);
+    const stand = SWDraw.character(new MockCtx(), { time: 1 }).joints, low = SWDraw.character(new MockCtx(), { time: 1, crouch: 1 }).joints;
+    check('crouch: the hips drop and the feet stay on the floor', low.hipY - stand.hipY > 50 && low.legs.every(l => Math.abs(l.ankle.y - low.ankleY) < 0.5), `${stand.hipY} ${low.hipY}`);
+    check('crouch: bones keep their length', low.legs.every(l => Math.abs(Math.hypot(l.knee.x - l.hip.x, l.knee.y - l.hip.y) - low.legLen) < 0.6));
+    const c = new MockCtx(), b0 = bad.length;
+    SWDraw.character(c, { bag: true, crouch: 0.6, time: 1 });
+    SWDraw.character(c, { bag: '#335577', prop: 'book', time: 1 });
+    check('bag and book draw cleanly', c.depth === 0 && bad.length === b0, bad.slice(b0, b0 + 2).join('; '));
+  }
   for (const set of SWDraw.sets) for (const night of [false, true]) {
     const c = new MockCtx(), b0 = bad.length;
     SWDraw.set(c, set, { W: 1080, H: 1920, time: 3, night, camX: 40 });

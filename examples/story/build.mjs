@@ -68,9 +68,20 @@ const TURNS = [
 ];
 
 const SCENES = [
-  { set: 'street', title: 'Bir sabah', cast: [{ cast: 'elif', x: 0.5, enter: 'left', exit: 'right' }] },
-  { startLine: 3, set: 'street', cast: [{ cast: 'mert', x: 0.55, enter: 'right', prop: 'book' }] },
-  { startLine: 6, set: 'office', title: 'Öğlen', cast: [{ cast: 'elif', x: 0.36 }, { cast: 'ada', x: 0.66 }] },
+  {
+    set: 'street', title: 'Bir sabah',
+    cast: [{ cast: 'elif', x: 0.38, enter: 'left', bag: true }],
+    /* she runs off as the narrator tells it, and the sketchbook slips out */
+    moves: [{ line: 2, cast: 'elif', x: 1.15 }],
+    actions: [{ line: 2, offset: 1.6, type: 'drop', a: 'elif', prop: 'book' }]
+  },
+  {
+    startLine: 3, set: 'street',
+    items: [{ prop: 'book', x: 0.5 }],
+    cast: [{ cast: 'mert', x: 0.72, enter: 'right' }],
+    actions: [{ line: 3, offset: 1.8, type: 'pickup', a: 'mert', prop: 'book' }]
+  },
+  { startLine: 6, set: 'office', title: 'Öğlen', cast: [{ cast: 'elif', x: 0.36, bag: true }, { cast: 'ada', x: 0.66 }] },
   { startLine: 11, set: 'park', night: true, cast: [{ cast: 'mert', x: 0.5, enter: 'left', prop: 'book' }] },
   {
     startLine: 14, set: 'cafe', title: 'Cumartesi',

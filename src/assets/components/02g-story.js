@@ -24,6 +24,11 @@
 
 /* The time a scene or action starts: seconds, a line index or a word id. */
 function swStoryTime(spec, lines, words, fallback) {
+  const base = swStoryTimeBase(spec, lines, words, fallback);
+  /* offset: seconds after the line or word it names */
+  return spec && typeof spec === 'object' && isFinite(base) ? base + ecN(spec.offset, 0) : base;
+}
+function swStoryTimeBase(spec, lines, words, fallback) {
   if (!spec || typeof spec !== 'object') return fallback;
   if (typeof spec.start === 'number' && isFinite(spec.start)) return spec.start;
   if (typeof spec.at === 'number' && isFinite(spec.at)) return spec.at;
@@ -58,7 +63,7 @@ function swStoryBlocking(sc, a, b, W, s, lines, words) {
     const off = m.enter === 'left' ? -0.12 * W : m.enter === 'right' ? 1.12 * W : null;
     const legs = [];
     let at = a, x = off == null ? x0 : off;
-    if (off != null) { legs.push({ t0: a + 0.2, x0: off, x1: x0 }); x = x0; at = a + 0.2 + Math.abs(x0 - off) / pace; }
+    if (off != null) { legs.push({ t0: a + 0.2, x0: off, x1: x0, t1: a + 0.2 + Math.abs(x0 - off) / pace }); x = x0; at = a + 0.2 + Math.abs(x0 - off) / pace; }
     plans[m.cast] = { legs, home: x0, start: off == null ? x0 : off, at };
   });
   const walkTo = (id, t, x1) => {
@@ -67,14 +72,41 @@ function swStoryBlocking(sc, a, b, W, s, lines, words) {
     const prev = P.legs.length ? P.legs[P.legs.length - 1].x1 : P.start;
     const t0 = Math.max(t, P.legs.length ? P.legs[P.legs.length - 1].t1 || 0 : 0);
     if (Math.abs(x1 - prev) < 2) return;
-    P.legs.push({ t0, x0: prev, x1 });
+    P.legs.push({ t0, x0: prev, x1, t1: t0 + Math.abs(x1 - prev) / pace });
   };
   for (const mv of (Array.isArray(sc.moves) ? sc.moves : [])) {
     if (!mv || typeof mv.cast !== 'string') continue;
     walkTo(mv.cast, swStoryTime(mv, lines, words, a), ecN(mv.x, 0.5) * W);
   }
+  /* Things on the floor: declared with the scene (items), dropped (they
+     fall from the dropper's bag where they walk) and picked up (the picker
+     walks over and the thing leaves the floor). */
+  const items = (Array.isArray(sc.items) ? sc.items : []).filter(it => it && typeof it.prop === 'string')
+    .map(it => ({ prop: it.prop, x: ecN(it.x, 0.5) * W, from: -Infinity, until: Infinity, fall: null }));
+  const solo = swStoryActions(sc, lines, words, a).filter(act => act.type === 'drop' || act.type === 'pickup').sort((p, q) => p.t - q.t);
+  for (const act of solo) {
+    const P = plans[act.a];
+    if (!P) continue;
+    if (act.type === 'drop') {
+      const at = swStoryAt(P, act.t), dir = Math.sign(at.vx) || 1;
+      items.push({ prop: act.prop, x: at.x + dir * 34 * s, from: act.t, until: Infinity, fall: { x0: at.x + dir * 34 * s, dir } });
+    } else {
+      const here = swStoryAt(P, act.t - 0.6).x;
+      const it = items.filter(x => x.prop === act.prop && x.from <= act.t && x.until > act.t)
+        .sort((p, q) => Math.abs(p.x - here) - Math.abs(q.x - here))[0];
+      if (!it) continue;
+      act.x = it.x;
+      const side = it.x >= here ? 1 : -1, stand = it.x - side * 30 * s;
+      walkTo(act.a, act.t - 0.35 - Math.abs(stand - (P.legs.length ? P.legs[P.legs.length - 1].x1 : P.start)) / pace, stand);
+      /* the reach waits until they have arrived */
+      const last = P.legs[P.legs.length - 1];
+      if (last) act.t = Math.max(act.t, last.t1 + 0.4);
+      it.until = act.t + 0.55;
+    }
+  }
   /* Actions bring the two together a moment before they happen. */
   for (const act of swStoryActions(sc, lines, words, a)) {
+    if (act.type === 'drop' || act.type === 'pickup') continue;
     const PA = plans[act.a], PB = plans[act.b];
     if (!PA || !PB) continue;
     const xa = PA.legs.length ? PA.legs[PA.legs.length - 1].x1 : PA.start;
@@ -106,7 +138,7 @@ function swStoryBlocking(sc, a, b, W, s, lines, words) {
     }
   }
   for (const id in plans) for (const L of plans[id].legs) L.t1 = L.t0 + Math.abs(L.x1 - L.x0) / pace;
-  return { plans, pace };
+  return { plans, pace, items, solo };
 }
 function swStoryAt(P, t) {
   let x = P.start, walking = 0, vx = 0;
@@ -126,8 +158,38 @@ function swStoryAt(P, t) {
 
 function swStoryActions(sc, lines, words, a) {
   return (Array.isArray(sc.actions) ? sc.actions : [])
-    .filter(x => x && typeof x.a === 'string' && typeof x.b === 'string' && /^(handshake|give|hug)$/.test(String(x.type)))
-    .map(x => ({ type: x.type, a: x.a, b: x.b, prop: x.prop || 'phone', t: swStoryTime(x, lines, words, a + 1) }));
+    .filter(x => x && typeof x.a === 'string' && ((typeof x.b === 'string' && /^(handshake|give|hug)$/.test(String(x.type))) || /^(drop|pickup)$/.test(String(x.type))))
+    .map(x => ({ type: x.type, a: x.a, b: x.b, prop: x.prop || (/^(drop|pickup)$/.test(String(x.type)) ? 'book' : 'phone'), t: swStoryTime(x, lines, words, a + 1) }));
+}
+
+/* Something lying on the floor, or tumbling down to it (rot != 0). */
+function swStoryFloorThing(ctx, prop, x, y, s, rot) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  if (!rot) { ctx.beginPath(); ctx.ellipse(0, 2 * s, 20 * s, 4 * s, 0, 0, Math.PI * 2); ctx.fill(); }
+  ctx.rotate(rot || 0);
+  if (prop === 'book') {
+    if (rot) {
+      /* closed, tumbling */
+      ctx.fillStyle = '#F1E9DA'; ctx.fillRect(-9 * s, -12 * s, 19 * s, 24 * s);
+      ctx.fillStyle = '#8E3B3B'; ctx.beginPath(); ctx.roundRect(-10 * s, -13 * s, 19 * s, 26 * s, 2 * s); ctx.fill();
+    } else {
+      /* lying flat: a cover seen at a low angle, pages along the edge */
+      ctx.fillStyle = '#F1E9DA';
+      ctx.beginPath(); ctx.moveTo(-17 * s, -2 * s); ctx.lineTo(15 * s, -2 * s); ctx.lineTo(19 * s, 1 * s); ctx.lineTo(-13 * s, 1 * s); ctx.fill();
+      ctx.fillStyle = '#8E3B3B';
+      ctx.beginPath(); ctx.moveTo(-18 * s, -7 * s); ctx.lineTo(14 * s, -7 * s); ctx.lineTo(18 * s, -2 * s); ctx.lineTo(-14 * s, -2 * s); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillRect(-8 * s, -6 * s, 10 * s, 2 * s);
+    }
+  } else if (prop === 'phone') {
+    ctx.fillStyle = '#111827'; ctx.beginPath(); ctx.roundRect(-9 * s, -3 * s, 18 * s, 4 * s, 1.5 * s); ctx.fill();
+  } else if (prop === 'mug') {
+    ctx.fillStyle = '#E76F51'; ctx.beginPath(); ctx.roundRect(-7 * s, -16 * s, 14 * s, 16 * s, 3 * s); ctx.fill();
+  } else {
+    ctx.fillStyle = '#6B7280'; ctx.beginPath(); ctx.roundRect(-10 * s, -6 * s, 20 * s, 6 * s, 2 * s); ctx.fill();
+  }
+  ctx.restore();
 }
 
 /* A small round café table with a cup, standing on the floor at x. */
@@ -167,7 +229,7 @@ function swStory(ctx, opts) {
   const s = (portrait ? U / 520 : U / 640) * ecN(sc.scale, 1);
   const font = opts.fontFamily || '"Space Grotesk", sans-serif';
   const floorY = SWDraw.setFloor(sc.set, H);
-  const { plans } = swStoryBlocking(sc, a, b, W, s, lines, words);
+  const { plans, items, solo } = swStoryBlocking(sc, a, b, W, s, lines, words);
   const actions = swStoryActions(sc, lines, words, a);
   const people = (sc.cast || []).filter(m => m && typeof m.cast === 'string');
   const pos = {};
@@ -189,7 +251,18 @@ function swStory(ctx, opts) {
     return floorY - 268 * k + (m.seated && Math.abs(P.x - plans[cid].home) < 2 && P.walking < 0.05 ? SWDraw.seatDrop('flat') * k : 0);
   };
   const shotAt = t => {
-    if ((sc.camera || opts.camera) === 'wide' || t < a + 2.2 || t > b - 0.6) return wide;
+    if ((sc.camera || opts.camera) === 'wide') return wide;
+    /* Inserts: something falling, and someone picking it up, get a close
+       look at the floor — the moment the story turns on. */
+    for (const act of solo) {
+      if (act.type === 'drop') {
+        const it = items.find(x => x.fall && x.from === act.t);
+        if (it && t >= act.t - 0.25 && t <= act.t + 1.6) return { z: portrait ? 1.5 : 1.75, x: it.x, y: floorY - 70 * s };
+      } else if (act.type === 'pickup' && act.x != null && t >= act.t - 0.45 && t <= act.t + 1.2) {
+        return { z: portrait ? 1.35 : 1.5, x: act.x, y: floorY - 110 * s };
+      }
+    }
+    if (t < a + 2.2 || t > b - 0.6) return wide;
     for (const id in plans) if (swStoryAt(plans[id], t).walking > 0.05) return wide;
     for (const act of actions) {
       if (t < act.t - 0.6 || t > act.t + 2.4 || !plans[act.a] || !plans[act.b]) continue;
@@ -224,6 +297,25 @@ function swStory(ctx, opts) {
   /* People, back to front by x so overlaps read left to right. */
   const order = people.slice().sort((p, q) => pos[p.cast].x - pos[q.cast].x);
   const hugHands = [];
+  /* Things on the floor, and things falling to it. */
+  for (const it of items) {
+    if (time < it.from || time >= it.until) continue;
+    const k = s;
+    if (it.fall && time < it.from + 0.62) {
+      const dt = time - it.from;
+      if (dt < 0.45) {
+        const q = dt / 0.45;
+        swStoryFloorThing(ctx, it.prop, it.fall.x0 + it.fall.dir * 10 * k * q, floorY - 150 * k + (150 - 6) * k * q * q, k, it.fall.dir * q * 2.4);
+      } else {
+        const bounce = Math.sin((dt - 0.45) / 0.17 * Math.PI) * 6 * k;
+        swStoryFloorThing(ctx, it.prop, it.x + it.fall.dir * 10 * k, floorY - 4 * k - bounce, k, 0);
+      }
+    } else {
+      /* the last moment of a pick-up lifts it into the reaching hand */
+      const lift = isFinite(it.until) ? ease((time - (it.until - 0.35)) / 0.35) : 0;
+      swStoryFloorThing(ctx, it.prop, it.x + (it.fall ? it.fall.dir * 10 * k : 0), floorY - 4 * k - 34 * k * lift, k, 0);
+    }
+  }
   /* A table whose sitter has got up stands behind everyone. */
   for (const m of people) {
     const ms = s * ecN(m.scale, 1), P = pos[m.cast];
@@ -248,6 +340,21 @@ function swStory(ctx, opts) {
       prop: m.prop, pose: p.walking > 0.05 ? 'walk' : 'auto', lookAt: 'speaker', seatHeads: heads
     };
     let hugging = false;
+    o.bag = m.bag;
+    /* Picking something up: crouch, reach the floor, rise holding it. */
+    for (const act of solo) {
+      if (act.a !== id || act.type !== 'pickup' || act.x == null) continue;
+      const dt = time - act.t;
+      if (dt >= 0.5) o.prop = act.prop;
+      if (dt < -0.35 || dt > 1.1) continue;
+      const q = p.walking > 0.05 ? 0 : ease((dt + 0.35) / 0.4) * ease((1.1 - dt) / 0.45);
+      o.crouch = q;
+      o.pose = 'idle';
+      o.facing = act.x >= p.x ? 1 : -1;
+      o.rightHand = { x: p.x + (act.x - p.x) * q + (1 - q) * o.facing * 20 * ms, y: floorY - 120 * ms + (114 * ms) * q * (dt < 0.5 ? 1 : 0.6) };
+      o.rightHandPose = 'hold';
+      o.lookAt = { x: act.x, y: floorY };
+    }
     /* Interactions in progress, as two-person poses. Heights are in the
        figure's frame: the hip at floor - 140·s, the waist at floor - 166·s,
        the shoulders at floor - 227·s. */

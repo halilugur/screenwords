@@ -580,11 +580,16 @@ function swToonCharacter(ctx, opts, styleName) {
      the thighs come toward the viewer. */
   const seated = !!opts.seated;
   const seatDrop = seated ? swSeatDrop(S) : 0;
-  const hipX = m.shift, hipY = S.hipY + m.bob + seatDrop;
+  /* crouch (0..1): knees bend outward and the hips drop, to reach the
+     floor (picking something up). */
+  const crouch = seated ? 0 : ecClamp(ecN(opts.crouch, 0), 0, 1);
+  const crouchDrop = crouch * (170 - 8 - S.hipY) / 2 * 1.0;
+  const hipX = m.shift, hipY = S.hipY + m.bob + seatDrop + crouchDrop;
   const tiltHip = m.shift * 0.012;
-  const shY = S.sh + m.bob + seatDrop - breathe * 0.8 - shrug;
+  /* crouching also bends the back: the chest and head lean over the knees */
+  const shY = S.sh + m.bob + seatDrop + crouchDrop * 1.25 - breathe * 0.8 - shrug;
   const shW = S.shW * k, hipW = S.hipW * k;
-  const chestX = hipX * 0.35;
+  const chestX = hipX * 0.35 + crouch * 16;
   /* The shoulder joints sit under the deltoids at the outer edge of the
      shoulders; the ribcage below is narrower, so hanging arms run beside
      the body, not over it. */
@@ -769,6 +774,10 @@ function swToonCharacter(ctx, opts, styleName) {
        drops to the floor. */
     const ik = seated
       ? { J: { x: Hj.x + (back ? -2 : 2), y: Hj.y + legLen * 0.3 }, E: { x: Hj.x + (back ? -2 : 2), y: ankleY } }
+      : crouch > 0.01
+        /* crouching: knees forward (the way the figure faces), the near
+           leg a little further, like someone going down to the floor */
+        ? swToonIK(Hj, { x: F.x + (back ? -3 : 6) * crouch, y: F.y }, legLen, legLen, J => J.x)
       : walkAmt > 0.01
         ? swToonIK(Hj, F, legLen, legLen, knee)
         /* Standing, the leg spans exactly hip to ankle, so it stays straight
@@ -893,6 +902,21 @@ function swToonCharacter(ctx, opts, styleName) {
     ctx.beginPath(); ctx.ellipse(chestX, top - 1, 9, 6, 0, 0, Math.PI); ctx.stroke();
   }
   ctx.restore();
+  }
+
+  /* A crossbody bag: the strap from the far shoulder over the chest to a
+     bag at the hip on the facing side. */
+  if (opts.bag) {
+    const bagC = typeof opts.bag === 'string' && /^#/.test(opts.bag) ? opts.bag : '#8D6E63';
+    const bx = hipX + hipW + 2, by = hipY - 22;
+    ctx.strokeStyle = swShade(bagC, -0.25); ctx.lineWidth = 3.4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(SL.x + 3, shY + 2); ctx.quadraticCurveTo(chestX, (shY + by) / 2 + 6, bx + 4, by + 2); ctx.stroke();
+    ctx.fillStyle = bagC;
+    ctx.beginPath(); ctx.roundRect(bx - 2, by, 26, 22, 5); ctx.fill();
+    ctx.fillStyle = swShade(bagC, -0.18);
+    ctx.beginPath(); ctx.roundRect(bx - 2, by, 26, 11, 5); ctx.fill();
+    ctx.fillStyle = '#E9C46A';
+    ctx.fillRect(bx + 9, by + 9, 5, 4);
   }
 
   /* Neck and head */
