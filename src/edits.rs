@@ -2124,10 +2124,12 @@ fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
         root.set("transcripts", Value::Array(Vec::new()));
         root.set("wordCounter", Value::Int(0));
     }
-    if words.len() > 500 {
+    /* Long-form stories and episodes run to tens of minutes. */
+    const MAX_WORDS: usize = 8000;
+    if words.len() > MAX_WORDS {
         return Err(EditError::Validation {
-            path: "text".into(),
-            message: format!("{} words; at most 500", words.len()),
+            path: if args.get("turns").is_some() { "turns".into() } else { "text".into() },
+            message: format!("{} words; at most {MAX_WORDS}", words.len()),
         });
     }
     let mut t = 0.0f64;
@@ -2506,6 +2508,21 @@ mod tests {
         bad.set("turns", Value::parse(r#"[{"speaker":"a b","text":"x"}]"#).unwrap());
         let err = d.apply_edits(Some("bad"), None, &[EditOp::new("author_transcript", bad)]).unwrap_err();
         assert!(err.message().contains("speaker"), "{}", err.message());
+    }
+
+    #[test]
+    fn author_transcript_takes_long_form_stories() {
+        let mut d = doc();
+        let line = "Bir varmış bir yokmuş, uzak bir şehirde yaşlı bir kâtip yaşarmış. ";
+        let mut a = crate::json::Value::obj();
+        a.set("text", Value::str(&line.repeat(250)));
+        a.set("replace", Value::Bool(true));
+        d.apply_edits(Some("long"), None, &[EditOp::new("author_transcript", a)]).unwrap();
+        assert_eq!(d.project().words().len(), 2750);
+        let mut too = crate::json::Value::obj();
+        too.set("text", Value::str(&"söz ".repeat(8001)));
+        let err = d.apply_edits(Some("too long"), None, &[EditOp::new("author_transcript", too)]).unwrap_err();
+        assert!(err.message().contains("at most 8000"), "{}", err.message());
     }
 
     #[test]
