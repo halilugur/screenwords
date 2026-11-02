@@ -79,7 +79,7 @@ function swStoryBlocking(sc, a, b, W, s, lines, words) {
     if (!PA || !PB) continue;
     const xa = PA.legs.length ? PA.legs[PA.legs.length - 1].x1 : PA.start;
     const xb = PB.legs.length ? PB.legs[PB.legs.length - 1].x1 : PB.start;
-    const gap = (act.type === 'hug' ? 24 : act.type === 'give' ? 56 : 60) * s, side = xa <= xb ? 1 : -1;
+    const gap = (act.type === 'hug' ? 27 : act.type === 'give' ? 56 : 60) * s, side = xa <= xb ? 1 : -1;
     /* A seated person stays put and the other comes to them — except for a
        hug, where the one sitting gets up and goes to the other. */
     const hug = act.type === 'hug';
@@ -89,8 +89,13 @@ function swStoryBlocking(sc, a, b, W, s, lines, words) {
       : upB && !upA ? xa + side * gap : upA && !upB ? xb - side * gap : (xa + xb) / 2;
     const ta = seatA ? xa : mid - side * gap, tb = seatB ? xb : mid + side * gap;
     const lead = Math.max(Math.abs(ta - xa), Math.abs(tb - xb)) / pace;
-    walkTo(act.a, act.t - lead - 0.1, ta);
-    walkTo(act.b, act.t - lead - 0.1, tb);
+    walkTo(act.a, act.t - lead - 0.4, ta);
+    walkTo(act.b, act.t - lead - 0.4, tb);
+    /* after a hug each steps back to a talking distance */
+    if (hug) {
+      walkTo(act.a, act.t + 2.6, ta - side * 40 * s);
+      walkTo(act.b, act.t + 2.6, tb + side * 40 * s);
+    }
   }
   for (const m of people) {
     if (m.exit === 'left' || m.exit === 'right') {
@@ -218,6 +223,7 @@ function swStory(ctx, opts) {
   };
   /* People, back to front by x so overlaps read left to right. */
   const order = people.slice().sort((p, q) => pos[p.cast].x - pos[q.cast].x);
+  const hugHands = [];
   /* A table whose sitter has got up stands behind everyone. */
   for (const m of people) {
     const ms = s * ecN(m.scale, 1), P = pos[m.cast];
@@ -250,7 +256,8 @@ function swStory(ctx, opts) {
       if (dt < -0.5 || dt > 2.4) continue;
       const partner = act.a === id ? act.b : act.b === id ? act.a : null;
       if (!partner || !pos[partner]) continue;
-      const q = ease((dt + 0.5) / 0.5) * ease((2.4 - dt) / 0.45);
+      /* reach only once the two stand together, never mid-stride */
+      const q = (p.walking > 0.05 || pos[partner].walking > 0.05) ? 0 : ease((dt + 0.3) / 0.45) * ease((2.4 - dt) / 0.45);
       const px = pos[partner].x, toward = px >= p.x ? 1 : -1;
       const pm = people.find(x => x.cast === partner) || {}, pk = s * ecN(pm.scale, 1);
       const sitDrop = (mm, k, cid) => (mm.seated && pos[cid].walking < 0.05 ? SWDraw.seatDrop('flat') * k : 0);
@@ -275,20 +282,23 @@ function swStory(ctx, opts) {
         o.rightHand = { x: lerp(rest.x, meetX - toward * (giver ? 16 : 6) * ms), y: lerp(rest.y, meetY + (giver ? 0 : 8 * ms)) };
         o.rightHandPose = giver ? 'hold' : 'open';
       } else if (act.type === 'hug') {
-        /* An embrace: whoever is drawn behind wraps both arms round the
-           other's back (hands showing at their far side); the one in front
-           puts an arm over the other's shoulder. Heads lean in, eyes close. */
+        /* A side hug — the embrace that reads with figures facing the
+           camera: shoulder to shoulder, heads leaning together, eyes closed,
+           the inner arms round each other's backs. Those arms are out of
+           sight; only the hands show, laid on afterwards (see below): the
+           one behind rests a hand on the front one's far shoulder, the one
+           in front a hand on the other's far waist. The outer arms hang. */
         const behind = pos[id].x < pos[partner].x || (pos[id].x === pos[partner].x && id < partner);
-        const shoulderY = floorY - 215 * pk + theirDrop, waistY = floorY - 170 * pk + theirDrop;
-        if (behind) {
-          o.rightHand = { x: lerp(p.x + toward * 20 * ms, px + toward * 30 * pk), y: lerp(floorY - 120 * ms, shoulderY + 6 * pk) };
-          o.leftHand = { x: lerp(p.x - toward * 20 * ms, px + toward * 24 * pk), y: lerp(floorY - 120 * ms, waistY) };
-          o.rightHandPose = o.leftHandPose = 'relaxed';
-        } else {
-          o.rightHand = { x: lerp(p.x + toward * 20 * ms, px - toward * 26 * pk), y: lerp(floorY - 120 * ms, shoulderY + 4 * pk) };
-          o.rightHandPose = 'relaxed';
+        if (q > 0.2) {
+          o.hideArm = 'right';
+          const pSkin = (castTable[partner] && castTable[partner].skinColor) || '#F2C4A2';
+          const mySkin = (castTable[id] && castTable[id].skinColor) || (castTable[id] && castTable[id].kit ? '#F2C4A2' : '#F2C4A2');
+          void pSkin;
+          hugHands.push(behind
+            ? { x: px + toward * 22 * pk, y: floorY - 222 * pk + theirDrop, angle: Math.PI / 2 + toward * 0.35, s: ms, skin: mySkin, q }
+            : { x: px + toward * 26 * pk, y: floorY - 160 * pk + theirDrop, angle: Math.PI / 2 - toward * 0.5, s: ms, skin: mySkin, q });
         }
-        o.headTilt = 0.55 * q;
+        o.headTilt = 0.5 * q;
         /* Nobody hugs from a chair, or with a phone in hand. */
         o.seated = false;
         o.prop = null;
@@ -309,6 +319,15 @@ function swStory(ctx, opts) {
     /* Someone seated sits at a small table, which says "sitting" from the
        front far better than legs do. */
     if (o.seated && (m.table === true || (m.table !== false && sc.set === 'cafe'))) swStoryTable(ctx, plans[id].home + (m.facing ? m.facing : facingHome(id)) * 34 * ms, floorY, ms, sc.night);
+  }
+  /* Hands from a side hug, laid over both figures. */
+  for (const h of hugHands) {
+    ctx.save();
+    ctx.globalAlpha *= ecClamp((h.q - 0.2) / 0.3, 0, 1);
+    ctx.translate(h.x, h.y);
+    ctx.rotate(h.angle);
+    swToonHand(ctx, 'relaxed', 12 * h.s, h.skin, swShade(h.skin, -0.16), 'flat', 1);
+    ctx.restore();
   }
   SWDraw.set(ctx, sc.set, { W, H, time, night: !!sc.night, colors: sc.colors, layer: 'front', camX });
   ctx.restore();

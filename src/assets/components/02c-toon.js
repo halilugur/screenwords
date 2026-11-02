@@ -608,7 +608,10 @@ function swToonCharacter(ctx, opts, styleName) {
   const osc = (f, a, ph) => Math.sin(time * f + (ph || 0)) * a;
   const chin = { x: headC.x + hrx * 0.3, y: headC.y + hry * 0.9 };
   const legPh = time * cad;
-  const elbowPick = side => J => J.y + 0.3 * side * J.x;
+  /* Elbows hang down by default; elbowUp ('right' | 'left' | true) lifts
+     one over a shoulder, as an arm laid across someone's shoulders does. */
+  const elbowUpSide = side => opts.elbowUp === true || opts.elbowUp === (side > 0 ? 'right' : 'left');
+  const elbowPick = side => (elbowUpSide(side) ? J => -J.y + 0.3 * side * J.x : J => J.y + 0.3 * side * J.x);
   const rig = name => {
     const P = SW_TOON_POSES[name];
     const dir = (deg, side) => { const r = deg * Math.PI / 180; return { x: side * Math.sin(r), y: Math.cos(r) }; };
@@ -1032,8 +1035,17 @@ function swToonCharacter(ctx, opts, styleName) {
   };
   const prop = typeof opts.prop === 'string' ? opts.prop.toLowerCase() : null;
   if (prop && !opts.rightHandPose && !opts.handPose && hR !== 'point') hR = 'hold';
-  const nearTip = drawArm(SL, tL, -1, hL, aL, dL, eL);
-  const farTip = drawArm(SR, tR, 1, hR, aR, dR, eR);
+  /* hideArm ('right' | 'left'): an arm out of sight, e.g. round someone's
+     back in a side hug; its joints are still solved. */
+  const armOrHidden = (side, ...args) => {
+    if (!(opts.hideArm === true || opts.hideArm === (side > 0 ? 'right' : 'left'))) return drawArm(...args);
+    ctx.save(); ctx.globalAlpha = 0;
+    const r = drawArm(...args);
+    ctx.restore();
+    return r;
+  };
+  const nearTip = armOrHidden(-1, SL, tL, -1, hL, aL, dL, eL);
+  const farTip = armOrHidden(1, SR, tR, 1, hR, aR, dR, eR);
   if (prop) swToonProp(ctx, prop, farTip, accent, ink);
 
   if (pointL && opts.showPointerRay !== false) {

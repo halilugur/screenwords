@@ -599,7 +599,7 @@ the windows and lamps, `colors` overrides the palette). Each cast entry
 stands at `x` (0..1) on the set's floor at a scale that fits the set;
 `enter` / `exit` (`left` | `right`) walk them in and out, `moves` walk them
 across, `seated` and `prop` work as on the character. `actions` —
-`handshake`, `give` (the `prop` changes hands) and `hug` — first bring the
+`handshake`, `give` (the `prop` changes hands) and `hug` (a side hug: shoulder to shoulder, heads together) — first bring the
 two together, then play. Characters face whoever they talk to, act their
 own lines and look at the speaker; the camera eases toward the speaker
 (`camera: 'wide'` holds still); a `title` card opens the scene; scenes dip
