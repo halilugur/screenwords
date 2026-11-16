@@ -365,12 +365,15 @@ function swProfileCharacter(ctx, opts) {
     ctx.beginPath(); ctx.roundRect(hipX - 30, hipY - 2, 74, 10, 4); ctx.fill();
     ctx.beginPath(); ctx.roundRect(hipX - 32, shY - 4, 9, hipY - shY + 10, 4); ctx.fill();
   }
+  const long = outfit === 'robe' || outfit === 'dress';
+  const top = shY - 2, bot = long ? ankleY - 12 : hipY + (outfit === 'blazer' ? 14 : outfit === 'hoodie' ? 10 : 4);
+  const flare = long ? 14 + walkAmt * Math.sin(ph) * 4 : 0;
   /* legs: far then near; a stride front to back, knees forward */
   const footAt = side => {
     if (seated) return null;
     const phs = ph + (side > 0 ? 0 : Math.PI);
-    const fx = hipX + (side > 0 ? 4 : -4) * (1 - walkAmt) + walkAmt * Math.sin(phs) * 32 + crouch * 10;
-    return { x: fx, y: ankleY - walkAmt * Math.max(0, Math.cos(phs)) * 14 };
+    const fx = hipX + (side > 0 ? 4 : -4) * (1 - walkAmt) + walkAmt * Math.sin(phs) * (long ? 20 : 32) + crouch * 10;
+    return { x: fx, y: ankleY - walkAmt * Math.max(0, Math.cos(phs)) * (long ? 5 : 14) };
   };
   const leg = side => {
     const Hj = { x: hipX, y: hipY };
@@ -381,7 +384,9 @@ function swProfileCharacter(ctx, opts) {
       ik = walkAmt > 0.01 || crouch > 0.01 || d < legLen * 1.98 ? swToonIK(Hj, F, legLen, legLen, J => J.x) : { J: { x: (Hj.x + F.x) / 2, y: (Hj.y + F.y) / 2 }, E: F };
     }
     joints.legs.push({ hip: Hj, knee: ik.J, ankle: ik.E, back: side < 0 });
+    if (long && !seated) { ctx.save(); ctx.beginPath(); ctx.rect(-300, Math.min(bot - 2, ankleY - 6), 600, 400); ctx.clip(); }
     swSideLimb(ctx, [Hj, ik.J, ik.E], side < 0 ? 17 : 18, side < 0 ? swShade(pants, -0.12) : pants);
+    if (long && !seated) ctx.restore();
     swSideShoe(ctx, ik.E, shoeKind === 'sneaker' ? 'sneaker' : shoeKind, shoeC, side < 0);
   };
   const lagX = SWDraw.lag(t => Math.sin(t * 1.25) * 2 + walkAmt * Math.sin(t * cad) * 3, time, { freq: 2.2, damping: 0.25 }) - (walkAmt * 0.6 + ecClamp(vx0 / 400, -1, 1) * facing) * 6;
@@ -394,9 +399,6 @@ function swProfileCharacter(ctx, opts) {
   leg(1);
   /* torso, side-on: chest forward, back behind; long garments to the
      ankles with a little flare and sway */
-  const long = outfit === 'robe' || outfit === 'dress';
-  const top = shY - 2, bot = long ? ankleY - 12 : hipY + (outfit === 'blazer' ? 14 : outfit === 'hoodie' ? 10 : 4);
-  const flare = long ? 14 + walkAmt * Math.sin(ph) * 4 : 0;
   ctx.fillStyle = garment;
   ctx.beginPath();
   ctx.moveTo(chestX - 14, top + 4);

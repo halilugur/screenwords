@@ -37,6 +37,9 @@ const SW_CONV_THINK = /^(bence|aslında|sanırım|bir de|i think|actually|well|h
 const SW_CONV_LAUGH = /\b(a?ha(ha)+|he(he)+|hı(hı)+|lol)\b/i;
 
 const swPlanCache = new WeakMap();
+/* A transcript spoken in turns, directed: {lines, poses, emotions, shots}
+   — each speaker's keyframed poses and emotions and the camera's shots —
+   cached per words array. */
 function swConversationPlan(words) {
   if (!Array.isArray(words)) return null;
   const hit = swPlanCache.get(words);
@@ -119,13 +122,17 @@ function swAutoDirect(opts) {
     const text = line ? line.words.map(w => String(w.text || '')).join(' ') : '';
     if (now === who) {
       /* Speaking: the opening line and hellos and goodbyes go to the camera;
-         the rest of the talk goes round the table. */
-      const toViewer = line && (line === plan.lines[0] || SW_CONV_GREET.test(text) || SW_CONV_BYE.test(text));
+         the rest of the talk goes round the table (replying first to whoever
+         just spoke). */
+      const toViewer = opts.addressViewer !== false && line && (line === plan.lines[0] || SW_CONV_GREET.test(text) || SW_CONV_BYE.test(text));
       const others = Object.keys(heads).filter(k => k !== who);
       if (toViewer || !others.length) out.lookAt = 'viewer';
       else {
+        const li = line ? plan.lines.indexOf(line) : -1;
+        const prev = li > 0 ? plan.lines[li - 1].id : null;
+        const ring = prev && others.includes(prev) ? [prev].concat(others.filter(k => k !== prev)) : others;
         const k = Math.floor((t - (line ? line.start : 0)) / 2.6);
-        out.lookAt = heads[others[(k + others.length) % others.length]];
+        out.lookAt = heads[ring[(k + ring.length) % ring.length]];
       }
     } else {
       /* Listening: on whoever speaks, with now and then a short glance at

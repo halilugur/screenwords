@@ -132,7 +132,7 @@ impl Project {
     /// end edge plus the (possibly negative) offset. The app stores anchors
     /// nested — `{"anchor": {"wordId", "edge"?, "offset"?}}` — and callers
     /// may pass either the wrapper or the bare anchor. `edge` defaults to
-    /// "start".
+    /// "start"; `offset` is seconds (a number) or a rational time.
     pub fn resolve_anchor(&self, spec: &Value) -> Option<RationalTime> {
         let anchor = spec.get("anchor").unwrap_or(spec);
         let word_id = anchor.get("wordId")?.as_str()?;
@@ -140,8 +140,17 @@ impl Project {
         let edge = anchor.get("edge").and_then(Value::as_str).unwrap_or("start");
         let base = if edge == "end" { word.end() } else { word.start() };
         match anchor.get("offset") {
-            Some(offset) => Some(base.add(&RationalTime::from_json(offset)?)),
+            Some(offset) => Some(base.add(&Self::anchor_offset(offset)?)),
             None => Some(base),
+        }
+    }
+
+    /// An anchor's offset: seconds as the tools take it, or a rational time
+    /// as the app stores it.
+    pub fn anchor_offset(offset: &Value) -> Option<RationalTime> {
+        match offset.as_f64().or_else(|| offset.as_i64().map(|n| n as f64)) {
+            Some(seconds) => seconds.is_finite().then(|| RationalTime::from_seconds(seconds, 1000)),
+            None => RationalTime::from_json(offset),
         }
     }
 

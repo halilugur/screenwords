@@ -23,7 +23,8 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
   const skip = opts.skip || [];
   const allActive = (comps || []).filter(c => time >= c.start && time <= c.end);
   const activeComps = allActive
-    .filter(c => skip.indexOf(c.componentId) < 0)
+    /* HTML scenes are the browser's to draw (swHtmlOverlays), not the canvas's */
+    .filter(c => skip.indexOf(c.componentId) < 0 && String(c.componentId || '').indexOf(SW_HTML_PREFIX) !== 0)
     .slice()
     .sort((a, b) => ((a.zIndex ?? (a.params && a.params.zIndex) ?? 0) - (b.zIndex ?? (b.params && b.params.zIndex) ?? 0)));
 
@@ -123,6 +124,11 @@ function drawSharedComponents(ctx, W, H, time, comps, opts) {
       const sw = Object.assign({}, SWDraw, {
         prog, enter: easeOut, dur, localTime, time, W, H, theme: T, words,
         boxes, boxOf, safe: SWDraw.layout.safe(W, H),
+        /* when a word is spoken (seconds on the timeline; null if cut) and
+           how far past a moment the frame is (0..1 over `d` seconds): the
+           two things a drawing needs to move with the voice */
+        wordStart: id => { const w = words.find(x => x.id === id); return w ? w.start : null; },
+        since: (from, d) => ecClamp((time - from) / (d > 0 ? d : 0.4), 0, 1),
         character: (cx, o) => SWDraw.character(cx, Object.assign({ W, H, time, localTime, words, boxOf, boxes, castTable: opts.cast }, o)),
         cast: opts.cast || {},
         speakerAt: t => SWDraw.speakerAt(words, t == null ? time : t),

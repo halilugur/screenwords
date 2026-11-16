@@ -16,6 +16,10 @@ examples/*/*.wav
 .vscode/
 *.iml
 
+# Temporary preview captures from preview_frames
+.preview/
+.preview-player.html
+
 # Local agent working directories
 .claude/
 .zcode/

@@ -33,6 +33,8 @@ Usage:
       One process, one document: the web UI AND the MCP server on the same
       port, every committed change autosaved to <project>/ (project.json +
       revision.json). This is the Rust alternative's editor.
+      serve and app draw a new token on every start unless
+      SCREENWORDS_MCP_TOKEN (16-128 of A-Z a-z 0-9 - _) is set for them.
   screenwords ui <project> [--port N]
       The web editor UI on 127.0.0.1: overview, timeline, transcript, find,
       chapters, subtitles, dry-run cut.
@@ -412,6 +414,12 @@ fn parse_port(args: &[String], default: u16) -> Result<u16, String> {
     Ok(default)
 }
 
+/// `SCREENWORDS_MCP_TOKEN` in the server's own environment pins the Bearer
+/// token, so a client configured once survives restarts.
+fn server_token() -> Result<Option<String>, String> {
+    screenwords::server::fixed_token(std::env::var("SCREENWORDS_MCP_TOKEN").ok().as_deref())
+}
+
 /// The folder a bundle-relative asset path resolves against (None for --blank).
 fn bundle_base(target: &str) -> Option<PathBuf> {
     if target == "--blank" || target == "blank" {
@@ -446,7 +454,11 @@ fn cmd_serve(args: &[String]) -> Result<ExitCode, String> {
     let port = parse_port(args, 47999)?;
     let listener = std::net::TcpListener::bind(("127.0.0.1", port))
         .map_err(|e| format!("cannot bind 127.0.0.1:{port}: {e}"))?;
-    let (server, ready) = screenwords::server::McpServer::new(doc);
+    let (server, ready) = screenwords::server::McpServer::new_with_token(
+        std::sync::Arc::new(std::sync::Mutex::new(doc)),
+        None,
+        server_token()?,
+    );
     println!("screenwords {} — MCP server (Ctrl-C to stop)", screenwords::VERSION);
     screenwords::server::run_server(server, listener, ready, None);
     Ok(ExitCode::SUCCESS)
@@ -506,7 +518,8 @@ fn cmd_app(args: &[String]) -> Result<ExitCode, String> {
         .map_err(|e| format!("cannot bind 127.0.0.1:{port}: {e}"))?;
     let addr = listener.local_addr().map_err(|e| e.to_string())?;
     let shared = std::sync::Arc::new(std::sync::Mutex::new(doc));
-    let (server, mut ready) = screenwords::server::McpServer::new_shared(shared.clone(), bundle_path);
+    let (server, mut ready) =
+        screenwords::server::McpServer::new_with_token(shared.clone(), bundle_path, server_token()?);
     ready = ready.replace("__PORT__", &addr.port().to_string());
     let ui = std::sync::Arc::new(screenwords::ui::Ui {
         document: shared,
@@ -691,6 +704,7 @@ fn cmd_tts(args: &[String]) -> Result<ExitCode, String> {
     let mut lang = "en".to_string();
     let mut voice = "easton".to_string();
     let mut seed = 0u32;
+    let mut pace = screenwords::tts::Pace::NARRATION;
     let mut text = String::new();
     let mut out = std::path::PathBuf::from("speech.wav");
     let mut i = 0;
@@ -699,15 +713,16 @@ fn cmd_tts(args: &[String]) -> Result<ExitCode, String> {
             "--lang" => { lang = args.get(i + 1).ok_or("--lang needs a value")?.clone(); i += 2; }
             "--voice" => { voice = args.get(i + 1).ok_or("--voice needs a value")?.clone(); i += 2; }
             "--seed" => { seed = args.get(i + 1).ok_or("--seed needs a value")?.parse().map_err(|_| "--seed: number")?; i += 2; }
+            "--rate" => { pace = screenwords::tts::Pace::new(args.get(i + 1).and_then(|v| v.parse().ok()).ok_or("--rate needs a number")?)?; i += 2; }
             "--out" | "-o" => { out = std::path::PathBuf::from(args.get(i + 1).ok_or("--out needs a value")?); i += 2; }
             other if !other.starts_with("--") => { text = other.to_string(); i += 1; }
             other => return Err(format!("unknown flag {other}")),
         }
     }
     if text.is_empty() {
-        return Err("usage: screenwords tts --lang <en|tr|...31 codes> [--voice NAME (e.g. M1)] [--seed N] [--out FILE] \"TEXT\"".into());
+        return Err("usage: screenwords tts --lang <en|tr|...31 codes> [--voice NAME (e.g. M1)] [--seed N] [--rate 0.6-1.5] [--out FILE] \"TEXT\"".into());
     }
-    let audio = screenwords::tts::synthesize(&lang, &text, &voice, seed)?;
+    let audio = screenwords::tts::synthesize(&lang, &text, &voice, seed, pace)?;
     screenwords::tts::wav::write_wav(&out, &audio.samples, audio.rate)?;
     println!(
         "{}: {} samples, {:.2}s at {} Hz -> {}",

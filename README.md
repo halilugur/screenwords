@@ -50,9 +50,13 @@ What you get from one `cargo build`:
 - **602 built-in components** — titles, captions, shapes, charts, backgrounds,
   transitions ([full catalog](COMPONENTS.md)), all drawn by one shared library
   injected into both the editor and the player.
-- **A web editor** (`screenwords app`) — overview, timeline, transcript, find,
-  chapters, subtitles, dry-run cut, TTS synthesis, HTML export and MP4 render,
-  every committed change autosaved into the project bundle.
+- **A web editor** (`screenwords app`) — a story is written here: the
+  **Cast** (characters, drawn live as the scenes will draw them), the
+  **Script** (every line with who says it, each speaker's voice, one button to
+  voice it) and the **Story** (scenes: place, people, what they do on which
+  line). Then timeline, transcript, find, chapters, subtitles, dry-run cut,
+  HTML export and MP4 render — every change one undoable edit, autosaved into
+  the project bundle. An agent writes through the same edits over MCP.
 - **An MCP server + stdio proxy** — point any MCP-speaking agent at your editor
   and let it read the transcript, place components, cut the film.
 - **On-device TTS** — English and Turkish voices via ONNX models staged at
@@ -90,7 +94,7 @@ sw render examples/hello --out hi.html # self-contained animated player
 sw srt examples/hello --format vtt     # subtitles from the edited transcript
 sw chapters examples/hello             # chapters + YouTube description
 sw validate some-package.swanim.zip    # lint a .swanim animation package
-sw tts "Merhaba dünya" --lang tr --out merhaba.wav
+sw tts "Merhaba dünya" --lang tr --out merhaba.wav   # --rate 0.6-1.5, 1 = calm narration
 ```
 
 MP4 export drives headless Chrome the same way the editor does:
@@ -130,11 +134,31 @@ writes that one document through the edit engine:
              "SCREENWORDS_MCP_PORT": "7846" } } } }
 ```
 
+The token is new on every start. To register the client once, start the
+editor with the same `SCREENWORDS_MCP_TOKEN` (16-128 characters of
+`A-Z a-z 0-9 - _`) and it keeps that token across restarts.
+
 Tools: `get_project`, `get_transcript`, `find_in_transcript`, `list_chapters`,
 `list_notes`, `export_subtitles`, `get_history`, `list_components`,
 `apply_edits`, `author_transcript`, `set_theme`, `synthesize_speech`,
-`find_background`, `undo`, `redo`. One-shot calls work without a client:
+`find_background`, `preview_frames`, `import_image`, `undo`, `redo`. One-shot calls work without a client:
 `sw call list_components '{}'`.
+
+An agent designs with the same loop a person would. `list_components
+{componentId}` lists every param that component's renderer really reads
+(generated from the renderers by `tools/build-param-docs.mjs`), an edit warns
+about a param the component ignores, `import_image` brings in a picture or a
+screenshot of a web page, and `preview_frames` returns one contact sheet of
+the film's moments together with what the pixels say: what runs off the
+frame, what sits against an edge, what painted nothing.
+
+A scene is drawn with canvas code (`codeOverlay_<slug>`) or written as HTML
+and CSS (`htmlOverlay_<slug>`), whose animations are set to the film's time
+frame by frame and whose elements appear on the words they are tied to. The
+browser's own styles are removed once, for the pages and for every scene, so
+nothing on screen comes from the browser. Sound is part of the document too:
+`add_music` and `add_sound` place generated music and effects, mixed with the
+narration into the film's one track and ducked wherever someone speaks.
 
 A story built end-to-end through MCP looks like
 [`examples/hello`](examples/hello) — one `author_transcript` call plus one

@@ -94,6 +94,8 @@ pub struct ApplyResult {
     pub label: Option<String>,
     /// ref name → created id, in batch order.
     pub created_ids: Vec<(String, String)>,
+    /// Every id the batch created, named or not: (index in edits, tool, id).
+    pub created: Vec<(usize, String, String)>,
     /// word ids removed by correct_transcript merges.
     pub removed_ids: Vec<String>,
     /// placement / readability style warnings (the app fills these from the
@@ -112,6 +114,8 @@ struct HistoryStep {
 /// Result details individual tools contribute beyond ids.
 #[derive(Default)]
 struct SideEffects {
+    /// (tool, id) of every id created, in order.
+    created: Vec<(String, String)>,
     removed_ids: Vec<String>,
     warnings: Vec<String>,
     cuts: Vec<f64>,
@@ -200,8 +204,10 @@ impl Document {
             .map(str::to_string)
             .or_else(|| edits.first().map(|e| e.tool.clone()));
 
+        let mut created: Vec<(usize, String, String)> = Vec::new();
         for (i, op) in edits.iter().enumerate() {
-            apply_one(&mut root, &mut created_ids, &mut idgen, &mut side_effects, op).map_err(|e| {
+            let seen = side_effects.created.len();
+            let result = apply_one(&mut root, &mut created_ids, &mut idgen, &mut side_effects, op).map_err(|e| {
                 if let EditError::Validation { path, message } = &e {
                     let path = prefix_edit_path(i, path);
                     EditError::Validation { path, message: message.clone() }
@@ -211,7 +217,18 @@ impl Document {
                 } else {
                     e
                 }
-            })?;
+            });
+            result?;
+            for (tool, id) in side_effects.created.drain(seen..) {
+                created.push((i, tool, id));
+            }
+        }
+        // One line per distinct warning, however many edits raised it.
+        let mut warnings: Vec<String> = Vec::new();
+        for w in std::mem::take(&mut side_effects.warnings) {
+            if !warnings.contains(&w) {
+                warnings.push(w);
+            }
         }
         self.rng_state = idgen.rng;
 
@@ -229,8 +246,9 @@ impl Document {
             revision: self.project.revision,
             label: label_owned,
             created_ids,
+            created,
             removed_ids: std::mem::take(&mut side_effects.removed_ids),
-            warnings: std::mem::take(&mut side_effects.warnings),
+            warnings,
             cuts: std::mem::take(&mut side_effects.cuts),
         })
     }
@@ -303,12 +321,14 @@ fn apply_one(
         "add_component" => add_component(root, gen_id, fx, &args)?,
         "add_track" => add_track(root, gen_id, &args)?,
         "add_audio" => add_audio(root, gen_id, fx, &args, created)?,
+        "add_music" => add_generated(root, gen_id, fx, &args, created, "music")?,
+        "add_sound" => add_generated(root, gen_id, fx, &args, created, "sound")?,
         "insert_clip" => insert_clip(root, gen_id, &args, created)?,
         "add_chapter" => add_chapter(root, gen_id, &args)?,
         _ => {
             // Mutating tools that create no id.
             match op.tool.as_str() {
-                "update_component" => update_component(root, &args, created)?,
+                "update_component" => update_component(root, fx, &args, created)?,
                 "remove_component" => remove_by_id(root, &args, created, "components", "instanceId")?,
                 "remove_clip" => remove_clip(root, fx, &args, created)?,
                 "remove_audio" => remove_by_id(root, &args, created, "audioEvents", "eventId")?,
@@ -331,7 +351,7 @@ fn apply_one(
                     return Err(EditError::Unsupported {
                         path: "edits".into(),
                         message: format!(
-                            "'{other}' needs live media or the renderer; the document-local edit set is: add/update/remove_component, add_track, update_track, add/update/remove_audio, insert_clip, update_clip, move_clip, remove_clip, trim_clip, set_clip_framing_keyframe, cut_range, set_project_settings, set_theme, correct_transcript, add/update/remove_chapter, rename_speaker, resolve_note, author_transcript"
+                            "'{other}' needs live media or the renderer; the document-local edit set is: add/update/remove_component, add_track, update_track, add/update/remove_audio, add_music, add_sound, insert_clip, update_clip, move_clip, remove_clip, trim_clip, set_clip_framing_keyframe, cut_range, set_project_settings, set_theme, correct_transcript, add/update/remove_chapter, rename_speaker, resolve_note, author_transcript"
                         ),
                     });
                 }
@@ -339,10 +359,20 @@ fn apply_one(
             return Ok(());
         }
     };
+    fx.created.push((op.tool.clone(), new_id.clone()));
     if let Some(name) = ref_name {
         created.push((name, new_id));
     }
     Ok(())
+}
+
+fn has_video_clips(root: &Value) -> bool {
+    root.get("tracks").and_then(Value::as_array).is_some_and(|tracks| {
+        tracks.iter().any(|t| {
+            t.get("kind").and_then(Value::as_str) == Some("video")
+                && t.get("clips").and_then(Value::as_array).is_some_and(|c| !c.is_empty())
+        })
+    })
 }
 
 /// Resolves an argument that may be `"$ref:name"` to a concrete id.
@@ -382,6 +412,11 @@ fn timing_arg(args: &Value, key: &str, _created: &[(String, String)]) -> Result<
         None | Some(Value::Null) => Ok(None),
         Some(v @ Value::Object(_)) => {
             if v.get("wordId").is_some() {
+                // An offset nobody can read would silently drop the thing it
+                // places from the film; refuse it here instead.
+                if v.get("offset").is_some_and(|o| Project::anchor_offset(o).is_none()) {
+                    return Err(EditError::Validation { path: format!("{key}.offset"), message: "expected seconds (a number), e.g. -0.5".into() });
+                }
                 Ok(Some(v.clone())) // anchor spec, stored as-is
             } else if let Some(seconds) = v.get("seconds").and_then(Value::as_f64) {
                 Ok(Some(RationalTime::from_seconds(seconds, 1000).to_json()))
@@ -478,6 +513,10 @@ fn add_component(
     if let Some((path, message)) = issues.first() {
         return Err(EditError::Validation { path: path.clone(), message: message.clone() });
     }
+    let unread = crate::catalog::unread_params(component_id, &params);
+    if !unread.is_empty() {
+        fx.warnings.push(crate::catalog::unread_params_warning(component_id, &unread));
+    }
     let id = gen_id.gen("cmp_");
 
     let mut component = Value::obj();
@@ -498,8 +537,12 @@ fn add_component(
     if let Some(mask) = args.get("mask") {
         component.set("mask", mask.clone());
     }
-    // The renderer checks faces / overlaps; without it only this much:
-    fx.warnings.push("faces were not checked".into());
+    // Faces only exist in footage: with video clips on the timeline, say
+    // that nothing here looked at them. What the frame really looks like
+    // (overflow, overlaps) is preview_frames' job.
+    if has_video_clips(root) {
+        fx.warnings.push("faces were not checked".into());
+    }
 
     // Placement: explicit trackId, else the track matching the component's
     // category (backgrounds on the scenes track, captions on the caption
@@ -575,7 +618,7 @@ fn find_component_mut<'a>(
     Err(EditError::NotFound { path: "id".into(), message: format!("no component '{id}'") })
 }
 
-fn update_component(root: &mut Value, args: &Value, created: &[(String, String)]) -> Result<(), EditError> {
+fn update_component(root: &mut Value, fx: &mut SideEffects, args: &Value, created: &[(String, String)]) -> Result<(), EditError> {
     let id_ref = args
         .get("instanceId")
         .or_else(|| args.get("id"))
@@ -595,6 +638,11 @@ fn update_component(root: &mut Value, args: &Value, created: &[(String, String)]
         crate::catalog::check_common_params(params, &mut issues);
         if let Some((path, message)) = issues.first() {
             return Err(EditError::Validation { path: path.clone(), message: message.clone() });
+        }
+        let component_id = component.get("componentId").and_then(Value::as_str).unwrap_or("").to_string();
+        let unread = crate::catalog::unread_params(&component_id, params);
+        if !unread.is_empty() {
+            fx.warnings.push(crate::catalog::unread_params_warning(&component_id, &unread));
         }
         // Merge patch: a null resets the key, everything else replaces it.
         let existing = component
@@ -762,6 +810,80 @@ fn update_track(root: &mut Value, args: &Value) -> Result<(), EditError> {
 
 // --- audio ---------------------------------------------------------------------
 
+/// `add_music {mood, start?, duration?, gainDB?, fadeIn?, fadeOut?, seed?}`
+/// and `add_sound {kind, start, gainDB?, seed?}`: sound that is generated,
+/// not recorded. The asset holds the recipe (made once per mood / kind and
+/// seed, then shared) and an ordinary audio event places it: music from the
+/// start to the end of the film unless told otherwise, fading in and out; an
+/// effect at its moment, which may be a word.
+fn add_generated(
+    root: &mut Value,
+    gen_id: &mut IdGen,
+    fx: &mut SideEffects,
+    args: &Value,
+    created: &[(String, String)],
+    what: &'static str,
+) -> Result<String, EditError> {
+    let (key, known): (&str, Vec<&str>) = match what {
+        "music" => ("mood", crate::audio::MOODS.to_vec()),
+        _ => ("kind", crate::audio::SOUNDS.iter().map(|(name, _)| *name).collect()),
+    };
+    let name = get_str(args, key)?.ok_or_else(|| EditError::Validation { path: key.into(), message: format!("required (one of: {})", known.join(", ")) })?;
+    if !known.contains(&name) {
+        return Err(EditError::Validation { path: key.into(), message: format!("'{name}' is not a {key} (one of: {})", known.join(", ")) });
+    }
+    // Without a seed each project gets a piece of its own, the same one every
+    // time it is asked for.
+    let seed = args.get("seed").and_then(Value::as_i64).unwrap_or_else(|| project_seed(root));
+    let asset_id = format!("ast_{what}_{name}_{seed}");
+    let length = crate::audio::SOUNDS.iter().find(|(kind, _)| *kind == name).map(|(_, seconds)| *seconds as f64);
+    let assets = root.get_mut("assets").and_then(Value::as_array_mut).ok_or_else(|| EditError::Validation { path: "assets".into(), message: "the project has no asset list".into() })?;
+    if !assets.iter().any(|a| a.get("id").and_then(Value::as_str) == Some(&asset_id)) {
+        let mut synth = Value::obj();
+        synth.set(what, Value::str(name));
+        synth.set("seed", Value::Int(seed));
+        let mut source = Value::obj();
+        source.set("synth", synth);
+        let mut asset = Value::obj();
+        asset.set("id", Value::str(&asset_id));
+        asset.set("kind", Value::str("audio"));
+        asset.set("name", Value::str(&format!("{name} ({what})")));
+        asset.set("duration", RationalTime::from_seconds(length.unwrap_or(0.0), 1000).to_json());
+        asset.set("source", source);
+        assets.push(asset);
+    }
+    let mut event = args.clone();
+    for consumed in [key, "seed"] {
+        event.remove(consumed);
+    }
+    event.set("assetId", Value::str(&asset_id));
+    if what == "music" {
+        event.set("role", Value::str("music"));
+        if event.get("start").is_none() {
+            event.set("start", Value::parse(r#"{"seconds": 0}"#).expect("a constant"));
+        }
+        // A bed with no length of its own plays to the end, eased in and out.
+        if event.get("duration").is_none() {
+            event.set("toEnd", Value::Bool(true));
+        }
+        for (fade, seconds) in [("fadeIn", 1.0), ("fadeOut", 2.0)] {
+            if event.get(fade).is_none() {
+                event.set(fade, Value::from_f64(seconds));
+            }
+        }
+    } else {
+        event.set("role", Value::str("sfx"));
+    }
+    add_audio(root, gen_id, fx, &event, created)
+}
+
+/// A number that stands for this project: its id and name, hashed (FNV-1a).
+fn project_seed(root: &Value) -> i64 {
+    let key = format!("{}/{}", root.get("id").and_then(Value::as_str).unwrap_or(""), root.get("name").and_then(Value::as_str).unwrap_or(""));
+    let hash = key.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x0000_0100_0000_01b3));
+    (hash % 1_000_000) as i64
+}
+
 fn audio_role(v: Option<&str>) -> Result<&'static str, EditError> {
     match v {
         Some("sfx") => Ok("sfx"),
@@ -823,6 +945,10 @@ fn add_audio(
     event.set("start", start);
     if let Some(ducking) = args.get("ducking") {
         event.set("ducking", ducking.clone());
+    }
+    // Music that runs to the end of the film, however long the film becomes.
+    if args.get("toEnd").and_then(Value::as_bool).unwrap_or(false) {
+        event.set("toEnd", Value::Bool(true));
     }
 
     // The role's audio track: explicit trackId, else the track with that
@@ -1395,55 +1521,54 @@ fn set_project_settings(root: &mut Value, args: &Value) -> Result<(), EditError>
         settings.set("targetDuration", RationalTime::from_seconds(d, 1000).to_json());
     }
     if let Some(cast) = args.get("cast") {
-        let merged = merge_cast(settings.get("cast"), cast)?;
+        let merged = merge_named(settings.get("cast"), cast, "cast", |member| match member {
+            Value::Object(_) if member.to_string_pretty(false).len() > 512 * 1024 => Err("a cast member is at most 512 KB"),
+            Value::Object(_) => Ok(()),
+            _ => Err("a cast member is an object (or null to remove it)"),
+        })?;
         settings.set("cast", merged);
+    }
+    // The voice each speaker of the script is read in ("narrator" for lines
+    // nobody in the cast says), so a script is voiced the same way again.
+    if let Some(voices) = args.get("voices") {
+        let merged = merge_named(settings.get("voices"), voices, "voices", |voice| match voice.as_str() {
+            Some(name) if !name.is_empty() && name.len() <= 64 => Ok(()),
+            _ => Err("a voice is a voice name (or null to forget it)"),
+        })?;
+        settings.set("voices", merged);
     }
     *root.get_mut("settings").expect("settings") = settings;
     Ok(())
 }
 
-/// The project's cast: named characters every scene draws the same way
-/// (`sw.character({ cast: 'host', pose })`). `cast` maps a name to the
-/// member's look (style, colours, hair, outfit, or SVG `parts`); a member
-/// set to null leaves the cast, and members not named are kept.
-fn merge_cast(current: Option<&Value>, cast: &Value) -> Result<Value, EditError> {
-    let Value::Object(entries) = cast else {
-        return Err(EditError::Validation { path: "cast".into(), message: "cast must be an object of name → character".into() });
+/// A settings map of names — the cast (`name → character`) or the voices
+/// (`speaker → voice`) — merged with `given`: an entry set to null leaves,
+/// entries not named are kept, and every value passes `check`. Names are
+/// what a script and the scenes refer to: 1-40 letters, digits, _ or -.
+fn merge_named(
+    current: Option<&Value>,
+    given: &Value,
+    field: &str,
+    check: impl Fn(&Value) -> Result<(), &'static str>,
+) -> Result<Value, EditError> {
+    let Value::Object(entries) = given else {
+        return Err(EditError::Validation { path: field.into(), message: format!("{field} must be an object of name → value") });
     };
     let mut out = match current {
         Some(v @ Value::Object(_)) => v.clone(),
         _ => Value::obj(),
     };
-    for (name, member) in entries {
-        let ok_name = !name.is_empty()
-            && name.len() <= 40
-            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    for (name, value) in entries {
+        let ok_name = !name.is_empty() && name.len() <= 40 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
         if !ok_name {
-            return Err(EditError::Validation {
-                path: format!("cast.{name}"),
-                message: "cast names are 1-40 letters, digits, _ or -".into(),
-            });
+            return Err(EditError::Validation { path: format!("{field}.{name}"), message: format!("{field} names are 1-40 letters, digits, _ or -") });
         }
-        match member {
-            Value::Null => {
-                out.remove(name);
-            }
-            Value::Object(_) => {
-                if member.to_string_pretty(false).len() > 512 * 1024 {
-                    return Err(EditError::Validation {
-                        path: format!("cast.{name}"),
-                        message: "a cast member is at most 512 KB".into(),
-                    });
-                }
-                out.set(name, member.clone());
-            }
-            _ => {
-                return Err(EditError::Validation {
-                    path: format!("cast.{name}"),
-                    message: "a cast member is an object (or null to remove it)".into(),
-                });
-            }
+        if value.is_null() {
+            out.remove(name);
+            continue;
         }
+        check(value).map_err(|message| EditError::Validation { path: format!("{field}.{name}"), message: message.into() })?;
+        out.set(name, value.clone());
     }
     Ok(out)
 }
@@ -2114,7 +2239,12 @@ fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
             path: "text".into(),
             message: "required (the story), or turns".into(),
         })?;
-        tokens = text.split_whitespace().map(|w| (w.to_string(), None, false, None, None)).collect();
+        // A line break ends a segment, as it ends a spoken sentence.
+        for line in text.lines() {
+            let line_words: Vec<&str> = line.split_whitespace().collect();
+            let last = line_words.len().saturating_sub(1);
+            tokens.extend(line_words.iter().enumerate().map(|(j, w)| (w.to_string(), None, j == last, None, None)));
+        }
     }
     let words = tokens;
     if words.is_empty() {
@@ -2172,7 +2302,7 @@ fn author_transcript(root: &mut Value, args: &Value) -> Result<(), EditError> {
         }
         seg_text.push_str(&clean);
         t += dur + 0.06;
-        if w.ends_with(['.', '!', '?']) || *turn_end {
+        if crate::tts::phrasing::ends_sentence(w) || *turn_end {
             let mut seg = Value::obj();
             seg.set("end", RationalTime::from_seconds(t - 0.06, 1000).to_json());
             seg.set("id", Value::str(&format!("seg_{}", segments.len() + 1)));
@@ -2427,6 +2557,121 @@ mod tests {
         Document::new(Project::parse(src).unwrap().with_revision(7))
     }
 
+
+    #[test]
+    fn an_offset_in_seconds_places_things_before_and_after_a_word() {
+        // "w2" starts at 0.3 s. A scene that opens just before it, an effect
+        // that builds up into it and one that lands after it — offsets given
+        // in seconds, as the tools describe them. They used to be stored
+        // unreadable, which dropped the component and put the sound at 0.
+        let mut d = doc();
+        let op = |tool: &str, json: &str| EditOp::new(tool, Value::parse(json).unwrap());
+        d.apply_edits(
+            None,
+            None,
+            &[
+                op("add_component", r#"{"componentId":"kickerTitle","start":{"wordId":"w2","offset":-0.1},"end":{"wordId":"w3","edge":"end","offset":0.5},"params":{"title":"a"}}"#),
+                op("add_sound", r#"{"kind":"rise","start":{"wordId":"w2","offset":-0.25}}"#),
+                op("add_sound", r#"{"kind":"pop","start":{"wordId":"w2","offset":{"timescale":1000,"value":120}}}"#),
+            ],
+        )
+        .unwrap();
+        let p = d.project();
+        let component = p.tracks().into_iter().flat_map(|t| t.components().iter()).find(|c| c.get("componentId").and_then(Value::as_str) == Some("kickerTitle")).unwrap();
+        let (start, end) = p.component_window(component).expect("the window resolves");
+        assert!((start.seconds() - 0.2).abs() < 1e-9 && (end.unwrap().seconds() - 1.4).abs() < 1e-9, "{} to {:?}", start.seconds(), end.map(|e| e.seconds()));
+        let starts: Vec<f64> = p.tracks().into_iter().flat_map(|t| t.audio_events().iter()).filter_map(|e| p.resolve_time(e.get("start")?)).map(|t| t.seconds()).collect();
+        assert_eq!(starts.len(), 2);
+        assert!((starts[0] - 0.05).abs() < 1e-9 && (starts[1] - 0.42).abs() < 1e-9, "{starts:?}");
+        // An offset that is neither is refused where it is written.
+        let err = d.apply_edits(None, None, &[op("add_sound", r#"{"kind":"pop","start":{"wordId":"w2","offset":"soon"}}"#)]).unwrap_err();
+        assert!(err.message().contains("start.offset") && err.message().contains("seconds"), "{}", err.message());
+    }
+
+    #[test]
+    fn every_project_gets_music_of_its_own_unless_told_which() {
+        let music_asset = |name: &str, args: &str| {
+            let mut d = doc();
+            d.apply_edits(None, None, &[EditOp::new("set_project_settings", Value::parse(&format!(r#"{{"name": "{name}"}}"#)).unwrap()), EditOp::new("add_music", Value::parse(args).unwrap())]).unwrap();
+            d.project().assets().into_iter().filter_map(|a| a.get("id").and_then(Value::as_str).map(str::to_string)).find(|id| id.starts_with("ast_music_")).unwrap()
+        };
+        // Two films in one mood: two pieces; the same film asked twice: one.
+        let first = music_asset("A film about the sea", r#"{"mood": "wonder"}"#);
+        assert_ne!(first, music_asset("A film about the hills", r#"{"mood": "wonder"}"#));
+        assert_eq!(first, music_asset("A film about the sea", r#"{"mood": "wonder"}"#));
+        // A seed given is the seed used.
+        assert_eq!(music_asset("A film about the sea", r#"{"mood": "wonder", "seed": 7}"#), "ast_music_wonder_7");
+    }
+
+    #[test]
+    fn the_voice_of_every_speaker_is_kept_with_the_project() {
+        let mut d = doc();
+        let set = |d: &mut Document, json: &str| d.apply_edits(None, None, &[EditOp::new("set_project_settings", Value::parse(json).unwrap())]);
+        set(&mut d, r#"{"voices": {"narrator": "M3", "child": "F3"}}"#).unwrap();
+        set(&mut d, r#"{"voices": {"elder": "M4", "child": null}}"#).unwrap();
+        let voices = d.project().root.get("settings").and_then(|s| s.get("voices")).unwrap().to_string_pretty(true);
+        assert_eq!(voices.split_whitespace().collect::<String>(), r#"{"elder":"M4","narrator":"M3"}"#);
+        for (bad, why) in [(r#"{"voices": {"bad name": "M1"}}"#, "names are"), (r#"{"voices": {"x": 3}}"#, "a voice is"), (r#"{"voices": ["M1"]}"#, "must be an object")] {
+            let err = set(&mut d, bad).unwrap_err();
+            assert!(err.message().contains(why), "{bad}: {}", err.message());
+        }
+        // The cast goes through the same merge and keeps its own rules.
+        assert!(set(&mut d, r#"{"cast": {"child": "F3"}}"#).unwrap_err().message().contains("a cast member is an object"));
+    }
+
+    #[test]
+    fn a_batch_reports_every_id_it_made_and_what_it_ignored() {
+        let op = |json: &str| EditOp::new("add_component", Value::parse(json).unwrap());
+        let mut d = doc();
+        let r = d
+            .apply_edits(
+                Some("scene"),
+                None,
+                &[
+                    // The edits of a real session: a pill given `size` (which it
+                    // never reads) twice, then a title that is fine, one named.
+                    op(r#"{"componentId":"badgePill","start":{"wordId":"w1"},"end":{"wordId":"w3"},"params":{"text":"1 Metni yazar","size":58}}"#),
+                    op(r#"{"componentId":"badgePill","start":{"wordId":"w2"},"end":{"wordId":"w3"},"params":{"text":"2 Sesi üretir","size":58}}"#),
+                    op(r#"{"componentId":"kickerTitle","ref":"title","start":{"seconds":0},"duration":{"seconds":2},"params":{"title":"Fikir","size":82,"animate":{"in":"rise"}}}"#),
+                    EditOp::new("set_project_settings", Value::parse(r#"{"name":"Deneme"}"#).unwrap()),
+                ],
+            )
+            .unwrap();
+        // Three ids, in edit order, whether or not the edit named one.
+        assert_eq!(r.created.len(), 3, "{:?}", r.created);
+        assert_eq!(r.created.iter().map(|(i, t, _)| (*i, t.as_str())).collect::<Vec<_>>(), vec![(0, "add_component"), (1, "add_component"), (2, "add_component")]);
+        assert!(r.created.iter().all(|(_, _, id)| id.starts_with("cmp_")));
+        assert_eq!(r.created_ids, vec![("title".to_string(), r.created[2].2.clone())]);
+        // The same mistake twice is one warning; the footage note is one too.
+        let size: Vec<&String> = r.warnings.iter().filter(|w| w.contains("params.size")).collect();
+        assert_eq!(size.len(), 1, "{:?}", r.warnings);
+        assert!(size[0].contains("badgePill") && size[0].contains("textScale"), "{}", size[0]);
+        assert_eq!(r.warnings.iter().filter(|w| w.contains("faces")).count(), 1, "{:?}", r.warnings);
+
+        // The id from the result patches the component straight away, and a
+        // patch with an unread param says so as well.
+        let id = r.created[0].2.clone();
+        let patch = format!(r#"{{"instanceId":"{id}","params":{{"textScale":2.1,"height":120}}}}"#);
+        let r2 = d.apply_edits(None, None, &[EditOp::new("update_component", Value::parse(&patch).unwrap())]).unwrap();
+        assert!(r2.created.is_empty());
+        assert!(r2.warnings.iter().any(|w| w.contains("params.height")), "{:?}", r2.warnings);
+        // An animation that does not exist is refused, naming the ones that do.
+        let err = d
+            .apply_edits(None, None, &[op(r#"{"componentId":"badgePill","start":{"seconds":0},"duration":{"seconds":1},"params":{"text":"a","animate":{"in":"slideUp"}}}"#)])
+            .unwrap_err();
+        assert!(err.message().contains("edits[0].params.animate.in") && err.message().contains("slideLeft"), "{}", err.message());
+
+        // With no footage on the timeline nobody is told about faces.
+        let mut root = d.project().root.clone();
+        for t in root.get_mut("tracks").and_then(Value::as_array_mut).unwrap() {
+            t.set("clips", Value::Array(Vec::new()));
+        }
+        let mut animated = Document::new(Project { root, revision: 1 });
+        let r3 = animated
+            .apply_edits(None, None, &[op(r#"{"componentId":"kickerTitle","start":{"seconds":0},"duration":{"seconds":1},"params":{"title":"a"}}"#)])
+            .unwrap();
+        assert!(r3.warnings.is_empty(), "{:?}", r3.warnings);
+    }
     #[test]
     fn conflict_message_matches_the_app() {
         let mut d = doc();

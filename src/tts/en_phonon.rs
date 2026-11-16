@@ -186,30 +186,18 @@ struct Chunk {
     frames_after_eos: usize,
 }
 
+/// One chunk per sentence: the audio window of each chunk then maps 1:1 to
+/// a transcript segment, which is what exact caption re-timing needs.
 fn plan(tk: &Tokenizer, text: &str) -> Vec<Chunk> {
-    let mut chunks = Vec::new();
-    let flush = |sentence: &mut String, chunks: &mut Vec<Chunk>| {
-        let trimmed = sentence.trim();
-        if !trimmed.is_empty() {
-            let tokens = tk.encode(trimmed);
-            let words = trimmed.split_whitespace().count();
-            let frames_after_eos = if words <= 4 { 3 } else { 1 };
-            let budget = (((tokens.len() as f64 / 3.0) + 2.0) * 12.5).ceil() as usize;
-            chunks.push(Chunk { tokens, frame_budget: budget, frames_after_eos });
-        }
-        sentence.clear();
-    };
-    // One chunk per sentence: the audio window of each chunk then maps 1:1
-    // to a transcript segment, which is what exact caption re-timing needs.
-    let mut sentence = String::new();
-    for ch in text.chars() {
-        sentence.push(ch);
-        if ch == '.' || ch == '!' || ch == '?' || ch == '\n' {
-            flush(&mut sentence, &mut chunks);
-        }
-    }
-    flush(&mut sentence, &mut chunks);
-    chunks
+    super::phrasing::sentences(text, usize::MAX)
+        .iter()
+        .map(|sentence| {
+            let tokens = tk.encode(sentence);
+            let frames_after_eos = if sentence.split_whitespace().count() <= 4 { 3 } else { 1 };
+            let frame_budget = (((tokens.len() as f64 / 3.0) + 2.0) * 12.5).ceil() as usize;
+            Chunk { tokens, frame_budget, frames_after_eos }
+        })
+        .collect()
 }
 
 // ---------- simple English number reading (subset of normalizeEnglish) ----------

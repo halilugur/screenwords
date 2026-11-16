@@ -19,6 +19,7 @@
 //! - `json`, `regex`, `http(d)`, `inflate`, `zip` — the in-crate foundations
 //!   (JSON, a regex subset, HTTP/1.1 both ways, DEFLATE, ZIP).
 
+pub mod audio;
 pub mod catalog;
 pub mod edits;
 pub mod http;
@@ -27,6 +28,7 @@ pub mod inflate;
 pub mod json;
 pub mod mcp;
 pub mod mcp_proxy;
+pub mod preview;
 pub mod project;
 pub mod rational;
 pub mod reads;

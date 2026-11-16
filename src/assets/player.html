@@ -38,7 +38,6 @@
   --shadow-vid: rgba(2, 5, 12, 0.82);
   --font-display: "Montserrat", "Arial Black", sans-serif;
 }
-*, *::before, *::after { box-sizing: border-box; }
 html, body { overflow-x: clip; }
 body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font); font-size: var(--text-md); line-height: 1.55; font-synthesis: none; -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: var(--space-lg); }
 ::selection { background: color-mix(in oklab, var(--accent) 24%, transparent); }
@@ -271,8 +270,9 @@ function fit() {
   if (w > maxW) { w = maxW; h = w / aspect; }
   stageBox.style.width = Math.round(w) + 'px';
   stageBox.style.height = Math.round(h) + 'px';
-  stageBox.style.setProperty('--sx', Math.min(2.2, w / 340).toFixed(4));
-  stageBox.style.setProperty('--sy', (h / 604).toFixed(4));
+  const scale = swOverlayScale(w, h, 340, 604);
+  stageBox.style.setProperty('--sx', scale.sx.toFixed(4));
+  stageBox.style.setProperty('--sy', scale.sy.toFixed(4));
   $('#bar').style.width = Math.round(Math.max(w, 320)) + 'px';
   $('#hint').style.width = Math.round(Math.max(w, 320)) + 'px';
   resizeCanvas();
@@ -383,6 +383,9 @@ function renderScene(time) {
 
   // 3. Effects and overlay transitions
   sharedPostFX(ctx, W, H, time, D.components || [], canvas);
+
+  // 4. HTML scenes, laid over the canvas and set to this moment
+  swHtmlOverlays(canvas, D.components || [], time, { words: D.words || [], theme: T });
 
   ctx.restore();
 }

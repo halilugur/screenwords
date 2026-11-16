@@ -32,8 +32,8 @@
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir, setPriority } from 'node:os';
-import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+import { openStage, CHROME, sleep } from './stage-page.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => {
@@ -53,11 +53,9 @@ if (!htmlPath || !outPath || !(fps > 0)) {
   process.exit(2);
 }
 
-const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const PORT = Number(process.env.CDP_PORT || 9360);
 const NICE = 10;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 const lower = pid => { try { setPriority(pid, NICE); } catch {} };
 
 const tmp = mkdtempSync(join(tmpdir(), 'sw-mp4-'));
@@ -69,17 +67,6 @@ const cleanup = () => {
 process.on('SIGINT', () => { cleanup(); process.exit(130); });
 process.on('SIGTERM', () => { cleanup(); process.exit(143); });
 
-async function cdpTargets(port) {
-  for (let i = 0; i < 80; i++) {
-    try {
-      const r = await fetch(`http://127.0.0.1:${port}/json/list`);
-      if (r.ok) return await r.json();
-    } catch {}
-    await sleep(200);
-  }
-  throw new Error('Chrome did not expose a debugging endpoint on ' + port);
-}
-
 /* Which encoder: the hardware one when ffmpeg has it (and it works here). */
 function hasHardwareEncoder() {
   return new Promise(res => {
@@ -88,100 +75,6 @@ function hasHardwareEncoder() {
     p.on('error', () => res(false));
     p.on('close', code => res(code === 0));
   });
-}
-
-/* A page sized to the frame, with the player's own chrome hidden and the
-   stage pinned to the top-left corner. */
-async function openPage() {
-  const chrome = spawn(CHROME, [
-    '--headless=new', `--remote-debugging-port=${PORT}`, '--window-size=800,600',
-    '--hide-scrollbars', '--mute-audio', '--no-first-run', '--no-default-browser-check',
-    '--disable-extensions', '--disable-background-networking', '--disable-sync',
-    '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
-    `--user-data-dir=${join(tmp, 'profile')}`, 'about:blank'
-  ], { stdio: 'ignore' });
-  children.push(chrome);
-  lower(chrome.pid);
-
-  const target = (await cdpTargets(PORT)).find(t => t.type === 'page');
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((r, j) => { ws.addEventListener('open', r, { once: true }); ws.addEventListener('error', j, { once: true }); });
-  let id = 0;
-  const pending = new Map();
-  ws.addEventListener('message', ev => {
-    const m = JSON.parse(ev.data);
-    if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
-  });
-  const send = (method, params = {}) => new Promise((res, rej) => {
-    const i = ++id;
-    pending.set(i, m => (m.error ? rej(new Error(method + ': ' + m.error.message)) : res(m.result)));
-    ws.send(JSON.stringify({ id: i, method, params }));
-  });
-  const evaluate = async expression => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.text + ' ' + (r.exceptionDetails.exception && r.exceptionDetails.exception.description || ''));
-    return r.result.value;
-  };
-
-  await send('Page.enable');
-  await send('Runtime.enable');
-  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
-  const loaded = new Promise(res => {
-    ws.addEventListener('message', function on(ev) {
-      const m = JSON.parse(ev.data);
-      if (m.method === 'Page.loadEventFired') { ws.removeEventListener('message', on); res(); }
-    });
-  });
-  await send('Page.navigate', { url: pathToFileURL(resolve(htmlPath)).href });
-  await Promise.race([loaded, sleep(15000)]);
-
-  /* The player's fit() resizes the stage to the window on every resize
-     (leaving room for its controls); the render sizes it itself. */
-  const dims = JSON.parse(await evaluate(`removeEventListener('resize', fit); JSON.stringify({ w: D.width || 1080, h: D.height || 1920 })`));
-  await send('Emulation.setDeviceMetricsOverride', { width: dims.w, height: dims.h, deviceScaleFactor: 1, mobile: false });
-
-  const info = JSON.parse(await evaluate(`(() => {
-    /* The player redraws on every animation frame; here frames are drawn
-       only when asked, so stop its loop (it would redraw the whole scene
-       60 times a second behind the render's back). */
-    cancelAnimationFrame(raf);
-    window.requestAnimationFrame = () => 0;
-    const W = D.width || 1080, H = D.height || 1920;
-    const box = document.getElementById('stage-box');
-    document.documentElement.style.overflow = 'hidden';
-    document.body.style.margin = '0';
-    /* no CSS transitions: one would carry the stage from its old size, and
-       a caption mid-fade would depend on capture timing */
-    const still = document.createElement('style');
-    still.textContent = '*, *::before, *::after { transition: none !important; }';
-    document.head.appendChild(still);
-    for (const [k, v] of [['position', 'fixed'], ['left', '0'], ['top', '0'], ['width', W + 'px'], ['height', H + 'px'],
-      ['max-width', 'none'], ['max-height', 'none'], ['transform', 'none'], ['border-radius', '0'], ['box-shadow', 'none'], ['z-index', '2147483647']])
-      box.style.setProperty(k, v, 'important');
-    /* exactly the ratio fit() uses, WITHOUT its clamp, so the DOM overlays
-       scale with the short side of the frame */
-    box.style.setProperty('--sx', Math.min(W / 340, H / 604).toFixed(4));
-    box.style.setProperty('--sy', (H / 604).toFixed(4));
-    ['play-overlay', 'hint', 'bar', 'hdr'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.style.display = 'none';
-    });
-    resizeCanvas();
-    safeDraw();
-    const r = box.getBoundingClientRect();
-    if (Math.round(r.width) !== W || Math.round(r.height) !== H || r.left !== 0 || r.top !== 0 || canvas.width !== W || canvas.height !== H)
-      throw new Error('stage is ' + r.width + 'x' + r.height + ' at ' + r.left + ',' + r.top + ', canvas ' + canvas.width + 'x' + canvas.height + ', not the ' + W + 'x' + H + ' frame');
-    return JSON.stringify({ width: W, height: H, duration: D.duration || 0, audio: D.audioData || '' });
-  })()`));
-
-  /* Webfonts must be in before the first frame, or early captions are set
-     in the fallback face. */
-  await evaluate(`(async () => {
-    t = 12; safeDraw();
-    if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    return true;
-  })()`);
-  return { ws, send, evaluate, info };
 }
 
 /* ffmpeg reads JPEG frames from stdin; the writer waits on the pipe so a
@@ -270,11 +163,13 @@ const PAGE_FAST = `(() => {
       for (let i = from; i < to; i++) {
         check();
         clock('draw', () => { t = i / fps; safeDraw(); });
-        const k = clock('key', () => stageEl.innerHTML);
+        /* an HTML scene changes the picture without changing the markup */
+        const html = swHtmlKey();
+        const k = clock('key', () => stageEl.innerHTML + html);
         if (k !== key) {
           /* nothing on show over the canvas: no snapshot needed */
           const kin = document.getElementById('kinetic');
-          if (!stageEl.querySelector('.show') && !(kin && kin.childElementCount && kin.style.display !== 'none')) {
+          if (!html && !stageEl.querySelector('.show') && !(kin && kin.childElementCount && kin.style.display !== 'none')) {
             if (overlay && overlay.close) overlay.close();
             overlay = null; key = k;
           } else return { next: i, need: true };
@@ -363,7 +258,7 @@ function verify(frames, wantAudio) {
 
 try {
   const started = Date.now();
-  const page = await openPage();
+  const page = await openStage({ htmlPath, port: PORT, profileDir: join(tmp, 'profile'), onChild: c => { children.push(c); lower(c.pid); } });
   const info = page.info;
   /* Round UP: the audio can run a hair past the last whole frame, and a
      rounded-down count left the video shorter than the audio. */

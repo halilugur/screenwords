@@ -566,6 +566,8 @@ const SW_EMOTIONS = {
 
 Object.assign(SWDraw, {
   cel: swCel,
+  /* A closed outline of varying width around a spine of points: the path
+     of a limb, a ribbon or a brush stroke. */
   envelope: (pts, widths, o) => swEnvelope(pts, widths, o),
   spline: swSpline,
   /* Variable-width (tapered) stroke through control points. */
@@ -835,7 +837,7 @@ Object.assign(SWDraw, {
     const hipY = 22 + m.bob;
     const waistY = hipY - 26;
     const shY = -86 + m.bob - breathe * 0.5 - shrug;
-    const bt = ecClamp(ecN(opts.bodyTurn, 0.3), -0.8, 0.8);
+    const bt = ecClamp(ecN(opts.bodyTurn != null ? opts.bodyTurn : opts.turn, 0.3), -0.8, 0.8);
     const cxl = 7 * bt;
     const shL = -41 * k * (1 + 0.04 * bt), shR = 41 * k * (1 - 0.22 * bt);
     const wL = -27 * k * (1 + 0.03 * bt), wR = 27 * k * (1 - 0.2 * bt);
@@ -1365,7 +1367,8 @@ Object.assign(SWDraw, {
   }
 });
 
-/* The legacy two-segment limb now draws an anatomical envelope too. */
+/* A two-segment limb (root, joint, end) drawn as one tapered shape, w1
+   wide at the root and w2 at the end, with an optional cuff colour. */
 SWDraw.limb = (ctx, x1, y1, jx, jy, x2, y2, w1, w2, color, cuffColor) => {
   const a = ecN(w1, 16), b = ecN(w2, a * 0.82);
   const prof = [[0, a], [0.45, a * 0.98], [1, (a + b) / 2 * 0.86], [1.3, b * 1.05], [2, b * 0.82]];

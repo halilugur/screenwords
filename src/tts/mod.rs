@@ -16,9 +16,9 @@
 //! with `SCREENWORDS_TTS_MODELS`).
 
 pub mod align;
-pub mod bed;
 pub mod en_phonon;
 pub mod nfkd;
+pub mod phrasing;
 pub mod s3;
 pub mod tr_ema;
 pub mod wav;
@@ -87,23 +87,36 @@ fn route(lang: &str, voice: &str, s3_staged: bool) -> Backend {
     }
 }
 
+pub use phrasing::Pace;
+
 /// Speak `text` in `lang`. `voice` is a Phonon file stem for English and a
-/// Supertonic style (M1..F5) for everything else; `seed` drives the noise draw.
-pub fn synthesize(lang: &str, text: &str, voice: &str, seed: u32) -> Result<Audio, String> {
-    synthesize_timed(lang, text, voice, seed).map(|(audio, _)| audio)
+/// Supertonic style (M1..F5) for everything else; `seed` drives the noise
+/// draw; `pace` is the speaking rate around calm narration.
+pub fn synthesize(lang: &str, text: &str, voice: &str, seed: u32, pace: Pace) -> Result<Audio, String> {
+    synthesize_timed(lang, text, voice, seed, pace).map(|speech| speech.audio)
 }
 
 /// Chunk timing spans `(start_seconds, duration_seconds)` reported by a TTS backend.
 pub type ChunkWindows = Vec<(f64, f64)>;
 
-/// As [`synthesize`], plus the `(start, duration)` window of each spoken chunk
-/// when the backend can report one. Caption re-timing maps sentences onto these.
+/// A finished take: the audio, where each sentence sits in it and, when the
+/// voice knows it, when each written word is said (`(start, end)` seconds,
+/// one per whitespace-separated word of the text, in order).
+pub struct Speech {
+    pub audio: Audio,
+    pub sentences: ChunkWindows,
+    pub words: Option<Vec<(f64, f64)>>,
+}
+
+/// As [`synthesize`], plus where each sentence — and, from a voice that
+/// knows, each word — sits in the audio. Caption re-timing uses both.
 pub fn synthesize_timed(
     lang: &str,
     text: &str,
     voice: &str,
     seed: u32,
-) -> Result<(Audio, Option<ChunkWindows>), String> {
+    pace: Pace,
+) -> Result<Speech, String> {
     // Those two languages have a dedicated model; everything else is Supertonic
     // 3, and silently reading German with English rules would be worse than
     // telling the caller the models are missing.
@@ -113,9 +126,16 @@ pub fn synthesize_timed(
         ));
     }
     match backend_for(lang, voice) {
-        Backend::Supertonic => s3::speak_timed(text, voice, seed, lang).map(|(a, w)| (a, Some(w))),
-        Backend::Phonon => en_phonon::speak_timed(text, voice, seed).map(|(a, w)| (a, Some(w))),
-        Backend::Ema => tr_ema::speak(text, seed).map(|a| (a, None)),
+        Backend::Supertonic => s3::speak_timed(text, voice, seed, lang, pace),
+        // Phonon draws its own timing frame by frame; there is no duration
+        // to scale, so a rate other than its own is refused, not ignored.
+        Backend::Phonon if pace != Pace::NARRATION => Err(format!(
+            "the English voice '{voice}' speaks at one pace; for a rate of {} pick a Supertonic voice (M1..M5, F1..F5)",
+            pace.rate()
+        )),
+        // Its word times come from forced alignment of the audio instead.
+        Backend::Phonon => en_phonon::speak_timed(text, voice, seed).map(|(audio, sentences)| Speech { audio, sentences, words: None }),
+        Backend::Ema => tr_ema::speak_timed(text, seed, pace),
     }
 }
 

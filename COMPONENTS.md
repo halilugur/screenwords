@@ -700,7 +700,15 @@ camX, layer })` for code overlays.
 `resolve` to push overlapping boxes apart), `sw.follow` / `sw.lag` (a
 deterministic spring on any signal), `sw.parsePath`, `sw.pathLength`,
 `sw.pointOnPath`, `sw.morph`, `sw.fitViewBox`, `sw.anim`, `sw.ik2`,
-`sw.viseme`, `sw.mouth`, `sw.hand`, `sw.anatomicalLimb`, `sw.mix`, `sw.shade`.
+`sw.viseme`, `sw.mouth`, `sw.hand`, `sw.anatomicalLimb`, `sw.mix`, `sw.shade`,
+`sw.text`, `sw.image`, `sw.hash`, and for moving with the voice
+`sw.wordStart(id)` and `sw.since(from, d)`.
+
+The full list is never out of date: `list_components {componentId:
+'codeOverlay_<slug>'}` returns every toolkit function with its parameters and
+the comment written above it in the source (`toolkit`), and what the frame
+adds (`frame`). `tools/build-param-docs.mjs` generates it and refuses a
+function that has no comment.
 
 A code overlay that throws skips its own drawing for that frame (with one
 console warning per code version); the rest of the frame still renders.
@@ -710,6 +718,39 @@ that never fold back, relaxed arms beside the ribcage with the elbow at the
 waist, straight standing legs with the feet on the ground, seated knees over
 the ankles); the character returns its skeleton as `joints` for such
 checks.
+
+## HTML scenes
+
+An `htmlOverlay_<slug>` component is drawn by the browser: `params.html` and
+`params.css`, laid over the canvas in a 1080-wide box, under the captions.
+Use it where layout and type are the point (cards, lists, tables, a UI, an
+SVG diagram); use a code overlay for particles, physics and per-frame
+drawing.
+
+- Time is the film's. Every CSS animation is paused and set to the frame
+  being drawn, so write ordinary `@keyframes` with `animation-fill-mode: both`.
+- `data-at="w12"` hides an element until that word is spoken and runs its
+  animations from that word; `data-until="w20"` hides it again.
+- `--t`, `--p`, and `--since` on a `data-at` element are there for `calc()`;
+  the theme arrives as `--paper`, `--ink`, `--accent`, `--accent2`,
+  `--accent-ink`.
+- The browser's default styles are removed (`00a-reset.js`, the same sheet
+  the editor and the player start from): a heading, a `<b>`, a list or a
+  button has no look until the scene's CSS gives it one.
+- Scripts do not run and CSS transitions are off: a frame must not depend on
+  the one before it.
+- `<img src="media/shot.png">` and `url(media/shot.png)` are embedded on
+  export.
+
+## Sound
+
+`apply_edits` takes `add_music {mood: calm | wonder | drive}` and `add_sound
+{kind: whoosh | impact | pop | rise | tick | shimmer, start}`. Both are
+generated, not recorded: the asset stores the recipe, so the project stays
+small and music is always as long as the film. `start` may be a word
+(`{wordId, offset?}`, offset in seconds). The narration, the music (ducked
+under speech) and the effects are mixed into one track by `src/audio.rs`,
+which the editor and every export share.
 
 ## Verifying the catalog
 

@@ -38,14 +38,12 @@
   --shadow-deep: oklch(6% 0.04 264 / 0.7);
   --scrim-deep: oklch(6% 0.04 264 / 0.55);
 }
-*, *::before, *::after { box-sizing: border-box; }
 html, body { overflow-x: clip; height: 100vh; }
 body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font); font-size: var(--text-md); line-height: 1.5; font-synthesis: none; -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; }
 ::selection { background: color-mix(in oklab, var(--accent) 24%, transparent); }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
 h1, h2, h3 { margin: 0; font-weight: 500; letter-spacing: -0.01em; line-height: 1.15; text-wrap: balance; overflow-wrap: break-word; min-width: 0; }
 p { margin: 0; text-wrap: pretty; }
-button, input, select { font: inherit; }
 [hidden] { display: none !important; }
 .num { font-variant-numeric: tabular-nums; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -231,21 +229,34 @@ section[data-panel].on { display: block; }
 input[type=text], input[type=number], select { height: var(--control-h); padding: 0 var(--space-xs); border: 1px solid var(--rule-2); background: var(--paper-2); color: var(--ink); font-size: var(--text-xs); border-radius: 2px; }
 input[type=number] { width: 6rem; }
 input:hover, select:hover { border-color: var(--muted); }
+/* The reset takes the browser's checkbox away; this is the editor's own. */
+input[type=checkbox] { display: inline-grid; place-content: center; flex: none; width: 14px; height: 14px; border: 1px solid var(--rule-2); background: var(--paper-2); border-radius: 2px; cursor: pointer; }
+input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
+input[type=checkbox]:checked::after { content: ""; width: 7px; height: 4px; margin-top: -2px; border-left: 2px solid var(--accent-ink); border-bottom: 2px solid var(--accent-ink); transform: rotate(-45deg); }
+input[type=checkbox]:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 textarea { padding: var(--space-xs); border: 1px solid var(--rule-2); background: var(--paper-2); color: var(--ink); font: inherit; font-size: var(--text-xs); line-height: 1.55; border-radius: 2px; resize: none; }
-/* Voice: actions on top, then a script box that owns the rest of the panel */
-section[data-panel="voice"].on { display: flex; flex-direction: column; height: 100%; }
-.script-field { display: flex; flex-direction: column; gap: var(--space-2xs); flex: 1; min-height: 0; }
-/* One header row that must fit the panel width: the label and button take
-   only what they need, the two selects share what's left and can shrink
-   (a select clips its own text, so narrow beats clipped controls). */
+/* Script: one header row (language and Generate), then a line per row —
+   who says it, what they say — and each speaker's voice. */
 .script-head { display: flex; align-items: center; gap: var(--space-2xs); min-width: 0; }
 .script-head > label { flex: 0 0 auto; color: var(--muted); font-size: var(--text-xs); }
 .script-head select { flex: 1 1 4rem; min-width: 0; width: auto; }
-#tts-voice { flex: 1.2 1 4rem; }
 #ttsgo { flex: 0 0 auto; }
-.script-field textarea { flex: 1; width: 100%; min-height: 8rem; }
-#ttsout { margin-top: var(--space-xs); }
-#ttsout:empty { display: none; }
+.script-lines { list-style: none; display: flex; flex-direction: column; gap: var(--space-2xs); margin: var(--space-sm) 0; }
+.line-row { display: grid; grid-template-columns: 7rem minmax(0, 1fr) auto; gap: var(--space-2xs); align-items: start; }
+.line-row textarea { width: 100%; min-height: 2.6rem; field-sizing: content; }
+.panel-sub { font-size: var(--text-xs); font-weight: 500; color: var(--muted); margin: var(--space-md) 0 var(--space-xs); }
+.hint:empty { display: none; }
+/* Cast: the characters as chips, the chosen one drawn beside its options. */
+.cast-edit { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: var(--space-sm); align-items: start; }
+#cast-preview { width: 100%; height: auto; border: 1px solid var(--rule); background: var(--paper-2); }
+#cast-form .field > input, #cast-form .field > select { flex: 1; min-width: 0; }
+.color-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2xs); margin-bottom: var(--space-sm); }
+/* Story: a card per scene, a row per person and per action in it. */
+.scene-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3xs); align-items: center; padding-bottom: var(--space-2xs); margin-bottom: var(--space-2xs); border-bottom: 1px solid var(--rule); }
+.scene-row > .mini-btn { justify-self: end; }
+.scene-row input[type=number], .scene-row select { width: 100%; min-width: 0; }
+.check { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-xs); color: var(--muted); white-space: nowrap; }
+.scene-card .field > input[type=text], .scene-card .field > select { flex: 1; min-width: 0; }
 textarea:focus { outline: none; border-color: var(--accent); }
 .actions { display: flex; gap: var(--space-xs); flex-wrap: wrap; margin-bottom: var(--space-md); }
 
@@ -405,6 +416,15 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
       <button class="tab" type="button" data-tab="components" aria-label="Components" title="Component Studio (600 built-in)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><path d="M17 13v8M13 17h8"/></svg>
       </button>
+      <button class="tab" type="button" data-tab="cast" aria-label="Cast" title="Cast: the characters">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14.2a4.4 4.4 0 0 1 5.5 4.3"/></svg>
+      </button>
+      <button class="tab" type="button" data-tab="voice" aria-label="Script" title="Script: who says what, and the voices">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+      </button>
+      <button class="tab" type="button" data-tab="story" aria-label="Story" title="Story: the scenes">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="12" rx="1.5"/><path d="M3 8l2.5-4h15L18 8M8 4l-2.5 4M13.5 4 11 8M19 4l-2.5 4"/></svg>
+      </button>
       <button class="tab" type="button" data-tab="transcript" aria-label="Transcript" title="Transcript">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
       </button>
@@ -417,16 +437,13 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
       <button class="tab" type="button" data-tab="subtitles" aria-label="Subtitles" title="Subtitles">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M9.5 10.4a2.2 2.2 0 1 0 0 3.2M16 10.4a2.2 2.2 0 1 0 0 3.2"/></svg>
       </button>
-      <button class="tab" type="button" data-tab="voice" aria-label="Voice" title="Voice">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
-      </button>
       <button class="tab" type="button" data-tab="cut" aria-label="Cut" title="Cut">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><path d="M8.2 8.2 20 20M8.2 15.8 20 4"/></svg>
       </button>
     </nav>
 
     <div class="panel-viewport">
-      <!-- 1. Inspector Panel -->
+      <!-- Inspector Panel -->
       <section data-panel="inspector" class="on">
         <h2 class="panel-title">Project Overview</h2>
         <div class="strip" id="strip" aria-label="Project figures"></div>
@@ -515,7 +532,7 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
         <ul class="hist-list" id="history-list"><li class="muted">No edits yet in this session.</li></ul>
       </section>
 
-      <!-- 2. Component Studio Panel -->
+      <!-- Component Studio Panel -->
       <section data-panel="components">
         <h2 class="panel-title">
           <span>Component Studio</span>
@@ -578,78 +595,29 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
         </form>
       </section>
 
-      <!-- 3. Transcript Panel -->
-      <section data-panel="transcript">
-        <h2 class="panel-title">Transcript</h2>
-        <div class="field">
-          <label for="wfilter">Filter words</label>
-          <input type="text" id="wfilter" placeholder="search words (double-click a row to edit)">
+      <!-- Cast: the characters, as the scenes will draw them -->
+      <section data-panel="cast">
+        <h2 class="panel-title">Cast <button class="btn" type="button" id="cast-add">Add character</button></h2>
+        <div class="comp-grid" id="cast-list"></div>
+        <div class="cast-edit" id="cast-edit" hidden>
+          <canvas id="cast-preview" width="300" height="400" aria-label="The character as the scenes draw it"></canvas>
+          <div>
+            <div id="cast-form"></div>
+            <div class="actions">
+              <button class="btn primary" type="button" id="cast-save">Save character</button>
+              <button class="btn" type="button" id="cast-remove">Remove</button>
+            </div>
+          </div>
         </div>
-        <div class="region" id="words">
-          <div class="skel"></div><div class="skel"></div>
-        </div>
+        <p class="hint" id="cast-out" role="status"></p>
       </section>
 
-      <!-- 4. Find Panel -->
-      <section data-panel="find">
-        <h2 class="panel-title">Find &amp; Sweeps</h2>
-        <form class="actions" id="findform">
-          <div class="field">
-            <label for="fq">Phrase</label>
-            <input type="text" id="fq" placeholder="diacritic blind phrase">
-          </div>
-          <div class="field">
-            <label for="fkind">Kind</label>
-            <select id="fkind"><option value="">phrase</option><option>number</option><option>filler</option><option>pause</option></select>
-          </div>
-          <button class="btn primary" type="submit">Search</button>
-        </form>
-        <div class="region" id="findout"><p class="state">Search the transcript, or sweep numbers, fillers and pauses.</p></div>
-      </section>
-
-      <!-- 5. Chapters Panel -->
-      <section data-panel="chapters">
-        <h2 class="panel-title">
-          <span>Chapters</span>
-          <button class="btn" type="button" id="chrefresh">Refresh</button>
-        </h2>
-        <form class="actions" id="chapform">
-          <div class="field" style="flex:1">
-            <label for="chap-title">Title</label>
-            <input type="text" id="chap-title" placeholder="Chapter title" required>
-          </div>
-          <div class="field">
-            <label for="chap-time">Start (s)</label>
-            <input type="number" id="chap-time" step="0.1" min="0" value="0.0" style="width:5rem">
-          </div>
-          <button class="btn" type="button" id="chap-at-ph" title="Set start to playhead">@ Playhead</button>
-          <button class="btn primary" type="submit">Add</button>
-        </form>
-        <div class="region" id="chapout"><div class="skel"></div></div>
-      </section>
-
-      <!-- 6. Subtitles Panel -->
-      <section data-panel="subtitles">
-        <h2 class="panel-title">Subtitles</h2>
-        <div class="actions">
-          <div class="field">
-            <label for="sfmt">Format</label>
-            <select id="sfmt"><option>srt</option><option>vtt</option></select>
-          </div>
-          <button class="btn primary" type="button" id="srtgo">Render</button>
-          <button class="btn" type="button" id="srtcopy" hidden>Copy</button>
-          <a class="btn" id="srtdl" hidden download="story.srt">Download</a>
-        </div>
-        <div class="output"><pre id="srtout">Subtitles render from the transcript.</pre></div>
-      </section>
-
-      <!-- 7. Voice Panel -->
+      <!-- Script: every line with who says it, and each speaker's voice -->
       <section data-panel="voice">
-        <h2 class="panel-title">Voice</h2>
-        <div class="script-field">
-          <form class="script-head" id="ttsform">
-            <label for="tts-text">Script</label>
-            <select id="tts-lang" aria-label="Narration language" title="Language">
+        <h2 class="panel-title">Script</h2>
+        <form class="script-head" id="ttsform">
+          <label for="tts-lang">Language</label>
+          <select id="tts-lang" aria-label="Narration language" title="Language">
               <option value="en">English</option>
               <option value="tr">Türkçe</option>
               <option value="ar">Arabic</option>
@@ -682,17 +650,100 @@ pre { margin: 0; padding: var(--space-xs); background: var(--paper-2); color: va
               <option value="uk">Ukrainian</option>
               <option value="vi">Vietnamese</option>
             </select>
-            <select id="tts-voice" aria-label="Voice style" title="Voice style">
-              <option value="easton">Easton</option>
-            </select>
-            <button class="btn primary" type="submit" id="ttsgo">Generate</button>
-          </form>
-          <textarea id="tts-text" spellcheck="false" placeholder="One sentence per line…"></textarea>
+          <button class="btn primary" type="submit" id="ttsgo">Generate voice</button>
+        </form>
+        <ol class="script-lines" id="script-lines"></ol>
+        <div class="actions">
+          <button class="btn" type="button" id="line-add">Add line</button>
+          <button class="btn" type="button" id="script-save">Save script</button>
         </div>
+        <h3 class="panel-sub">Voices</h3>
+        <div id="voice-map"></div>
         <p class="hint" id="ttsout" role="status"></p>
+        <h3 class="panel-sub">Music</h3>
+        <div class="field"><label for="music-mood">Mood</label><select id="music-mood"></select></div>
+        <div class="field"><label for="music-gain">Level, dB</label><input type="number" id="music-gain" min="-24" max="6" step="1" value="0">
+          <button class="btn" type="button" id="music-new" title="Another piece in the same mood">Another piece</button></div>
+        <p class="hint" id="music-out" role="status"></p>
       </section>
 
-      <!-- 8. Ripple Cut Panel -->
+      <!-- Story: the scenes the story component stages -->
+      <section data-panel="story">
+        <h2 class="panel-title">Story</h2>
+        <div id="story-scenes"></div>
+        <div class="actions" id="story-actions" hidden>
+          <button class="btn" type="button" id="scene-add">Add scene</button>
+          <button class="btn primary" type="button" id="story-save">Save scenes</button>
+        </div>
+        <p class="hint" id="story-out" role="status"></p>
+      </section>
+
+      <!-- Transcript Panel -->
+      <section data-panel="transcript">
+        <h2 class="panel-title">Transcript</h2>
+        <div class="field">
+          <label for="wfilter">Filter words</label>
+          <input type="text" id="wfilter" placeholder="search words (double-click a row to edit)">
+        </div>
+        <div class="region" id="words">
+          <div class="skel"></div><div class="skel"></div>
+        </div>
+      </section>
+
+      <!-- Find Panel -->
+      <section data-panel="find">
+        <h2 class="panel-title">Find &amp; Sweeps</h2>
+        <form class="actions" id="findform">
+          <div class="field">
+            <label for="fq">Phrase</label>
+            <input type="text" id="fq" placeholder="diacritic blind phrase">
+          </div>
+          <div class="field">
+            <label for="fkind">Kind</label>
+            <select id="fkind"><option value="">phrase</option><option>number</option><option>filler</option><option>pause</option></select>
+          </div>
+          <button class="btn primary" type="submit">Search</button>
+        </form>
+        <div class="region" id="findout"><p class="state">Search the transcript, or sweep numbers, fillers and pauses.</p></div>
+      </section>
+
+      <!-- Chapters Panel -->
+      <section data-panel="chapters">
+        <h2 class="panel-title">
+          <span>Chapters</span>
+          <button class="btn" type="button" id="chrefresh">Refresh</button>
+        </h2>
+        <form class="actions" id="chapform">
+          <div class="field" style="flex:1">
+            <label for="chap-title">Title</label>
+            <input type="text" id="chap-title" placeholder="Chapter title" required>
+          </div>
+          <div class="field">
+            <label for="chap-time">Start (s)</label>
+            <input type="number" id="chap-time" step="0.1" min="0" value="0.0" style="width:5rem">
+          </div>
+          <button class="btn" type="button" id="chap-at-ph" title="Set start to playhead">@ Playhead</button>
+          <button class="btn primary" type="submit">Add</button>
+        </form>
+        <div class="region" id="chapout"><div class="skel"></div></div>
+      </section>
+
+      <!-- Subtitles Panel -->
+      <section data-panel="subtitles">
+        <h2 class="panel-title">Subtitles</h2>
+        <div class="actions">
+          <div class="field">
+            <label for="sfmt">Format</label>
+            <select id="sfmt"><option>srt</option><option>vtt</option></select>
+          </div>
+          <button class="btn primary" type="button" id="srtgo">Render</button>
+          <button class="btn" type="button" id="srtcopy" hidden>Copy</button>
+          <a class="btn" id="srtdl" hidden download="story.srt">Download</a>
+        </div>
+        <div class="output"><pre id="srtout">Subtitles render from the transcript.</pre></div>
+      </section>
+
+      <!-- Ripple Cut Panel -->
       <section data-panel="cut">
         <h2 class="panel-title">Ripple Cut</h2>
         <form class="actions" id="cutform">
@@ -837,6 +888,7 @@ function selectTab(name, push) {
   tabs.forEach(t => t.setAttribute('aria-selected', t.dataset.tab === name ? 'true' : 'false'));
   document.querySelectorAll('section[data-panel]').forEach(p => p.classList.toggle('on', p.dataset.panel === name));
   if (push) history.replaceState(null, '', '#' + name);
+  dispatchEvent(new CustomEvent('panelshown', { detail: name }));
 }
 tabs.forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab, true)));
 addEventListener('hashchange', () => selectTab(location.hash.slice(1), false));
@@ -1281,6 +1333,9 @@ function renderStageScene(time) {
   sharedPostFX(stageCtx, W, H, time, comps, stageCanvas);
 
   stageCtx.restore();
+
+  /* HTML scenes, laid over the canvas and set to this moment. */
+  swHtmlOverlays(stageCanvas, comps, time, { words: doc.words || [], theme: T });
 }
 
 /* Fit the stage frame to the monitor viewport instead of a fixed box. */
@@ -1295,8 +1350,9 @@ function fitStage() {
   if (frameH > availH) { frameH = availH; frameW = frameH * stageAspect; }
   stageBox.style.width = Math.round(frameW) + 'px';
   stageBox.style.height = Math.round(frameH) + 'px';
-  stageBox.style.setProperty('--sx', Math.min(2.2, frameW / 280).toFixed(4));
-  stageBox.style.setProperty('--sy', (frameH / 498).toFixed(4));
+  const scale = swOverlayScale(frameW, frameH, 280, 498);
+  stageBox.style.setProperty('--sx', scale.sx.toFixed(4));
+  stageBox.style.setProperty('--sy', scale.sy.toFixed(4));
   resizeStageCanvas();
 }
 
@@ -1419,9 +1475,9 @@ async function loadTimeline() {
     const hideCls = tr.isHidden ? ' on' : '';
     const muteCls = tr.isMuted ? ' on' : '';
     const isAudioTrack = tr.kind === 'audio' || tr.role === 'voice' || tr.role === 'music' || tr.role === 'sfx';
-    const trackCtrls = '<div class="track-ctrls">' +
-      '<button type="button" class="track-toggle' + hideCls + '" data-track-hide="' + esc(tr.id) + '" data-hidden="' + (tr.isHidden ? '1' : '0') + '" title="Toggle track visibility">' + (tr.isHidden ? 'Hidden' : 'Hide') + '</button>' +
-      (isAudioTrack ? '<button type="button" class="track-toggle' + muteCls + '" data-track-mute="' + esc(tr.id) + '" data-muted="' + (tr.isMuted ? '1' : '0') + '" title="Toggle track mute">' + (tr.isMuted ? 'Muted' : 'Mute') + '</button>' : '') +
+    const trackCtrls = '<div class="lane-actions">' +
+      '<button type="button" class="mini-btn' + hideCls + '" data-track-hide="' + esc(tr.id) + '" data-hidden="' + (tr.isHidden ? '1' : '0') + '" title="Toggle track visibility">' + (tr.isHidden ? 'Hidden' : 'Hide') + '</button>' +
+      (isAudioTrack ? '<button type="button" class="mini-btn' + muteCls + '" data-track-mute="' + esc(tr.id) + '" data-muted="' + (tr.isMuted ? '1' : '0') + '" title="Toggle track mute">' + (tr.isMuted ? 'Muted' : 'Mute') + '</button>' : '') +
       '</div>';
     return '<div class="lane-row"><div class="lane-head"><b>' + esc(tr.name) + '</b><span>' + esc(tr.role || tr.kind) + '</span>' + trackCtrls + '</div><div class="lane" style="height:' + laneH + 'px' + (tr.isHidden ? ';opacity:0.4' : '') + '">' + items + '<span class="ph-line"></span></div></div>';
   }).join('');
@@ -2286,9 +2342,122 @@ if ($('#frame-apply')) $('#frame-apply').addEventListener('click', () => {
     .catch(err => { frameOut.textContent = 'Failed: ' + err.message; });
 });
 
-/* Voice: the whole script lives here — edit it, then generate in one pass */
-const ttsForm = $('#ttsform'), ttsBtn = $('#ttsgo'), ttsLang = $('#tts-lang'),
-      ttsVoice = $('#tts-voice'), ttsText = $('#tts-text'), ttsOut = $('#ttsout');
+/* Writing a story: three panels over three parts of the document — the cast
+   (settings.cast), the script (the transcript as lines, with settings.voices)
+   and the scenes of the story component. Each saves as one edit, so Undo
+   takes it back, and each keeps its unsaved changes when the project moves
+   on underneath it. The options they offer are the engine's own lists. */
+const NARRATOR = 'narrator';
+const optionTags = (values, selected, label) => values.map(v =>
+  '<option value="' + esc(String(v)) + '"' + (String(v) === String(selected) ? ' selected' : '') + '>' + esc(label ? label(v) : String(v)) + '</option>').join('');
+const spaced = s => String(s).replace(/Color$/, '').replace(/([A-Z])/g, ' $1').toLowerCase();
+const capital = s => s.charAt(0).toUpperCase() + s.slice(1);
+let castData = {};
+let scriptLines = [];
+
+async function saveEdits(label, edits, out) {
+  out.textContent = 'Saving…';
+  try {
+    await postJSON('/api/edit', { label, edits });
+    out.textContent = 'Saved.';
+    await refresh(true);
+    return true;
+  } catch (err) {
+    out.textContent = 'Not saved: ' + err.message;
+    return false;
+  }
+}
+function castName(id) { return id === NARRATOR ? 'Narrator' : ((castData[id] && castData[id].name) || id); }
+function castOptions(selected, withNarrator) {
+  return optionTags((withNarrator ? [NARRATOR] : []).concat(Object.keys(castData)), selected, castName);
+}
+
+/* --- Cast --- */
+const castList = $('#cast-list'), castEdit = $('#cast-edit'), castForm = $('#cast-form'),
+      castPreview = $('#cast-preview'), castRemove = $('#cast-remove'), castOut = $('#cast-out');
+const CAST_COLORS = ['skinColor', 'hairColor', 'eyeColor', 'jacketColor', 'shirtColor', 'pantsColor', 'shoeColor', 'hatColor', 'accentColor'];
+let castPick = null;      /* { id, member, isNew } */
+let castRaf = 0;
+function renderCast() {
+  const ids = Object.keys(castData);
+  castList.innerHTML = ids.length
+    ? ids.map(id => '<button type="button" class="comp-chip' + (castPick && castPick.id === id ? ' active' : '') + '" data-cast="' + esc(id) + '"><b>' + esc(castName(id)) + '</b><span>' + esc(id) + '</span></button>').join('')
+    : '<p class="state">No characters yet. Add one, then give them lines in the Script.</p>';
+  castEdit.hidden = !castPick;
+  if (!castPick) return;
+  const m = castPick.member, kit = SWDraw.kits.editorial;
+  castForm.innerHTML =
+    '<div class="field"><label>Name</label><input type="text" data-key="name" value="' + esc(m.name || '') + '"></div>' +
+    Object.keys(kit).map(key => '<div class="field"><label>' + capital(spaced(key)) + '</label><select data-key="' + key + '">' +
+      optionTags(kit[key], m[key] == null ? kit[key][0] : m[key], v => v === true ? 'yes' : v === false ? 'no' : String(v)) + '</select></div>').join('') +
+    '<div class="color-grid">' + CAST_COLORS.map(key => '<label class="color-cell">' + spaced(key) +
+      '<input type="color" data-key="' + key + '" value="' + esc(m[key] || '#8A8F98') + '"></label>').join('') + '</div>';
+  castRemove.hidden = castPick.isNew;
+  startCastPreview();
+}
+/* The chosen character, waving, drawn by the same code the scenes use; it
+   runs while the Cast panel is on show. */
+function startCastPreview() {
+  if (!castRaf) castRaf = requestAnimationFrame(drawCastPreview);
+}
+addEventListener('panelshown', e => { if (e.detail === 'cast') startCastPreview(); });
+function drawCastPreview(now) {
+  castRaf = 0;
+  if (!castPick || !castPreview.closest('section').classList.contains('on')) return;
+  const ctx = castPreview.getContext('2d'), W = castPreview.width, H = castPreview.height;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  SWDraw.character(ctx, Object.assign({ kit: 'editorial' }, castPick.member, { x: 0.5, y: 0.6, scale: 1.65, W, H, time: now / 1000, pose: 'wave', emotion: 'happy' }));
+  ctx.restore();
+  castRaf = requestAnimationFrame(drawCastPreview);
+}
+function newCastId(name) {
+  const base = String(name || '').toLocaleLowerCase('tr').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ı/g, 'i')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'character';
+  let id = base;
+  for (let n = 2; castData[id]; n++) id = base + '-' + n;
+  return id;
+}
+castList.addEventListener('click', e => {
+  const chip = e.target.closest('[data-cast]');
+  if (!chip) return;
+  castPick = { id: chip.dataset.cast, member: Object.assign({}, castData[chip.dataset.cast]), isNew: false };
+  castOut.textContent = '';
+  renderCast();
+});
+$('#cast-add').addEventListener('click', () => {
+  castPick = { id: '', member: { name: 'New character', kit: 'editorial' }, isNew: true };
+  castOut.textContent = 'Name them and choose their look, then save.';
+  renderCast();
+});
+castForm.addEventListener('input', e => {
+  const key = e.target.dataset.key;
+  if (!key || !castPick) return;
+  const v = e.target.value;
+  if (v === 'none' || v === 'false' || v === '') delete castPick.member[key];
+  else castPick.member[key] = v === 'true' ? true : v;
+});
+$('#cast-save').addEventListener('click', async () => {
+  if (!castPick) return;
+  const id = castPick.isNew ? newCastId(castPick.member.name) : castPick.id;
+  if (await saveEdits('Cast: ' + (castPick.member.name || id), [{ tool: 'set_project_settings', arguments: { cast: { [id]: castPick.member } } }], castOut)) {
+    castPick = { id, member: castPick.member, isNew: false };
+    renderCast();
+  }
+});
+castRemove.addEventListener('click', async () => {
+  if (!castPick || castPick.isNew) return;
+  const id = castPick.id;
+  if (await saveEdits('Cast: remove ' + castName(id), [{ tool: 'set_project_settings', arguments: { cast: { [id]: null } } }], castOut)) {
+    castPick = null;
+    renderCast();
+  }
+});
+
+/* --- Script --- */
+const ttsForm = $('#ttsform'), ttsBtn = $('#ttsgo'), ttsLang = $('#tts-lang'), ttsOut = $('#ttsout'),
+      scriptList = $('#script-lines'), voiceMap = $('#voice-map');
 /* "captain-silas-blackwater" reads better as "Captain Silas Blackwater";
    the option value stays the file stem. */
 const VOICE_MINOR = new Set(['the', 'of', 'a', 'an', 'and', 'under', 'in', 'on']);
@@ -2305,53 +2474,96 @@ function voiceLabel(name) {
       : w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
 }
-/* English has Phonon styles and Turkish has EMA's one sound; every other
-   language is spoken by Supertonic 3, so the picker must offer its styles. */
-let supertonicVoices = [];
-function ttsSyncVoice() {
-  const other = ttsLang.value !== 'en' && ttsLang.value !== 'tr';
-  if (other && supertonicVoices.length && supertonicVoices.indexOf(ttsVoice.value) < 0) {
-    ttsVoice.value = supertonicVoices.indexOf('M1') >= 0 ? 'M1' : supertonicVoices[0];
-  }
+let allVoices = [], supertonicVoices = [], savedVoices = {}, scriptDirty = false, scriptAsLoaded = '';
+/* English and Turkish have voices of their own; every other language is
+   spoken by Supertonic 3, so only its styles are offered there. */
+function voicesForLanguage() {
+  return ttsLang.value === 'en' || ttsLang.value === 'tr' ? allVoices : supertonicVoices;
 }
-if (ttsLang && ttsVoice) {
-  ttsLang.addEventListener('change', ttsSyncVoice);
-  ttsSyncVoice();
-  fetch('/api/voices').then(r => r.json()).then(d => {
-    const voices = Array.isArray(d.voices) ? d.voices : [];
-    if (!voices.length) return;
-    supertonicVoices = Array.isArray(d.supertonic) ? d.supertonic : [];
-    const keep = ttsVoice.value;
-    ttsVoice.innerHTML = '';
-    voices.forEach(v => {
-      const o = document.createElement('option');
-      o.value = v;               /* the file stem is what the server loads */
-      o.textContent = voiceLabel(v);
-      ttsVoice.appendChild(o);
-    });
-    if (voices.indexOf(keep) >= 0) ttsVoice.value = keep;
-    ttsSyncVoice();
-  }).catch(() => {});
+function renderScript() {
+  scriptList.innerHTML = scriptLines.map((l, i) => '<li class="line-row" data-line="' + i + '">' +
+    '<select data-field="speaker" aria-label="Who says it">' + castOptions(l.speaker || NARRATOR, true) + '</select>' +
+    '<textarea data-field="text" rows="2" aria-label="What they say">' + esc(l.text) + '</textarea>' +
+    '<button type="button" class="mini-btn danger" data-remove title="Remove the line">×</button></li>').join('') ||
+    '<li class="state">No script yet. Add the first line.</li>';
+  renderVoices();
 }
-function loadScript() {
-  fetch('/api/script').then(r => r.json()).then(d => {
-    if (ttsText && typeof d.text === 'string' && !ttsText.value) ttsText.value = d.text;
-  }).catch(() => {});
+function renderVoices() {
+  const offered = voicesForLanguage(), speakers = [...new Set(scriptLines.map(l => l.speaker || NARRATOR))];
+  voiceMap.innerHTML = speakers.map(sp => {
+    const kept = savedVoices[sp] && offered.indexOf(savedVoices[sp]) >= 0 ? savedVoices[sp] : offered[0];
+    return '<div class="field"><label>' + esc(castName(sp)) + '</label><select data-voice="' + esc(sp) + '">' + optionTags(offered, kept, voiceLabel) + '</select></div>';
+  }).join('');
 }
-loadScript();
-if (ttsForm) ttsForm.addEventListener('submit', async (e) => {
+function chosenVoices() {
+  const out = {};
+  voiceMap.querySelectorAll('[data-voice]').forEach(s => { out[s.dataset.voice] = s.value; });
+  return out;
+}
+/* The script as one edit: lines said by the cast are authored as turns (so
+   every word knows its speaker); a narration alone stays plain text, one
+   line after another. The voices are kept with it. A script whose lines and
+   language did not change is not re-authored, so the words keep the times
+   the voice gave them. */
+function scriptState() {
+  return JSON.stringify([ttsLang.value, scriptLines.map(l => [l.speaker || NARRATOR, l.text.trim()]).filter(l => l[1])]);
+}
+function scriptEdits() {
+  const lines = scriptLines.map(l => ({ speaker: l.speaker || NARRATOR, text: l.text.trim() })).filter(l => l.text);
+  if (!lines.length) throw new Error('write a line first');
+  const edits = [{ tool: 'set_project_settings', arguments: { voices: chosenVoices() } }];
+  if (scriptState() === scriptAsLoaded) return edits;
+  const told = lines.some(l => l.speaker !== NARRATOR)
+    ? { turns: lines, language: ttsLang.value, replace: true }
+    : { text: lines.map(l => l.text).join('\n'), language: ttsLang.value, replace: true };
+  return [{ tool: 'author_transcript', arguments: told }].concat(edits);
+}
+async function saveScript() {
+  let edits;
+  try { edits = scriptEdits(); } catch (err) { ttsOut.textContent = 'Not saved: ' + err.message; return false; }
+  const ok = await saveEdits('Script', edits, ttsOut);
+  if (ok) scriptDirty = false;
+  return ok;
+}
+scriptList.addEventListener('input', e => {
+  const row = e.target.closest('[data-line]');
+  if (!row) return;
+  scriptLines[Number(row.dataset.line)][e.target.dataset.field] = e.target.value;
+  scriptDirty = true;
+  if (e.target.dataset.field === 'speaker') renderVoices();
+});
+scriptList.addEventListener('click', e => {
+  if (!e.target.closest('[data-remove]')) return;
+  scriptLines.splice(Number(e.target.closest('[data-line]').dataset.line), 1);
+  scriptDirty = true;
+  renderScript();
+});
+$('#line-add').addEventListener('click', () => {
+  const last = scriptLines[scriptLines.length - 1];
+  scriptLines.push({ speaker: last ? last.speaker : NARRATOR, text: '' });
+  scriptDirty = true;
+  renderScript();
+  scriptList.querySelector('li:last-child textarea').focus();
+});
+$('#script-save').addEventListener('click', saveScript);
+voiceMap.addEventListener('change', () => { scriptDirty = true; });
+ttsLang.addEventListener('change', () => { scriptDirty = true; renderVoices(); });
+fetch('/api/voices').then(r => r.json()).then(d => {
+  allVoices = Array.isArray(d.voices) ? d.voices : [];
+  supertonicVoices = Array.isArray(d.supertonic) ? d.supertonic : [];
+  renderVoices();
+}).catch(() => {});
+ttsForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   ttsBtn.disabled = true;
-  ttsOut.textContent = 'Synthesizing…';
+  if (scriptDirty && !(await saveScript())) { ttsBtn.disabled = false; return; }
+  const voices = chosenVoices(), speakers = Object.keys(voices);
+  ttsOut.textContent = 'Generating the voice…';
   try {
-    const res = await fetch('/api/synthesize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lang: ttsLang.value, voice: ttsVoice.value, text: ttsText.value })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.message || data.error || ('HTTP ' + res.status));
-    ttsOut.textContent = 'Narration generated — reloading…';
+    await postJSON('/api/synthesize', speakers.some(sp => sp !== NARRATOR)
+      ? { lang: ttsLang.value, voice: voices[NARRATOR] || voices[speakers[0]], voices }
+      : { lang: ttsLang.value, voice: voices[NARRATOR] });
+    ttsOut.textContent = 'Voice generated — reloading…';
     /* The whole timeline is re-fitted to the new audio, so reload. */
     setTimeout(() => location.reload(), 500);
   } catch (err) {
@@ -2360,6 +2572,161 @@ if (ttsForm) ttsForm.addEventListener('submit', async (e) => {
   }
 });
 
+/* --- Music: one piece under the whole film, or none. Every change is one
+   edit that replaces it, so the level, the mood or another piece can be
+   tried and undone. --- */
+const musicMood = $('#music-mood'), musicGain = $('#music-gain'), musicOut = $('#music-out');
+let music = null;
+function renderMusic(moods) {
+  musicMood.innerHTML = optionTags([''].concat(moods), music ? music.mood : '', v => v || 'no music');
+  musicGain.value = music ? music.gainDB : 0;
+  musicGain.disabled = $('#music-new').disabled = !music;
+}
+async function saveMusic(seed) {
+  const edits = music ? [{ tool: 'remove_audio', arguments: { eventId: music.eventId } }] : [];
+  if (musicMood.value) {
+    const args = { mood: musicMood.value, gainDB: Number(musicGain.value) || 0 };
+    if (seed != null) args.seed = seed;
+    else if (music && music.mood === musicMood.value) args.seed = music.seed;
+    edits.push({ tool: 'add_music', arguments: args });
+  }
+  if (edits.length) await saveEdits('Music', edits, musicOut);
+}
+musicMood.addEventListener('change', () => saveMusic());
+musicGain.addEventListener('change', () => saveMusic());
+$('#music-new').addEventListener('click', () => saveMusic(Math.floor(Math.random() * 1e6)));
+
+/* --- Story --- */
+const storyBox = $('#story-scenes'), storyActions = $('#story-actions'), storyOut = $('#story-out');
+let storyId = null, storyScenes = [], storyDirty = false;
+function lineOptions(selected) {
+  return optionTags(scriptLines.map((_, i) => i), selected, i => (i + 1) + '. ' + castName(scriptLines[i].speaker || NARRATOR) + ': ' + scriptLines[i].text.slice(0, 38));
+}
+function personRow(p, j) {
+  return '<div class="scene-row" data-row="cast" data-i="' + j + '">' +
+    '<select data-f="cast" aria-label="Who">' + castOptions(p.cast) + '</select>' +
+    '<input type="number" data-f="x" min="0" max="1" step="0.05" value="' + esc(p.x == null ? 0.5 : p.x) + '" aria-label="Where, 0 left to 1 right" title="Where: 0 left, 1 right">' +
+    '<select data-f="enter" aria-label="Walks in from">' + optionTags(['', 'left', 'right'], p.enter || '', v => v ? 'walks in from ' + v : 'already there') + '</select>' +
+    '<select data-f="prop" aria-label="Holds">' + optionTags([''].concat(SWDraw.props), p.prop || '', v => v || 'empty-handed') + '</select>' +
+    '<label class="check"><input type="checkbox" data-f="seated"' + (p.seated ? ' checked' : '') + '>seated</label>' +
+    '<button type="button" class="mini-btn danger" data-row-remove title="Remove">×</button></div>';
+}
+function actionRow(a, j) {
+  if (SWDraw.storyActions.indexOf(a.type) < 0) {
+    return '<div class="scene-row act" data-row="actions" data-i="' + j + '"><span class="muted">' + esc(a.type || 'action') + ' (kept as written)</span><span></span>' +
+      '<button type="button" class="mini-btn danger" data-row-remove title="Remove">×</button></div>';
+  }
+  return '<div class="scene-row act" data-row="actions" data-i="' + j + '">' +
+    '<select data-f="type" aria-label="Action">' + optionTags(SWDraw.storyActions, a.type) + '</select>' +
+    '<select data-f="line" aria-label="On the line">' + (a.line == null ? '<option value="" selected>at ' + esc(a.at) + ' s</option>' : '') + lineOptions(a.line) + '</select>' +
+    '<select data-f="a" aria-label="Who">' + castOptions(a.a) + '</select>' +
+    '<select data-f="b" aria-label="With whom">' + castOptions(a.b) + '</select>' +
+    '<select data-f="prop" aria-label="Thing given"' + (a.type === 'give' ? '' : ' disabled') + '>' + optionTags([''].concat(SWDraw.props), a.prop || '', v => v || '—') + '</select>' +
+    '<button type="button" class="mini-btn danger" data-row-remove title="Remove">×</button></div>';
+}
+function sceneCard(sc, i) {
+  const custom = i > 0 && sc.startLine == null;
+  const start = i === 0 ? '<span class="muted">the beginning</span>'
+    : '<select data-k="startLine" aria-label="Starts at line">' + (custom ? '<option value="" selected>' + esc(sc.startWord ? 'word ' + sc.startWord : (sc.start || 0) + ' s') + '</option>' : '') + lineOptions(sc.startLine) + '</select>';
+  const place = typeof sc.set === 'object' && sc.set
+    ? '<span class="muted">a described place (kept as written)</span>'
+    : '<select data-k="set" aria-label="Place">' + optionTags(SWDraw.sets, sc.set || 'room') + '</select>';
+  return '<div class="sel-box scene-card" data-scene="' + i + '">' +
+    '<h4>Scene ' + (i + 1) + '<button type="button" class="mini-btn danger" data-scene-remove>Remove scene</button></h4>' +
+    '<div class="field"><label>Starts at</label>' + start + '</div>' +
+    '<div class="field"><label>Place</label>' + place + '<label class="check"><input type="checkbox" data-k="night"' + (sc.night ? ' checked' : '') + '>night</label></div>' +
+    '<div class="field"><label>Title</label><input type="text" data-k="title" value="' + esc(sc.title || '') + '" placeholder="none"></div>' +
+    '<p class="panel-sub">People</p>' + (sc.cast || []).map(personRow).join('') +
+    '<button type="button" class="mini-btn" data-add="cast">Add person</button>' +
+    '<p class="panel-sub">Actions</p>' + (sc.actions || []).map(actionRow).join('') +
+    '<button type="button" class="mini-btn" data-add="actions">Add action</button></div>';
+}
+function renderStory() {
+  storyActions.hidden = !storyId;
+  if (!storyId) {
+    storyBox.innerHTML = '<p class="state">This project has no story yet. A story stages the cast on illustrated places, scene by scene, from the script.</p>' +
+      '<button type="button" class="btn primary" id="story-create">Create the story</button>';
+    return;
+  }
+  storyBox.innerHTML = storyScenes.map(sceneCard).join('');
+}
+/* A value from a field, written onto the object it edits: empty means the
+   key is left out, so the engine's default applies. */
+function setField(obj, key, el) {
+  let v = el.type === 'checkbox' ? el.checked : el.value;
+  if (key === 'x') v = Math.min(1, Math.max(0, Number(v) || 0));
+  if (key === 'line' || key === 'startLine') v = v === '' ? null : Number(v);
+  if (v === '' || v === false || v === null) { delete obj[key]; return; }
+  obj[key] = v;
+  if (key === 'startLine') { delete obj.start; delete obj.startWord; }
+  if (key === 'line') delete obj.at;
+}
+storyBox.addEventListener('input', e => {
+  const card = e.target.closest('[data-scene]');
+  if (!card) return;
+  const sc = storyScenes[Number(card.dataset.scene)], row = e.target.closest('[data-row]');
+  if (row) setField(sc[row.dataset.row][Number(row.dataset.i)], e.target.dataset.f, e.target);
+  else if (e.target.dataset.k) setField(sc, e.target.dataset.k, e.target);
+  storyDirty = true;
+  if (e.target.dataset.f === 'type') renderStory();
+});
+storyBox.addEventListener('click', async e => {
+  if (e.target.id === 'story-create') {
+    const members = Object.keys(castData).slice(0, 2);
+    const scene = { set: 'room', cast: members.map((cast, k) => ({ cast, x: members.length > 1 ? 0.35 + 0.3 * k : 0.5 })) };
+    await saveEdits('Story', [{ tool: 'add_component', arguments: { componentId: 'story', start: { seconds: 0 }, end: { seconds: totalDuration }, zIndex: 5, params: { scenes: [scene] } } }], storyOut);
+    return;
+  }
+  const card = e.target.closest('[data-scene]');
+  if (!card) return;
+  const sc = storyScenes[Number(card.dataset.scene)];
+  if (e.target.closest('[data-scene-remove]')) storyScenes.splice(Number(card.dataset.scene), 1);
+  else if (e.target.dataset.add === 'cast') (sc.cast = sc.cast || []).push({ cast: Object.keys(castData)[0], x: 0.5 });
+  else if (e.target.dataset.add === 'actions') {
+    const [a, b] = (sc.cast || []).map(p => p.cast);
+    (sc.actions = sc.actions || []).push({ type: 'handshake', line: sc.startLine || 0, a: a || Object.keys(castData)[0], b: b || a || Object.keys(castData)[0] });
+  } else if (e.target.closest('[data-row-remove]')) {
+    const row = e.target.closest('[data-row]');
+    sc[row.dataset.row].splice(Number(row.dataset.i), 1);
+  } else return;
+  storyDirty = true;
+  renderStory();
+});
+$('#scene-add').addEventListener('click', () => {
+  const last = storyScenes[storyScenes.length - 1];
+  storyScenes.push({ startLine: Math.min(scriptLines.length - 1, ((last && last.startLine) || 0) + 1), set: (last && typeof last.set === 'string' && last.set) || 'room',
+    cast: last && Array.isArray(last.cast) ? last.cast.map(p => ({ cast: p.cast, x: p.x })) : [] });
+  storyDirty = true;
+  renderStory();
+});
+$('#story-save').addEventListener('click', async () => {
+  if (await saveEdits('Story scenes', [{ tool: 'update_component', arguments: { instanceId: storyId, params: { scenes: storyScenes } } }], storyOut)) storyDirty = false;
+});
+
+/* The three panels from the project as it now is, unless one holds edits
+   not saved yet. */
+async function loadAuthoring() {
+  castData = doc.cast || {};
+  if (castPick && !castPick.isNew && !castData[castPick.id]) castPick = null;
+  renderCast();
+  const script = await getJSON('/api/script');
+  if (!scriptDirty) {
+    scriptLines = (script.lines || []).map(l => ({ speaker: l.speaker || NARRATOR, text: l.text }));
+    savedVoices = script.voices || {};
+    ttsLang.value = script.language || ttsLang.value;
+    scriptAsLoaded = scriptState();
+    renderScript();
+  }
+  music = script.music || null;
+  renderMusic(script.moods || []);
+  if (!storyDirty) {
+    const story = doc.tracks.flatMap(t => t.components).find(c => c.componentId === 'story');
+    storyId = story ? story.id : null;
+    storyScenes = story && Array.isArray(story.params.scenes) ? JSON.parse(JSON.stringify(story.params.scenes)) : [];
+    renderStory();
+  }
+}
+
 /* Initial boot & revision-aware background sync */
 async function refresh(force) {
   try {
@@ -2367,6 +2734,7 @@ async function refresh(force) {
     if (force || s.revision !== loadedRev) {
       loadedRev = s.revision;
       await Promise.all([loadTimeline(), loadWords(), loadChapters(), loadHistory()]);
+      await loadAuthoring();
     }
   } catch (e) {
     netOk = false;

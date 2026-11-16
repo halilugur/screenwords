@@ -1,6 +1,7 @@
 
 function ecN(v, d) { return typeof v === 'number' && isFinite(v) ? v : d; }
 function ecS(v, d) { return typeof v === 'string' && v.length ? v : d; }
+/* v held between a and b. */
 function ecClamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function ecHash(n) {
   const v = Math.sin(n * 12.9898) * 43758.5453;
@@ -196,19 +197,83 @@ function ecDockRayToBox(x0, y0, x1, y1, box, pad) {
    diagrams, custom vector rigs) at 60 FPS without dedicated MCP endpoints. */
 const SWDraw = {
   clamp: ecClamp,
+  /* From a to b as t goes 0 to 1. */
   lerp: (a, b, t) => a + (b - a) * t,
+  /* Fast start, soft landing (cubic); t is clamped to 0..1. */
   easeOut: t => { const x = ecClamp(t, 0, 1); return 1 - Math.pow(1 - x, 3); },
-  easeOutCubic: t => { const x = ecClamp(t, 0, 1); return 1 - Math.pow(1 - x, 3); },
+  /* The same curve as easeOut, under its other name. */
+  easeOutCubic: t => SWDraw.easeOut(t),
+  /* Soft start and soft landing (cubic); t is clamped to 0..1. */
   easeInOut: t => { const x = ecClamp(t, 0, 1); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; },
-  backOut: t => { const x = ecClamp(t, 0, 1), c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); },
+  /* Overshoots a little before settling. Exactly 0 at 0 and 1 at 1, so
+     "has it started" can be asked of the result. */
+  backOut: t => { const x = ecClamp(t, 0, 1), c1 = 1.70158, c3 = c1 + 1; return x <= 0 ? 0 : x >= 1 ? 1 : 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); },
+  /* A repeatable 0..1 for any number: the same particle lands in the same
+     place on every frame and every render. */
+  hash: n => hash01(n),
+  /* One line of text at x, y (px): o {size, color, align, weight, font,
+     baseline}, defaulting to 36 px, the theme's ink, centred, bold. */
+  text: (ctx, s, x, y, o) => { o = o || {}; ecText(ctx, s, x, y, ecN(o.size, 36), o.color || T.ink, o.align, o.weight, o.font, o.baseline); },
+  /* A spring settling on 1, t seconds after release: freq (default 14) sets
+     the wobble, decay (default 6) how fast it dies. */
   spring: (t, freq, decay) => {
     const x = Math.max(0, t);
     return 1 - Math.exp(-x * (decay || 6)) * Math.cos(x * (freq || 14));
   },
+  /* A picture fitted into the box x, y, w, h (px): a URL, a data URI, or a
+     file the project imported (media/shot.png). fit 'cover' (default) fills
+     the box and crops, 'contain' shows all of it; focus {x, y} (0..1) is the
+     point of the picture kept in view and zoom (>= 1) how far in — keyframe
+     the two from localTime to travel across a screenshot. radius rounds the
+     corners; shadow (blur px) lifts it off the page; stroke outlines it.
+     Returns false, drawing nothing, until the picture has loaded. */
+  image: (ctx, src, x, y, w, h, o) => {
+    o = o || {};
+    const img = typeof getImage === 'function' ? getImage(src) : null;
+    if (!img || !(w > 0) || !(h > 0) || !Number.isFinite(x) || !Number.isFinite(y)) return false;
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    if (!(iw > 0) || !(ih > 0)) return false;
+    const r = ecClamp(ecN(o.radius, 0), 0, Math.min(w, h) / 2);
+    const box = () => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); };
+    ctx.save();
+    ctx.globalAlpha *= ecClamp(ecN(o.alpha, 1), 0, 1);
+    if (ecN(o.shadow, 0) > 0) {
+      ctx.save();
+      ctx.shadowColor = o.shadowColor || 'rgba(0, 0, 0, 0.5)';
+      ctx.shadowBlur = o.shadow;
+      ctx.shadowOffsetY = o.shadow * 0.35;
+      ctx.fillStyle = o.backing || '#0B1220';
+      box(); ctx.fill();
+      ctx.restore();
+    }
+    ctx.save();
+    box(); ctx.clip();
+    if (o.fit === 'contain') {
+      const s = Math.min(w / iw, h / ih);
+      ctx.drawImage(img, x + (w - iw * s) / 2, y + (h - ih * s) / 2, iw * s, ih * s);
+    } else {
+      const s = Math.max(w / iw, h / ih) * Math.max(1, ecN(o.zoom, 1));
+      const cw = w / s, ch = h / s;
+      const fx = ecClamp(ecN(o.focus && o.focus.x, 0.5), 0, 1), fy = ecClamp(ecN(o.focus && o.focus.y, 0.5), 0, 1);
+      ctx.drawImage(img, ecClamp(fx * iw - cw / 2, 0, iw - cw), ecClamp(fy * ih - ch / 2, 0, ih - ch), cw, ch, x, y, w, h);
+    }
+    ctx.restore();
+    if (o.stroke) {
+      ctx.strokeStyle = o.stroke;
+      ctx.lineWidth = ecN(o.lineWidth, 2);
+      box(); ctx.stroke();
+    }
+    ctx.restore();
+    return true;
+  },
+  /* A sine between min and max (default -1..1): freq cycles a second,
+     phase in radians. */
   osc: (time, freq, min, max, phase) => {
     const s = 0.5 + 0.5 * Math.sin(time * (freq || 1) * Math.PI * 2 + (phase || 0));
     return (min == null ? -1 : min) + ((max == null ? 1 : max) - (min == null ? -1 : min)) * s;
   },
+  /* The word being spoken at time: {id, text, start, end, prog (0..1
+     through it)}, or null between words. */
   activeWord: (words, time) => {
     if (!Array.isArray(words)) return null;
     for (let i = 0; i < words.length; i++) {
@@ -220,6 +285,8 @@ const SWDraw = {
     }
     return null;
   },
+  /* 0..1 mouth opening for the word being spoken, pulsing once per
+     syllable; 0 in silence. */
   mouthOpen: (words, time) => {
     const w = SWDraw.activeWord(words, time);
     if (!w) return 0;

@@ -91,25 +91,62 @@ struct ToolSpec {
     description: &'static str,
 }
 
+/// The arguments of a tool as JSON-schema properties, so an MCP client shows
+/// (and a model fills) the right fields instead of guessing from the prose.
+fn tool_properties(name: &str) -> &'static str {
+    match name {
+        "get_transcript" => r#"{"start": {"type": "number", "description": "window start, seconds"}, "end": {"type": "number", "description": "window end, seconds"}, "segmentId": {"type": "string"}}"#,
+        "find_in_transcript" => r#"{"query": {"type": "string", "description": "a phrase"}, "queries": {"type": "array", "items": {"type": "string"}}, "kind": {"type": "string", "enum": ["number", "filler", "pause"]}}"#,
+        "list_components" => r#"{"componentId": {"type": "string", "description": "one id: what it draws and every param its renderer reads, with defaults"}, "category": {"type": "string", "description": "only this category: title | caption | graphic | background | transform | effect | transition | lottie | scene"}}"#,
+        "export_subtitles" => r#"{"format": {"type": "string", "enum": ["srt", "vtt"]}, "maxChars": {"type": "number"}}"#,
+        "get_history" => r#"{"limit": {"type": "number"}}"#,
+        "apply_edits" => r#"{"edits": {"type": "array", "description": "in order, all or nothing", "items": {"type": "object", "properties": {"tool": {"type": "string", "description": "add_component | update_component | remove_component | add_music | add_sound | update_audio | remove_audio | set_project_settings | set_theme | add_chapter | cut_range | ..."}, "arguments": {"type": "object", "description": "add_component: {componentId, start, end | duration, params, zIndex?, keyframes?, ref?}; start / end are {seconds} or {wordId, edge?, offset?}. update_component: {instanceId, params (merge patch), start?, end?}. remove_component: {instanceId}. add_music: {mood: calm | wonder | drive, gainDB?, start?, duration?} (to the end of the film, ducked under speech). add_sound: {kind: whoosh | impact | pop | rise | tick | shimmer, start: {seconds} | {wordId}, gainDB?}. update_audio / remove_audio: {eventId, ...}."}}, "required": ["tool", "arguments"]}}, "label": {"type": "string", "description": "the undo step's name"}, "ifRevision": {"type": "number"}}"#,
+        "author_transcript" => r#"{"text": {"type": "string", "description": "the narration"}, "turns": {"type": "array", "description": "a conversation instead of text", "items": {"type": "object", "properties": {"speaker": {"type": "string"}, "text": {"type": "string"}, "gap": {"type": "number"}}}}, "language": {"type": "string", "description": "e.g. tr, en"}}"#,
+        "set_theme" => r#"{"preset": {"type": "string", "enum": ["midnight", "editorial", "meadow", "noir", "candy", "sunset", "glacier"]}, "paper": {"type": "string"}, "ink": {"type": "string"}, "accent": {"type": "string"}, "accent2": {"type": "string"}, "accentInk": {"type": "string"}}"#,
+        "synthesize_speech" => r#"{"lang": {"type": "string", "description": "e.g. tr, en"}, "text": {"type": "string", "description": "instead of the transcript"}, "voice": {"type": "string"}, "voices": {"type": "object", "description": "{speakerId: voice}"}, "seed": {"type": "number"}, "rate": {"type": "number", "description": "0.6 (slow) to 1.5 (brisk); 1 = calm narration"}, "bed": {"type": "string", "enum": ["calm", "wonder", "drive"], "description": "music under the speech"}}"#,
+        "find_background" => r#"{"query": {"type": "string"}, "url": {"type": "string"}, "file": {"type": "string"}, "provider": {"type": "string", "enum": ["unsplash", "pexels"]}, "motion": {"type": "string"}, "atmosphere": {"type": "string"}, "grade": {"type": "string"}, "start": {"type": "number"}, "duration": {"type": "number"}}"#,
+        "preview_frames" => r#"{"times": {"type": "array", "items": {"type": "number"}, "description": "seconds on the timeline; omit to look once inside every distinct stretch of the film (at most 12)"}, "scale": {"type": "number", "description": "0.1-1 of the frame size; chosen to fit the sheet when omitted"}}"#,
+        "import_image" => r#"{"page": {"type": "string", "description": "an http(s) page to screenshot"}, "url": {"type": "string", "description": "an image URL"}, "file": {"type": "string", "description": "a local image path"}, "name": {"type": "string", "description": "the file name to keep it under"}, "width": {"type": "number", "description": "page: viewport width, CSS px (default 1280)"}, "height": {"type": "number", "description": "page: viewport height (default 800)"}, "scale": {"type": "number", "description": "page: device pixels per CSS px, 1-3 (default 2)"}, "wait": {"type": "number", "description": "page: ms to wait after load (default 1200)"}, "full": {"type": "boolean", "description": "page: the whole page, not the first screen"}}"#,
+        "undo" => r#"{"expectLabel": {"type": "string"}}"#,
+        _ => "{}",
+    }
+}
+
 const TOOLS: &[ToolSpec] = &[
     ToolSpec { name: "get_project", description: "Project summary: settings, revision, assets, tracks with clips/components/audio, undo state." },
     ToolSpec { name: "get_transcript", description: "Transcript words with ids and times; a window or segmentId on long videos." },
     ToolSpec { name: "find_in_transcript", description: "Phrase search (case/diacritic-insensitive) or kind sweeps: number | filler | pause." },
-    ToolSpec { name: "list_components", description: "The built-in component catalog (id, category) and howTo for characters and conversations; componentId? returns that component's params." },
+    ToolSpec { name: "list_components", description: "The built-in component catalog (id, category, what it draws; category? narrows it), design (how to design a film scene by scene — read it first) and howTo for characters and conversations; componentId? returns that component's params." },
     ToolSpec { name: "list_chapters", description: "Chapters in timeline order with the YouTube description and issues." },
     ToolSpec { name: "list_notes", description: "The user's timeline notes." },
     ToolSpec { name: "export_subtitles", description: "SRT / WebVTT of the edited transcript (<= 2 lines, 1-7 s cues)." },
     ToolSpec { name: "get_history", description: "Undo / redo steps newest first: label, by, revision." },
-    ToolSpec { name: "apply_edits", description: "Several edit tools as ONE atomic undo step; edits [{tool, arguments}] (<= 200), label?, ifRevision?. Tools include add_component / update_component / remove_component and set_project_settings {name?, width?, height?, fps?, cast? {name: character | null}} — the cast is the project's characters (see list_components howTo)." },
+    ToolSpec { name: "apply_edits", description: "Several edit tools as ONE atomic undo step; edits [{tool, arguments}] (<= 200), label?, ifRevision?. Tools include add_component / update_component / remove_component, add_music {mood} / add_sound {kind, start} (generated sound, mixed into the film's one track with the narration) and set_project_settings {name?, width?, height?, fps?, cast? {name: character | null}} — the cast is the project's characters (see list_components howTo)." },
     ToolSpec { name: "author_transcript", description: "From-zero authoring: create the transcript from plain text (or turns [{speaker, text, gap?}] for a conversation; a negative gap overlaps the previous turn) with TTS-like timing (the stand-in for the TTS job)." },
     ToolSpec { name: "set_theme", description: "Set the project's visual theme (document data, not engine defaults): preset? (midnight | editorial | meadow | noir | candy | sunset | glacier) and/or overrides paper/ink/accent/accent2/accentInk (hex) and bg.{style} color arrays. Component colour params still win over the theme." },
-    ToolSpec { name: "synthesize_speech", description: "On-device TTS (ONNX): speak the transcript (or text?) in lang, voice?, seed?; writes a WAV asset into the bundle, places it on the Voice track and fits the project duration. English uses Phonon and Turkish EMA unless a Supertonic voice is chosen; Supertonic 3 covers 31 languages with voices M1-M5 / F1-F5 (voices? {speakerId: voice} speaks a transcript authored with turns in one voice per speaker, levelled to one loudness; bed? 'ambient' adds a quiet music bed ducked under the speech): en ko ja ar bg cs da de el es et fi fr hi hr hu id it lt lv nl pl pt ro ru sk sl sv tr uk vi (anything else falls back to <na>)." },
+    ToolSpec { name: "synthesize_speech", description: "On-device TTS (ONNX): speak the transcript (or text?) in lang, voice?, seed?, rate? (0.6 slow to 1.5 brisk; 1, the default, is calm narration for every voice — the text is spoken sentence by sentence with a breath after each, and captions are re-timed onto the voice; the result reports sentences, wordsPerMinute while speaking and pauseSeconds in total); writes a WAV asset into the bundle, places it on the Voice track and fits the project duration. English uses Phonon and Turkish EMA unless a Supertonic voice is chosen; Supertonic 3 covers 31 languages with voices M1-M5 / F1-F5 (voices? {speakerId: voice} speaks a transcript authored with turns in one voice per speaker, levelled to one loudness; bed? calm | wonder | drive adds that music under the speech, as apply_edits add_music does): en ko ja ar bg cs da de el es et fi fr hi hr hu id it lt lv nl pl pt ro ru sk sl sv tr uk vi (anything else falls back to <na>)." },
     ToolSpec { name: "find_background", description: "Place a real photo behind the story as a full-frame, moving background. Providers: unsplash (Unsplash License, commercial use, no attribution required) or pexels; a query is searched with UNSPLASH_ACCESS_KEY / PEXELS_API_KEY in the environment. Or pass url (an image URL) or file (a local image path). The image is embedded as a data URI and animated: motion kenburns | zoomin | zoomout | panleft | panright | drift | parallax | ripple | pulse, atmosphere sheen | rain | snow | dust | embers | bokeh | rays | fog | none, grade dark | warm | cool | violet | green | light | none. Motion and atmosphere are inferred from the query when omitted." },
     ToolSpec { name: "export_html", description: "Write the self-contained HTML5 player next to the project (<name>.html): plays anywhere, narration embedded. Returns path, bytes, durationSeconds." },
     ToolSpec { name: "render_video", description: "Render the project to MP4 next to it (<name>.mp4): every frame drawn deterministically at the project fps by headless Chrome, encoded by ffmpeg with the narration. Takes about the video's length or longer; one render at a time. Returns path, bytes, durationSeconds." },
+    ToolSpec { name: "preview_frames", description: "LOOK at the film before rendering it: draws moments exactly as render_video would and returns sheet (one PNG with every moment side by side, each under its time — open it), frames [{time, path, components [{id, componentId, box}]}], problems (a component runs off the frame or sits against its edge — unless its params say bleed: true — painted nothing, or threw; read from the pixels each component really painted) and overlaps (two placed components covering each other). times? [seconds]; without it, one moment inside every distinct stretch of the film. A few seconds per call: check after every round of edits, fix, look again." },
+    ToolSpec { name: "import_image", description: "Bring a picture into the project: page (an http(s) URL — a screenshot of the real page, width? x height? CSS px at scale? 2, full? for the whole page), url (an image URL) or file (a local image). Saved under media/ in the project; returns src (e.g. media/home.png) for imageOverlay {src} or, in a code overlay, sw.image(ctx, params.image, x, y, w, h, {radius, fit, focus, zoom})." },
     ToolSpec { name: "undo", description: "One undo step; expectLabel? refuses unless the step has this label." },
     ToolSpec { name: "redo", description: "One redo step." },
 ];
+
+/// The server's own `SCREENWORDS_MCP_TOKEN`: unset or blank means "draw a
+/// random token"; otherwise it must be 16-128 characters of `A-Z a-z 0-9 - _`
+/// (it is printed inside the ready line and compared with the Bearer header).
+pub fn fixed_token(value: Option<&str>) -> Result<Option<String>, String> {
+    let Some(token) = value.map(str::trim).filter(|t| !t.is_empty()) else {
+        return Ok(None);
+    };
+    let ok_chars = token.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    if !(16..=128).contains(&token.len()) || !ok_chars {
+        return Err("SCREENWORDS_MCP_TOKEN must be 16-128 characters of A-Z a-z 0-9 - _".into());
+    }
+    Ok(Some(token.to_string()))
+}
 
 impl McpServer {
     pub fn new(document: Document) -> (Arc<McpServer>, String) {
@@ -119,6 +156,17 @@ impl McpServer {
     pub fn new_shared(
         document: std::sync::Arc<Mutex<Document>>,
         bundle_path: Option<std::path::PathBuf>,
+    ) -> (Arc<McpServer>, String) {
+        Self::new_with_token(document, bundle_path, None)
+    }
+
+    /// Like `new_shared`, with the Bearer token chosen by the caller: `Some`
+    /// (already checked by `fixed_token`) stays the same across restarts, so
+    /// an MCP client configured once keeps working; `None` draws a fresh one.
+    pub fn new_with_token(
+        document: std::sync::Arc<Mutex<Document>>,
+        bundle_path: Option<std::path::PathBuf>,
+        fixed: Option<String>,
     ) -> (Arc<McpServer>, String) {
         // Token: 32 hex chars of entropy, printed in ready.json.
         let mut seed = std::time::SystemTime::now()
@@ -137,7 +185,7 @@ impl McpServer {
         let server = Arc::new(McpServer {
             document,
             bundle_path,
-            token,
+            token: fixed.unwrap_or(token),
             session_id,
         });
         let ready = serde_ready(&server);
@@ -202,44 +250,6 @@ fn natural_gap(index: usize, prev: Option<&Turn>, this: &Turn) -> f64 {
     base + (h % 1000) as f64 / 1000.0 * 0.16 - 0.08
 }
 
-/// Bring a spoken clip to a common speech level: RMS over the frames that
-/// carry speech (20 ms, above 10% of the peak), so voices that the models
-/// render louder or softer sit at one loudness. The gain stays within
-/// -14 dB..+10 dB so a near-silent clip is not pumped into noise.
-fn level_speech(clip: &mut [f32], rate: u32, target_rms: f32) {
-    let win = (rate as usize / 50).max(1);
-    let peak = clip.iter().fold(0.0f32, |m, s| m.max(s.abs()));
-    if peak <= 1e-6 {
-        return;
-    }
-    let (mut sum, mut n) = (0.0f64, 0usize);
-    for frame in clip.chunks(win) {
-        let fp = frame.iter().fold(0.0f32, |m, s| m.max(s.abs()));
-        if fp > peak * 0.1 {
-            sum += frame.iter().map(|s| (*s as f64) * (*s as f64)).sum::<f64>();
-            n += frame.len();
-        }
-    }
-    if n == 0 {
-        return;
-    }
-    let rms = (sum / n as f64).sqrt() as f32;
-    let gain = (target_rms / rms.max(1e-6)).clamp(0.2, 3.16);
-    for s in clip.iter_mut() {
-        *s *= gain;
-    }
-}
-
-/// A soft knee above 0.8: overlapping voices sum without hard clipping.
-fn soft_limit(x: f32) -> f32 {
-    let a = x.abs();
-    if a <= 0.8 {
-        x
-    } else {
-        x.signum() * (0.8 + 0.2 * ((a - 0.8) / 0.2).tanh())
-    }
-}
-
 /// Speak each segment in its own voice and lay them on one track: the
 /// model's leading and trailing near-silence is trimmed, every clip is
 /// levelled to one speech loudness, segments follow with their authored or
@@ -250,13 +260,14 @@ fn synthesize_turns(
     lang: &str,
     turns: &[Turn],
     seed: u32,
-) -> Result<(crate::tts::Audio, Option<crate::tts::ChunkWindows>), String> {
+    pace: crate::tts::Pace,
+) -> Result<(crate::tts::Audio, crate::tts::ChunkWindows), String> {
     let mut samples: Vec<f32> = Vec::new();
     let mut rate = 0u32;
     let mut windows = Vec::new();
     let mut cursor = 0.0f64;
     for (i, turn) in turns.iter().enumerate() {
-        let (audio, _) = crate::tts::synthesize_timed(lang, &turn.text, &turn.voice, seed)?;
+        let audio = crate::tts::synthesize(lang, &turn.text, &turn.voice, seed, pace)?;
         if rate == 0 {
             rate = audio.rate;
         } else if audio.rate != rate {
@@ -268,7 +279,7 @@ fn synthesize_turns(
         let a = (a - 0.03).max(0.0);
         let b = (b + 0.06).min(dur);
         let mut clip = audio.samples[(a * r) as usize..((b * r) as usize).max((a * r) as usize)].to_vec();
-        level_speech(&mut clip, rate, 0.1);
+        crate::audio::level_speech(&mut clip, rate, 0.1);
         let gap = turn.gap.unwrap_or_else(|| natural_gap(i, i.checked_sub(1).map(|j| &turns[j]), turn));
         let start = if i == 0 { 0.0 } else { (cursor + gap).max(0.0) };
         let s0 = (start * r) as usize;
@@ -283,9 +294,9 @@ fn synthesize_turns(
         cursor = cursor.max(start + len);
     }
     for s in samples.iter_mut() {
-        *s = soft_limit(*s);
+        *s = crate::audio::soft_limit(*s);
     }
-    Ok((crate::tts::Audio { samples, rate: rate.max(1) }, Some(windows)))
+    Ok((crate::tts::Audio { samples, rate: rate.max(1) }, windows))
 }
 
 /// The spoken part of a TTS chunk window: an energy-based trim of the
@@ -398,6 +409,7 @@ pub fn handle_mcp(server: &Arc<McpServer>, request: &Request) -> Response {
                     o.set("description", Value::str(t.description));
                     let mut schema = Value::obj();
                     schema.set("type", Value::str("object"));
+                    schema.set("properties", Value::parse(tool_properties(t.name)).unwrap_or_else(|_| Value::obj()));
                     o.set("inputSchema", schema);
                     o
                 })
@@ -480,32 +492,45 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
             };
             out.map_err(|message| EditError::Validation { path: "project".into(), message })
         }
+        "preview_frames" | "import_image" => {
+            let Some(base) = server.bundle_path.clone() else {
+                return Err(EditError::Validation {
+                    path: "project".into(),
+                    message: "this needs an on-disk project (screenwords app <project>)".into(),
+                });
+            };
+            let out = if name == "preview_frames" {
+                crate::preview::preview_frames(doc.project(), &base, args)
+            } else {
+                crate::preview::import_image(&base, args, &|url| fb_fetch(url, &[]).map_err(|e| e.message()))
+            };
+            out.map_err(|message| EditError::Validation { path: name.to_string(), message })
+        }
         "list_components" => {
             if let Some(id) = args.get("componentId").and_then(Value::as_str) {
                 if !crate::catalog::exists(id) {
                     return Err(EditError::NotFound { path: "componentId".into(), message: crate::catalog::not_found_message(id) });
                 }
-                let mut r = Value::obj();
-                r.set("componentId", Value::str(id));
-                r.set("category", Value::str(crate::catalog::category_of(id).unwrap_or("code")));
-                r.set(
-                    "params",
-                    Value::str(crate::catalog::params_doc(id).unwrap_or("Common params: position {x, y} (0-1), colours as #RRGGBB, text fields, animate {in, out, duration}.")),
-                );
-                return Ok(r);
+                return Ok(crate::catalog::describe(id));
             }
+            let only = args.get("category").and_then(Value::as_str);
             let mut items = Vec::new();
             for id in crate::catalog::all_ids() {
+                let category = crate::catalog::category_of(id).unwrap_or("other");
+                if only.is_some_and(|c| c != category) {
+                    continue;
+                }
                 let mut o = Value::obj();
                 o.set("componentId", Value::str(id));
-                o.set(
-                    "category",
-                    Value::str(crate::catalog::category_of(id).unwrap_or("other")),
-                );
+                o.set("category", Value::str(category));
+                if let Some(draws) = crate::catalog::draws(id) {
+                    o.set("draws", Value::str(draws));
+                }
                 items.push(o);
             }
             let mut r = Value::obj();
             r.set("components", Value::Array(items));
+            r.set("design", Value::str(crate::catalog::DESIGN_HOW_TO));
             r.set("howTo", Value::str(crate::catalog::HOW_TO));
             Ok(r)
         }
@@ -547,6 +572,18 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
                     pair
                 }).collect()),
             );
+            // Every id the batch made, in edit order, so a follow-up
+            // update_component / remove_component needs no ref and no re-read.
+            r.set(
+                "created",
+                Value::Array(result.created.iter().map(|(index, tool, id)| {
+                    let mut one = Value::obj();
+                    one.set("edit", Value::Int(*index as i64));
+                    one.set("tool", Value::str(tool));
+                    one.set("id", Value::str(id));
+                    one
+                }).collect()),
+            );
             if !result.removed_ids.is_empty() {
                 r.set(
                     "removedIds",
@@ -575,6 +612,17 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
             let lang = args.get("lang").and_then(Value::as_str).unwrap_or("en").to_string();
             let voice = args.get("voice").and_then(Value::as_str).unwrap_or("easton").to_string();
             let seed = args.get("seed").and_then(Value::as_i64).unwrap_or(42) as u32;
+            let pace = match args.get("rate").and_then(|r| r.as_f64().or_else(|| r.as_i64().map(|n| n as f64))) {
+                Some(rate) => crate::tts::Pace::new(rate).map_err(|message| EditError::Validation { path: "rate".into(), message })?,
+                None => crate::tts::Pace::NARRATION,
+            };
+            // bed: a quiet music bed under the speech — the generated music
+            // add_music places ('ambient' is the calm mood), checked before
+            // the minutes of synthesis rather than after.
+            let bed = args.get("bed").and_then(Value::as_str).map(|b| if b == "ambient" { "calm" } else { b });
+            if let Some(mood) = bed.filter(|m| !crate::audio::MOODS.contains(m)) {
+                return Err(EditError::Validation { path: "bed".into(), message: format!("'{mood}' is not a mood (one of: {})", crate::audio::MOODS.join(", ")) });
+            }
             let text = match args.get("text").and_then(Value::as_str) {
                 Some(t) => t.to_string(),
                 None => {
@@ -604,9 +652,21 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
                 .filter(|v| matches!(v, Value::Object(_)))
                 .map(|voices| speaker_segments(doc.project(), voices, &voice))
                 .filter(|t| !t.is_empty());
-            let (audio, chunk_windows) = match turns {
-                Some(turns) => synthesize_turns(&lang, &turns, seed),
-                None => crate::tts::synthesize_timed(&lang, &text, &voice, seed),
+            // The voices it is read in stay with the project: the Script panel
+            // shows them and the next take sounds the same.
+            let spoken_voices = match (&turns, args.get("voices")) {
+                (Some(_), Some(voices)) => voices.clone(),
+                _ => {
+                    let mut one = Value::obj();
+                    one.set("narrator", Value::str(&voice));
+                    one
+                }
+            };
+            let crate::tts::Speech { audio, sentences: chunk_windows, words: word_spans } = match turns {
+                // Several voices are levelled and trimmed into one take, which
+                // moves every word; their times are not carried through.
+                Some(turns) => synthesize_turns(&lang, &turns, seed, pace).map(|(audio, sentences)| crate::tts::Speech { audio, sentences, words: None }),
+                None => crate::tts::synthesize_timed(&lang, &text, &voice, seed, pace),
             }
             .map_err(|e| EditError::Validation { path: "lang".into(), message: format!("tts failed: {e}") })?;
             if server.bundle_path.is_none() {
@@ -615,24 +675,21 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
                     message: "speech needs an on-disk project (screenwords app)".into(),
                 });
             }
-            // bed: 'ambient' lays a quiet chord bed under the speech, ducked
-            // wherever someone talks (the player plays one audio track, so
-            // the bed is mixed into it).
-            let mut audio = audio;
-            if args.get("bed").and_then(Value::as_str) == Some("ambient") {
-                let tail = (audio.rate as f32 * 1.5) as usize;
-                audio.samples.extend(std::iter::repeat(0.0).take(tail));
-                let bed = crate::tts::bed::ambient(audio.samples.len() as f32 / audio.rate as f32, audio.rate, &audio.samples);
-                for (s, b) in audio.samples.iter_mut().zip(bed) {
-                    *s += b;
-                }
-            }
             // The speech lives in the document, like the photo backgrounds:
             // a data URI, no sidecar file. A bundle opened anywhere (or copied
             // alone) still plays and renders.
             let wav = crate::tts::wav::wav_bytes(&audio.samples, audio.rate);
             let duration = audio.samples.len() as f64 / audio.rate as f64;
             let mut root = doc.project().root.clone();
+            if let Some(settings) = root.get_mut("settings") {
+                let mut kept = settings.get("voices").filter(|v| matches!(v, Value::Object(_))).cloned().unwrap_or_else(Value::obj);
+                for (speaker, name) in spoken_voices.as_object().unwrap_or(&[]) {
+                    if name.as_str().is_some() {
+                        kept.set(speaker, name.clone());
+                    }
+                }
+                settings.set("voices", kept);
+            }
             let mut asset = Value::obj();
             let asset_id = format!("ast_{lang}");
             asset.set("id", Value::str(&asset_id));
@@ -675,11 +732,13 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
                     tr.set("audioEvents", events);
                 }
             }
-            // Fit the timeline to the real speech. English speaks in chunks
-            // with exactly known audio windows, so each SENTENCE is mapped to
-            // its true window (piecewise-linear through the boundaries) and
-            // captions land exactly on the voice. Other languages fall back
-            // to one global factor.
+            // Fit the timeline to the real speech. Every voice speaks sentence
+            // by sentence with exactly known audio windows, so each SENTENCE
+            // is mapped to its true window (piecewise-linear through the
+            // boundaries) and captions land on the voice. Only when the
+            // spoken sentences and the transcript's segments differ in number
+            // (speech of a text other than the transcript) is one global
+            // factor used instead.
             let segs: Vec<(f64, f64)> = root
                 .get("transcripts")
                 .and_then(Value::as_array)
@@ -697,23 +756,19 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
                 })
                 .unwrap_or_default();
             let speech_end = segs.last().map(|(_, e)| *e).unwrap_or(0.0);
-            let piecewise: Vec<((f64, f64), (f64, f64))> = match &chunk_windows {
-                // A chunk window is its full audio span, including the
-                // leading/trailing near-silence the model emits around the
-                // sentence. Mapping onto the raw window stretched every
-                // sentence over speech + pause, so captions drifted late by
-                // up to the pause length. Trim each window to the spoken
-                // part first; the pause then lands between sentences, where
-                // no word needs it.
-                Some(wins) if wins.len() == segs.len() && !segs.is_empty() => segs
-                    .iter()
-                    .zip(wins.iter())
-                    .map(|((s0, e0), (wa, wd))| {
-                        let (na, nb) = speech_span(&audio.samples, audio.rate, *wa, *wd);
-                        ((*s0, *e0), (na, nb))
-                    })
-                    .collect(),
-                _ => Vec::new(),
+            // A sentence's window is its full audio span, including the
+            // near-silence the model emits around it. Mapping onto the raw
+            // window stretched every sentence over speech + pause, so captions
+            // drifted late by up to the pause length. Trim each window to the
+            // spoken part first; the pause then lands between sentences,
+            // where no word needs it.
+            let piecewise: Vec<((f64, f64), (f64, f64))> = if chunk_windows.len() == segs.len() {
+                segs.iter()
+                    .zip(chunk_windows.iter())
+                    .map(|(seg, (start, length))| (*seg, speech_span(&audio.samples, audio.rate, *start, *length)))
+                    .collect()
+            } else {
+                Vec::new()
             };
             let map_time = |secs: f64| -> f64 {
                 if !piecewise.is_empty() {
@@ -862,98 +917,30 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
             if speech_end > 0.05 {
                 rescale_doc(&mut root);
             }
-            // Word-exact sync (en): force-align the known words to the actual
-            // audio and write those times straight into the transcript. Only
-            // when the spoken word count matches the transcript (numbers etc.
-            // change the count; those stay on the sentence-exact mapping).
-            if lang == "en" {
-                let doc_words: Vec<String> = root
-                    .get("transcripts")
-                    .and_then(Value::as_array)
-                    .and_then(|ts| ts.first())
-                    .and_then(|t| t.get("words"))
-                    .and_then(Value::as_array)
-                    .map(|ws| {
-                        ws.iter()
-                            .filter_map(|w| w.get("text").and_then(Value::as_str).map(str::to_string))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let spoken_count = crate::tts::en_phonon::normalize_english(&text)
-                    .split_whitespace()
-                    .count();
-                let aligned = if doc_words.len() == spoken_count && !doc_words.is_empty() {
-                    crate::tts::align::Aligner::new()
-                        .and_then(|mut a| a.align(&audio.samples, &doc_words))
-                        .ok()
-                } else {
-                    None
-                };
-                if let Some(spans) = aligned {
-                    if let Some(t) = root.get_mut("transcripts").and_then(Value::as_array_mut) {
-                        if let Some(t0) = t.first_mut() {
-                            if let Some(words) = t0.get_mut("words").and_then(Value::as_array_mut) {
-                                for (w, (a, b)) in words.iter_mut().zip(spans.iter()) {
-                                    if let Some(st) = w.get_mut("start") {
-                                        *st.get_mut("value").unwrap() =
-                                            Value::Int((a * 1000.0).round() as i64);
-                                    }
-                                    if let Some(en) = w.get_mut("end") {
-                                        *en.get_mut("value").unwrap() =
-                                            Value::Int((b * 1000.0).round() as i64);
-                                    }
-                                }
-                            }
-                            // segments follow their words exactly
-                            let word_times: Vec<(String, f64, f64)> = t0
-                                .get("words")
-                                .and_then(Value::as_array)
-                                .map(|ws| {
-                                    ws.iter()
-                                        .filter_map(|w| {
-                                            let id = w.get("id")?.as_str()?.to_string();
-                                            let a = w.get("start").and_then(|x| x.get("value"))
-                                                .and_then(Value::as_f64)?;
-                                            let b = w.get("end").and_then(|x| x.get("value"))
-                                                .and_then(Value::as_f64)?;
-                                            Some((id, a, b))
-                                        })
-                                        .collect()
-                                })
-                                .unwrap_or_default();
-                            if let Some(segs) = t0.get_mut("segments").and_then(Value::as_array_mut) {
-                                for seg in segs.iter_mut() {
-                                    let ids: Vec<String> = seg
-                                        .get("wordIds")
-                                        .and_then(Value::as_array)
-                                        .map(|a| {
-                                            a.iter()
-                                                .filter_map(|v| v.as_str().map(str::to_string))
-                                                .collect()
-                                        })
-                                        .unwrap_or_default();
-                                    if ids.is_empty() {
-                                        continue;
-                                    }
-                                    let mut min = f64::INFINITY;
-                                    let mut max = f64::NEG_INFINITY;
-                                    for (id, a, b) in &word_times {
-                                        if ids.iter().any(|i| i == id) {
-                                            min = min.min(*a);
-                                            max = max.max(*b);
-                                        }
-                                    }
-                                    if min.is_finite() {
-                                        *seg.get_mut("start").unwrap().get_mut("value").unwrap() =
-                                            Value::Int(min as i64);
-                                        *seg.get_mut("end").unwrap().get_mut("value").unwrap() =
-                                            Value::Int(max as i64);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+            // Word-exact sync: write the true time of every word straight into
+            // the transcript. English force-aligns the known words to the
+            // audio; a voice that reports its own word times (Turkish) is
+            // taken at its word. Only when the count matches the transcript —
+            // otherwise the sentence-exact mapping above stands.
+            let doc_words: Vec<String> = root
+                .get("transcripts")
+                .and_then(Value::as_array)
+                .and_then(|ts| ts.first())
+                .and_then(|t| t.get("words"))
+                .and_then(Value::as_array)
+                .map(|ws| ws.iter().filter_map(|w| w.get("text").and_then(Value::as_str).map(str::to_string)).collect())
+                .unwrap_or_default();
+            let exact = if lang == "en" {
+                let spoken_count = crate::tts::en_phonon::normalize_english(&text).split_whitespace().count();
+                (doc_words.len() == spoken_count && !doc_words.is_empty())
+                    .then(|| crate::tts::align::Aligner::new().and_then(|mut a| a.align(&audio.samples, &doc_words)).ok())
+                    .flatten()
+                    .map(|spans| spans.into_iter().map(|(a, b)| (a as f64, b as f64)).collect::<Vec<(f64, f64)>>())
+            } else {
+                word_spans.filter(|spans| spans.len() == doc_words.len() && !spans.is_empty())
+            };
+            if let Some(spans) = &exact {
+                set_word_times(&mut root, spans);
             }
             // The story ends with the audio, or with the last spoken word
             // when the aligner put one past the tail sample.
@@ -978,6 +965,13 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
                 );
             }
             doc.project_mut().root = root;
+            // One bed per film: asking again with speech re-made adds none.
+            let has_music = doc.project().tracks().iter().any(|t| t.audio_events().iter().any(|e| e.get("role").and_then(Value::as_str) == Some("music")));
+            if let Some(mood) = bed.filter(|_| !has_music) {
+                let mut music = Value::obj();
+                music.set("mood", Value::str(mood));
+                doc.apply_edits(Some("music bed"), None, &[EditOp::new("add_music", music)])?;
+            }
             persist(server, doc);
             let mut r = Value::obj();
             r.set("assetId", Value::str(&asset_id));
@@ -987,6 +981,16 @@ pub(crate) fn call_tool(server: &McpServer, doc: &mut Document, name: &str, args
             r.set("sampleRate", Value::Int(audio.rate as i64));
             r.set("lang", Value::str(&lang));
             r.set("voice", Value::str(&voice));
+            // How it was read, for a caller that cannot listen: the pace
+            // while speaking and the silence between sentences.
+            let speaking: f64 = chunk_windows.iter().map(|w| w.1).sum();
+            let spoken_words = text.split_whitespace().count() as f64;
+            r.set("sentences", Value::Int(chunk_windows.len() as i64));
+            r.set("wordTiming", Value::str(if exact.is_some() { "exact" } else { "spread within each sentence" }));
+            if speaking > 0.0 {
+                r.set("wordsPerMinute", Value::Int((spoken_words / speaking * 60.0).round() as i64));
+                r.set("pauseSeconds", Value::from_f64(((duration - speaking).max(0.0) * 100.0).round() / 100.0));
+            }
             Ok(r)
         }
         "find_background" => {
@@ -1412,6 +1416,43 @@ fn find_background(doc: &mut Document, args: &Value) -> Result<Value, EditError>
 }
 
 /// Writes the document back to its bundle, like the app does on every change.
+/// Writes `(start, end)` seconds onto the transcript's words, in order, and
+/// makes every segment span exactly its own words.
+fn set_word_times(root: &mut Value, spans: &[(f64, f64)]) {
+    let Some(transcript) = root.get_mut("transcripts").and_then(Value::as_array_mut).and_then(|ts| ts.first_mut()) else {
+        return;
+    };
+    let ms = |seconds: f64| Value::Int((seconds * 1000.0).round() as i64);
+    let mut times: std::collections::HashMap<String, (f64, f64)> = std::collections::HashMap::new();
+    if let Some(words) = transcript.get_mut("words").and_then(Value::as_array_mut) {
+        for (word, (start, end)) in words.iter_mut().zip(spans) {
+            for (key, at) in [("start", start), ("end", end)] {
+                if let Some(value) = word.get_mut(key).and_then(|t| t.get_mut("value")) {
+                    *value = ms(*at);
+                }
+            }
+            if let Some(id) = word.get("id").and_then(Value::as_str) {
+                times.insert(id.to_string(), (*start, *end));
+            }
+        }
+    }
+    for segment in transcript.get_mut("segments").and_then(Value::as_array_mut).into_iter().flatten() {
+        let own: Vec<(f64, f64)> = segment
+            .get("wordIds")
+            .and_then(Value::as_array)
+            .map(|ids| ids.iter().filter_map(|id| times.get(id.as_str()?).copied()).collect())
+            .unwrap_or_default();
+        let (Some(first), Some(last)) = (own.first(), own.last()) else {
+            continue;
+        };
+        for (key, at) in [("start", first.0), ("end", last.1)] {
+            if let Some(value) = segment.get_mut(key).and_then(|t| t.get_mut("value")) {
+                *value = ms(at);
+            }
+        }
+    }
+}
+
 fn persist(server: &McpServer, doc: &Document) {
     let Some(bundle) = &server.bundle_path else {
         return;
@@ -1482,33 +1523,110 @@ mod tests {
     use super::*;
 
     #[test]
-    fn voices_are_levelled_and_overlaps_limited_softly() {
-        // A quiet and a loud voice (1 s of 220 Hz at 0.05 and 0.6 peak,
-        // with a silent half second each side) come out at one speech level.
-        let rate = 24000u32;
-        let tone = |amp: f32| -> Vec<f32> {
-            let mut v = vec![0.0f32; rate as usize / 2];
-            v.extend((0..rate).map(|i| amp * (i as f32 * 220.0 * std::f32::consts::TAU / rate as f32).sin()));
-            v.extend(vec![0.0f32; rate as usize / 2]);
-            v
+    fn a_fixed_token_survives_restarts_and_guards_the_endpoint() {
+        // Unset / blank keeps the random token; a bad one is refused, not ignored.
+        assert_eq!(fixed_token(None), Ok(None));
+        assert_eq!(fixed_token(Some("  ")), Ok(None));
+        for bad in ["short", "has space in the token!", "quote\"in-the-token-value", &"x".repeat(129)] {
+            assert!(fixed_token(Some(bad)).is_err(), "{bad} accepted");
+        }
+        let fixed = fixed_token(Some(" 0123456789abcdef-FIXED_token ")).unwrap().unwrap();
+        assert_eq!(fixed, "0123456789abcdef-FIXED_token");
+
+        let post = |server: &Arc<McpServer>, bearer: &str| {
+            let request = Request {
+                method: "POST".into(),
+                path: "/mcp".into(),
+                query: Vec::new(),
+                headers: vec![("authorization".into(), format!("Bearer {bearer}"))],
+                body: br#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#.to_vec(),
+            };
+            handle_mcp(server, &request)
         };
-        let rms = |v: &[f32]| {
-            let speech: Vec<f32> = v.iter().copied().filter(|s| s.abs() > 1e-4).collect();
-            (speech.iter().map(|s| s * s).sum::<f32>() / speech.len() as f32).sqrt()
+        // Two "restarts" with the same fixed token: the same client header works on both.
+        for _ in 0..2 {
+            let doc = std::sync::Arc::new(Mutex::new(Document::new(blank_project("t", true))));
+            let (server, ready) = McpServer::new_with_token(doc, None, Some(fixed.clone()));
+            assert!(ready.contains("\"token\":\"0123456789abcdef-FIXED_token\""), "{ready}");
+            let ok = post(&server, &fixed);
+            assert_eq!(ok.status, 200);
+            assert!(String::from_utf8(ok.body).unwrap().contains("get_project"));
+            assert_eq!(post(&server, "0123456789abcdef-WRONG_token").status, 403);
+        }
+        // Without one, two servers never share a token.
+        let (a, _) = McpServer::new(Document::new(blank_project("t", true)));
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let (b, _) = McpServer::new(Document::new(blank_project("t", true)));
+        assert_ne!(a.token, b.token);
+        assert_eq!(post(&b, &a.token).status, 403);
+    }
+
+    #[test]
+    fn exact_word_times_are_written_and_segments_follow_their_words() {
+        // A transcript as author_transcript leaves it (evenly guessed times),
+        // then the times the Turkish voice reported for the same five words.
+        let mut doc = Document::new(blank_project("t", true));
+        let mut args = Value::obj();
+        args.set("text", Value::str("Merkezinde Güneş yandı. Dünya doğdu."));
+        args.set("language", Value::str("tr"));
+        doc.apply_edits(None, None, &[EditOp::new("author_transcript", args)]).unwrap();
+        let mut root = doc.project().root.clone();
+        let spans = [(0.0, 0.62), (0.62, 1.04), (1.04, 1.48), (1.93, 2.33), (2.33, 2.81)];
+        set_word_times(&mut root, &spans);
+        let transcript = &root.get("transcripts").and_then(Value::as_array).unwrap()[0];
+        let ms = |v: &Value, key: &str| v.get(key).and_then(|t| t.get("value")).and_then(Value::as_i64).unwrap();
+        let words = transcript.get("words").and_then(Value::as_array).unwrap();
+        assert_eq!(words.iter().map(|w| (ms(w, "start"), ms(w, "end"))).collect::<Vec<_>>(), vec![(0, 620), (620, 1040), (1040, 1480), (1930, 2330), (2330, 2810)]);
+        // Each sentence spans its own words, the breath between them left out.
+        let segments = transcript.get("segments").and_then(Value::as_array).unwrap();
+        assert_eq!(segments.iter().map(|g| (ms(g, "start"), ms(g, "end"))).collect::<Vec<_>>(), vec![(0, 1480), (1930, 2810)]);
+        // Fewer spans than words: the words that have one get it, nothing panics.
+        set_word_times(&mut root, &spans[..2]);
+    }
+
+    #[test]
+    fn tools_declare_their_arguments_and_the_catalog_teaches_design() {
+        let (server, _) = McpServer::new(Document::new(blank_project("t", true)));
+        let token = server.token.clone();
+        let request = Request {
+            method: "POST".into(),
+            path: "/mcp".into(),
+            query: Vec::new(),
+            headers: vec![("authorization".into(), format!("Bearer {token}"))],
+            body: br#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#.to_vec(),
         };
-        let (mut quiet, mut loud) = (tone(0.05), tone(0.6));
-        level_speech(&mut quiet, rate, 0.1);
-        level_speech(&mut loud, rate, 0.1);
-        assert!((rms(&loud) - 0.1).abs() < 0.01, "loud voice at {}", rms(&loud));
-        // The quiet one is raised by at most +10 dB.
-        assert!(rms(&quiet) > 0.1 && rms(&quiet) < 0.12, "quiet voice at {}", rms(&quiet));
-        let mut silent = vec![0.0f32; 100];
-        level_speech(&mut silent, rate, 0.1);
-        assert!(silent.iter().all(|s| *s == 0.0));
-        // The limiter is transparent below the knee and never exceeds 1.
-        assert_eq!(soft_limit(0.5), 0.5);
-        assert!(soft_limit(1.7) < 1.0 && soft_limit(1.7) > 0.95 && soft_limit(-1.7) > -1.0);
-        assert!(soft_limit(0.9) < 0.9 && soft_limit(0.9) > soft_limit(0.85));
+        let listed = Value::parse(&String::from_utf8(handle_mcp(&server, &request).body).unwrap()).unwrap();
+        let tools = listed.get("result").and_then(|r| r.get("tools")).and_then(Value::as_array).unwrap();
+        let schema = |name: &str| {
+            tools.iter().find(|t| t.get("name").and_then(Value::as_str) == Some(name)).and_then(|t| t.get("inputSchema")).cloned().unwrap_or_else(|| panic!("{name} is not listed"))
+        };
+        for (tool, arg) in [("apply_edits", "edits"), ("preview_frames", "times"), ("import_image", "page"), ("author_transcript", "text"), ("synthesize_speech", "lang"), ("list_components", "componentId")] {
+            assert!(schema(tool).get("properties").and_then(|p| p.get(arg)).is_some(), "{tool} does not declare {arg}");
+        }
+        for spec in TOOLS {
+            assert!(Value::parse(tool_properties(spec.name)).is_ok(), "{} has a broken schema", spec.name);
+        }
+
+        let mut doc = server.document.lock().unwrap();
+        let all = call_tool(&server, &mut doc, "list_components", &Value::obj()).unwrap();
+        let design = all.get("design").and_then(Value::as_str).unwrap();
+        for needle in ["codeOverlay_", "preview_frames", "import_image", "transition", "animate"] {
+            assert!(design.contains(needle), "design misses {needle}");
+        }
+        let items = all.get("components").and_then(Value::as_array).unwrap();
+        let pill = items.iter().find(|c| c.get("componentId").and_then(Value::as_str) == Some("badgePill")).unwrap();
+        assert_eq!(pill.get("draws").and_then(Value::as_str), Some("Pill badge"));
+        let mut only = Value::obj();
+        only.set("category", Value::str("transition"));
+        let transitions = call_tool(&server, &mut doc, "list_components", &only).unwrap();
+        let listed = transitions.get("components").and_then(Value::as_array).unwrap();
+        assert!(listed.len() > 20 && listed.iter().all(|c| c.get("category").and_then(Value::as_str) == Some("transition")));
+
+        // Looking and importing write next to the project, so they need one.
+        for tool in ["preview_frames", "import_image"] {
+            let err = call_tool(&server, &mut doc, tool, &Value::obj()).unwrap_err();
+            assert!(err.message().contains("on-disk project"), "{}", err.message());
+        }
     }
 
     #[test]
@@ -1545,10 +1663,11 @@ mod tests {
         let mut one = Value::obj();
         one.set("componentId", Value::str("conversation"));
         let conv = call_tool(&server, &mut doc, "list_components", &one).unwrap();
-        assert!(conv.get("params").and_then(Value::as_str).unwrap().contains("seats"));
+        assert!(conv.get("notes").and_then(Value::as_str).unwrap().contains("seats"));
+        assert!(conv.get("params").and_then(|p| p.get("seats")).is_some(), "the params the renderer reads are listed");
         one.set("componentId", Value::str("codeOverlay_presenter"));
         let code = call_tool(&server, &mut doc, "list_components", &one).unwrap();
-        assert!(code.get("params").and_then(Value::as_str).unwrap().contains("sw.character"));
+        assert!(code.get("notes").and_then(Value::as_str).unwrap().contains("sw.character"));
         one.set("componentId", Value::str("noSuchThing"));
         assert!(call_tool(&server, &mut doc, "list_components", &one).is_err());
     }

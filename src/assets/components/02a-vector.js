@@ -23,6 +23,8 @@ function swRgb(c) {
   }
   return [128, 128, 128, 1];
 }
+/* Colour a blended toward b by q (0..1). Both may be #RGB, #RRGGBB,
+   #RRGGBBAA, rgb() or rgba(); the result is rgb() or rgba(). */
 function swMix(a, b, q) {
   const x = swRgb(a), y = swRgb(b), t = ecClamp(q, 0, 1);
   const r = Math.round(x[0] + (y[0] - x[0]) * t), g = Math.round(x[1] + (y[1] - x[1]) * t);
@@ -153,6 +155,8 @@ function swParsePath(d) {
   return subs;
 }
 const swPathCache = new Map();
+/* SVG path data as flattened subpaths [{pts, closed, len}], cached per
+   string. */
 function swPath(d) {
   let v = swPathCache.get(d);
   if (!v) {
@@ -274,6 +278,7 @@ Object.assign(SWDraw, {
   mix: swMix,
   shade: swShade,
   parsePath: swPath,
+  /* Total length of an SVG path, in its own units. */
   pathLength: d => swPath(d).reduce((a, s) => a + s.len, 0),
   /* Point and unit tangent at fraction t of a path: motion along a path. */
   pointOnPath: (d, t) => {
@@ -318,6 +323,8 @@ Object.assign(SWDraw, {
     }
     return out;
   },
+  /* The scale and offset that fit a viewBox into a box under
+     preserveAspectRatio: {sx, sy, tx, ty}. */
   fitViewBox: (viewBox, box, par) => swFit(viewBox, box, par),
   anim: swAnim,
   /* Multi-layer vector artwork authored in its own viewBox units:
@@ -456,22 +463,29 @@ Object.assign(SWDraw, {
   /* Layout: safe area, rows/columns/grids, anchoring and overlap resolution.
      Boxes are {x, y, width, height} in pixels (cx/cy/w/h are filled in). */
   layout: {
+    /* A box given in pixels or 0..1 of the stage ({x, y, width, height} or
+       {cx, cy, w, h}) as pixels with all eight fields. */
     box: (b, W, H) => swBox(b, ecN(W, 1080), ecN(H, 1920)),
+    /* The area inside the margins m (a fraction, or {x, top, bottom});
+       5% at the sides and 6% top and bottom by default. */
     safe: (W, H, m) => {
       const mm = m == null ? { x: 0.05, top: 0.06, bottom: 0.06 } : (typeof m === 'number' ? { x: m, top: m, bottom: m } : m);
       const x = ecN(mm.x, 0.05) * W, top = ecN(mm.top, 0.06) * H, bot = ecN(mm.bottom, 0.06) * H;
       return swPx(x, top, W - 2 * x, H - top - bot);
     },
+    /* n equal boxes side by side across area, gap px apart (default 24). */
     row: (n, area, gap) => {
       const g = ecN(gap, 24), w = (area.width - g * (n - 1)) / n, out = [];
       for (let i = 0; i < n; i++) out.push(swPx(area.x + i * (w + g), area.y, w, area.height));
       return out;
     },
+    /* n equal boxes stacked down area, gap px apart (default 24). */
     column: (n, area, gap) => {
       const g = ecN(gap, 24), h = (area.height - g * (n - 1)) / n, out = [];
       for (let i = 0; i < n; i++) out.push(swPx(area.x, area.y + i * (h + g), area.width, h));
       return out;
     },
+    /* n boxes in cols columns filling area, gap px apart (default 24). */
     grid: (n, cols, area, gap) => {
       const c = Math.max(1, cols | 0), r = Math.ceil(n / c), g = ecN(gap, 24);
       const w = (area.width - g * (c - 1)) / c, h = (area.height - g * (r - 1)) / r, out = [];

@@ -387,13 +387,57 @@ function swPartDraw(ctx, pt, A, B, tokens, lt, o) {
   if (o.inner) o.inner();
   ctx.restore();
 }
+/* A head part turned toward +x by `a` radians: the layers of its face (from
+   `turn.face` on) shifted over by `shift`, its shape (`turn.shape`) a little
+   less — the jaw comes round with the face — a beard kept under the mouth,
+   the near ear (`turn.ears[0]`) brought in and the far one (`turn.ears[1]`)
+   gone behind the head. `turn.earX` is how far out the ears sit. */
+function swTurnedHead(head, shift, a) {
+  const t = head.turn, gone = ecClamp((a - 0.12) / 0.35, 0, 1);
+  const shape = Array.isArray(t.shape) ? t.shape : [];
+  const beard = typeof t.beard === 'number' ? t.beard : -1;
+  const skull = head.layers[shape[0]];
+  const clipD = skull && typeof skull.d === 'string' ? skull.d : null;
+  const shapeX = shift * 0.2;
+  const inward = shift * 0.14;
+  return Object.assign({}, head, {
+    layers: head.layers.map((layer, i) => {
+      if (i === t.ears[1]) return Object.assign({}, layer, { opacity: 1 - gone });
+      if (i === t.ears[0]) return Object.assign({}, layer, { transform: { x: inward } });
+      if (shape.indexOf(i) >= 0) return Object.assign({}, layer, { transform: { x: shapeX } });
+      if (i === beard) return Object.assign({}, layer, { transform: { x: shift * 0.42 } });
+      if (i >= t.face) {
+        const moved = Object.assign({}, layer, { transform: { x: shift } });
+        return clipD ? { transform: { x: shapeX }, layers: [{ clip: clipD, layers: [{ transform: { x: shift - shapeX }, layers: [layer] }] }] } : moved;
+      }
+      return layer;
+    })
+  });
+}
+/* A torso part turned toward +x: what is drawn on its silhouette (the
+   layers after `turn.body`) comes round by `shift`, cut to the silhouette
+   so nothing slides off the body's edge. Optional `turn.factors` scales
+   per-layer shifts (0 keeps wrap-around bands like belts full width). */
+function swTurnedTorso(torso, shift) {
+  const b = torso.turn.body, body = torso.layers[b];
+  if (!body || typeof body.d !== 'string') return torso;
+  const factors = Array.isArray(torso.turn.factors) ? torso.turn.factors : null;
+  const after = torso.layers.slice(b + 1).map((layer, i) => {
+    const k = factors && typeof factors[i] === 'number' ? factors[i] : 1;
+    return Math.abs(k) > 1e-4 ? { transform: { x: shift * k }, layers: [layer] } : layer;
+  });
+  return Object.assign({}, torso, {
+    layers: torso.layers.slice(0, b + 1).concat([{ clip: body.d, layers: after }])
+  });
+}
 /* A face part at an anchor of the head art: translated, never rotated. */
-function swPartAt(ctx, pt, at, dx, dy, tokens, lt) {
+function swPartAt(ctx, pt, at, dx, dy, tokens, lt, scaleX) {
   if (!pt || typeof pt !== 'object') return;
   const piv = Array.isArray(pt.pivot) ? pt.pivot : [0, 0];
   const a = Array.isArray(at) ? at : [0, 0];
   ctx.save();
   ctx.translate(ecN(a[0], 0) + dx - ecN(piv[0], 0), ecN(a[1], 0) + dy - ecN(piv[1], 0));
+  if (scaleX != null && scaleX !== 1) ctx.scale(scaleX, 1);
   SWDraw.svgLayers(ctx, swPartLayers(pt, tokens), { localTime: lt });
   ctx.restore();
 }
@@ -403,8 +447,11 @@ function swSeatDrop(S) {
   const legLen = (170 - 8 - S.hipY) / 2;
   return 170 - 8 - legLen * 1.3 - S.hipY;
 }
+/* How far a seated figure's hips drop (local units) in a character style. */
 SWDraw.seatDrop = style => swSeatDrop(SW_TOON[style] || SW_TOON.flat);
 
+/* What a character can hold (`prop`): the cases swToonProp draws. */
+SWDraw.props = ['book', 'mug', 'phone', 'tablet'];
 /* Something held in the gesturing hand, in the hand's palm. */
 function swToonProp(ctx, prop, hand, accent, ink) {
   const a = ecN(hand.angle, 0), L = ecN(hand.len, 30);
@@ -547,10 +594,19 @@ function swToonCharacter(ctx, opts, styleName) {
   }
   if (box && box.cx == null) box = swBox(box, W, H);
   if (box && !aim) aim = { x: box.cx, y: opts.aim === 'title' ? box.cy - box.h * 0.22 : box.cy };
+  let look = null;
+  if (opts.lookAt === 'viewer' || opts.lookAt === 'camera') look = 'viewer';
+  else if (typeof opts.lookAt === 'string' && typeof opts.boxOf === 'function') {
+    const lb = opts.boxOf(opts.lookAt);
+    if (lb && lb.cx != null) look = { x: lb.cx, y: lb.cy };
+  } else if (opts.lookAt && typeof opts.lookAt.x === 'number' && typeof opts.lookAt.y === 'number') {
+    look = { x: nrmX(opts.lookAt.x), y: nrmY(opts.lookAt.y) };
+  }
   const vx0 = ecN(opts.vx, 0);
   const facing = aim ? (aim.x >= x ? 1 : -1)
     : opts.facing != null ? (ecN(opts.facing, 1) >= 0 ? 1 : -1)
-    : (Math.abs(vx0) > 30 ? Math.sign(vx0) : 1);
+    : Math.abs(vx0) > 30 ? Math.sign(vx0)
+    : (look && look !== 'viewer' ? (look.x >= x ? 1 : -1) : 1);
   const toLocal = (px, py) => ({ x: (px - x) / sc * facing, y: (py - y) / sc });
   const toWorld = p => ({ x: x + p.x * sc * facing, y: y + p.y * sc });
 
@@ -592,19 +648,38 @@ function swToonCharacter(ctx, opts, styleName) {
   /* stoop (elders): the chest and head carried a little forward */
   const stoop = ecClamp(ecN(opts.stoop, 0), 0, 1);
   const crouchDrop = crouch * (170 - 8 - S.hipY) / 2 * 1.0;
+  /* turn (0..0.7): the body turned toward the way it faces (+x), as a
+     fraction of a quarter turn — 0 square to the viewer, ~0.65 someone
+     talking to a partner beside them, 0.7 squared up in a three-quarter
+     profile (the profile view takes it from there). Widths across the body
+     narrow as a torso of 0.6 its width in depth would, the chest's front,
+     the face and the gesturing arms come round toward +x, and the far side
+     (+x) goes behind: the far arm and leg are drawn before the body. Seated,
+     the hips and chair stay steady while the upper body turns. */
+  const turn = ecClamp(ecN(opts.turn, 0), 0, 0.7), turnA = turn * Math.PI / 2;
+  const hipTurn = seated ? Math.min(turn, 0.2) : turn, hipTurnA = hipTurn * Math.PI / 2;
+  const cosA = Math.cos(turnA), across = Math.sqrt(cosA ** 2 + 0.36 * Math.sin(turnA) ** 2);
+  const hipAcross = Math.sqrt(Math.cos(hipTurnA) ** 2 + 0.36 * Math.sin(hipTurnA) ** 2);
+  const lead = Math.sin(turnA), bodyShift = 5 * lead, hipShift = 5 * Math.sin(hipTurnA);
+  const torsoShift = 6.0 * lead / across;
+  /* Draw what follows across the body as turned: widths about x0 narrowed
+     and the whole shifted round. */
+  const turnedAcross = (x0, sh, ac) => { ctx.translate(x0 + (sh != null ? sh : bodyShift), 0); ctx.scale(ac != null ? ac : across, 1); ctx.translate(-x0, 0); };
   const hipX = m.shift, hipY = S.hipY + m.bob + seatDrop + crouchDrop;
   const tiltHip = m.shift * 0.012;
   /* crouching also bends the back: the chest and head lean over the knees */
-  const shY = S.sh + m.bob + seatDrop + crouchDrop * 1.25 + stoop * 4 - breathe * 0.8 - shrug;
+  const shY = S.sh + m.bob + seatDrop + crouchDrop * 1.25 + stoop * 2 - breathe * 0.8 - shrug;
   const shW = S.shW * k, hipW = S.hipW * k;
-  const chestX = hipX * 0.35 + crouch * 16 + stoop * 6;
+  const chestX = hipX * 0.35 + crouch * 16 + stoop * 3;
   /* The shoulder joints sit under the deltoids at the outer edge of the
      shoulders; the ribcage below is narrower, so hanging arms run beside
-     the body, not over it. */
-  const SR = { x: chestX + shW - 5, y: shY + 8 - tiltHip * 20 }, SL = { x: chestX - shW + 5, y: shY + 8 + tiltHip * 20 };
-  const HR = { x: hipX + hipW * 0.55, y: hipY - tiltHip * 18 }, HL = { x: hipX - hipW * 0.55, y: hipY + tiltHip * 18 };
+     the body, not over it. Turned toward +x, the near shoulder rotates
+     inward by cosA so the sleeve stays flush with the back instead of
+     bulging behind the torso. */
+  const SR = { x: chestX + bodyShift + (shW - 5) * across, y: shY + 8 - tiltHip * 20 }, SL = { x: chestX + bodyShift - (shW - 5) * cosA, y: shY + 8 + 1 * lead + tiltHip * 20 };
+  const HR = { x: hipX + hipShift + hipW * 0.55 * hipAcross, y: hipY - tiltHip * 18 }, HL = { x: hipX + hipShift - hipW * 0.55 * hipAcross, y: hipY + tiltHip * 18 };
   const [hrx, hry] = S.head;
-  const headC = { x: chestX + 1 + stoop * 5, y: shY - S.headGap - hry * (styleName === 'cartoon' ? 0.92 : 0.96) + breathe * 0.3 };
+  const headC = { x: chestX + 1 + stoop * 2 + bodyShift + 1.0 * lead, y: shY - S.headGap - hry * (styleName === 'cartoon' ? 0.92 : 0.96) + breathe * 0.3 };
   const armL = S.arm[0] + S.arm[1];
 
   /* Emotion */
@@ -627,30 +702,59 @@ function swToonCharacter(ctx, opts, styleName) {
   const elbowPick = side => (elbowUpSide(side) ? J => -J.y + 0.3 * side * J.x : J => J.y + 0.3 * side * J.x);
   const rig = name => {
     const P = SW_TOON_POSES[name];
-    const dir = (deg, side) => { const r = deg * Math.PI / 180; return { x: side * Math.sin(r), y: Math.cos(r) }; };
     const arm = (Sh, spec, side, depth) => {
-      const L2 = S.arm[1] * (1 - 0.5 * depth);
       if (spec === 'chin') {
+        const L2 = S.arm[1] * (1 - 0.5 * depth);
         const T = { x: chin.x - 2, y: chin.y + armL * 0.12 };
-        return { T, E: swToonIK(Sh, T, S.arm[0], L2, elbowPick(side)).J };
+        return { T, E: swToonIK(Sh, T, S.arm[0], L2, elbowPick(side)).J, d: depth, fx: 0, fy: 1 };
       }
       let u = spec.u, f = spec.f;
-      /* A walking arm swings from the shoulder, against its leg. */
-      /* Seen nearly from the front, a walking arm swings mostly in depth:
-         only a few degrees show across the body. */
-      if (u < 20 && walkAmt > 0) { const sw = walkAmt * Math.sin(legPh) * 7; u += sw; f = Math.max(f + sw * 1.2, 0); }
+      /* A walking arm swings from the shoulder, against its leg. Seen from
+         the front it swings mostly in depth; turned toward +x, the forward
+         and backward swing along +x comes into view. */
+      if (u < 20 && walkAmt > 0) {
+        const sw = walkAmt * Math.sin(legPh) * 7;
+        u += sw * cosA;
+        f = Math.max(f + sw * 1.2 * cosA, 0);
+      }
       if (name === 'explain') f += osc(2.6, 7, side > 0 ? 0 : Math.PI);
       if (name === 'present' && side > 0) f += osc(2.2, 5);
       if (P.wave && side > 0) f += osc(8, 9);
-      const a = dir(u, side), E = { x: Sh.x + a.x * S.arm[0], y: Sh.y + a.y * S.arm[0] };
-      const b = dir(f, side);
-      return { T: { x: E.x + b.x * L2, y: E.y + b.y * L2 }, E };
+      const ur = u * Math.PI / 180, fr = f * Math.PI / 180;
+      const walkFwd = u < 20 && walkAmt > 0 ? walkAmt * Math.sin(legPh) * side * 0.35 * lead : 0;
+      const uz = (name === 'think' ? 0.15 : depth > 0.1 ? 0.25 * depth : -0.02) * (1 - walkAmt);
+      let ux = side * Math.sin(ur) * cosA + uz * lead + walkFwd;
+      let uy = Math.cos(ur);
+      const ul = Math.hypot(ux, uy) || 1;
+      ux /= ul; uy /= ul;
+      const E = { x: Sh.x + ux * S.arm[0], y: Sh.y + uy * S.arm[0] };
+      const fs0 = 1 - 0.5 * depth;
+      const fxb = fs0 * side * Math.sin(fr), fyb = fs0 * Math.cos(fr);
+      const fzb = name === 'think' ? 0.25 : depth > 0.02 ? Math.sqrt(Math.max(0, 1 - fs0 * fs0)) : 0.22 * (1 - walkAmt);
+      const fxw = fxb * cosA + fzb * lead + walkFwd * 1.35;
+      const fzw = -fxb * lead + fzb * cosA;
+      const dw = turn > 0.01 ? ecClamp(fzw, 0, 1) : depth;
+      const fl = Math.hypot(fxw, fyb) || 1;
+      const L2 = S.arm[1] * (1 - 0.5 * dw);
+      return { T: { x: E.x + (fxw / fl) * L2, y: E.y + (fyb / fl) * L2 }, E, d: dw, fx: fxw, fy: fyb, depth };
     };
-    const dR = ecN(P.rd, 0), dL = ecN(P.ld, 0);
-    const R = arm(SR, P.r, 1, dR), L = arm(SL, P.l, -1, dL);
-    let aR = P.ra != null ? P.ra : null;
+    const dR0 = ecN(P.rd, 0), dL0 = ecN(P.ld, 0);
+    const R = arm(SR, P.r, 1, dR0), L = arm(SL, P.l, -1, dL0);
+    const handRot = (pa, res, shape) => {
+      if (pa == null || turn <= 0.01 || P.wave || name === 'celebrate' || name === 'think') return pa;
+      /* Rotate the hand's 3D vector forward toward +x so an upturned palm
+         sweeps across the front instead of flipping down through +180°. */
+      const hz = Math.max(0.5, ecN(res.depth, 0.5));
+      const hx = Math.cos(pa) * cosA + hz * lead;
+      const hy = Math.sin(pa);
+      const fa = Math.atan2(res.fy, res.fx) + (shape === 'open' ? -0.45 : 0);
+      const q = lead * 0.45;
+      return Math.atan2(hy * (1 - q) + Math.sin(fa) * q, hx * (1 - q) + Math.cos(fa) * q);
+    };
+    let aR = handRot(P.ra != null ? P.ra : null, R, P.rh);
     if (P.wave) aR = P.ra + osc(8, 0.35);
-    return { tR: R.T, tL: L.T, eR: R.E, eL: L.E, hR: P.rh, hL: P.lh, aR, aL: P.la != null ? P.la : null, dR, dL };
+    const aL = handRot(P.la != null ? P.la : null, L, P.lh);
+    return { tR: R.T, tL: L.T, eR: R.E, eL: L.E, hR: P.rh, hL: P.lh, aR, aL, dR: R.d, dL: L.d };
   };
   const RA = rig(poseA), RB = poseB === poseA ? RA : rig(poseB);
   const lp = (a, b) => ({ x: a.x + (b.x - a.x) * pq, y: a.y + (b.y - a.y) * pq });
@@ -664,9 +768,9 @@ function swToonCharacter(ctx, opts, styleName) {
   const lift = beat * 6 * (pw('present') + pw('explain'));
   tR.y -= lift; tL.y -= lift * 0.6;
   const ptLocal = pt => (pt && typeof pt.x === 'number' && typeof pt.y === 'number') ? toLocal(nrmX(pt.x), nrmY(pt.y)) : null;
-  const oL = ptLocal(opts.leftHand), oR = ptLocal(opts.rightHand);
+  const oL = ptLocal(opts.leftHand), oR = ptLocal(opts.rightHand), oRE = ptLocal(opts.rightElbow);
   if (oL) { tL = oL; eL = null; }
-  if (oR) { tR = oR; eR = null; }
+  if (oR) { tR = oR; eR = oRE || null; }
   if (opts.leftHandPose) hL = opts.leftHandPose;
   if (opts.rightHandPose || opts.handPose) hR = opts.rightHandPose || opts.handPose;
 
@@ -706,7 +810,8 @@ function swToonCharacter(ctx, opts, styleName) {
   }
 
   /* Head turn and gaze */
-  const ht = ecClamp(opts.headTurn != null ? ecN(opts.headTurn, 0.25) : (aim ? 0.45 : 0.25) + Math.sin(time * 0.9) * 0.05, -1, 1);
+  const htBase = opts.headTurn != null ? ecN(opts.headTurn, 0.25) : (aim ? 0.45 : 0.25) + Math.sin(time * 0.9) * 0.05;
+  let ht = ecClamp(htBase + turn * 0.85, -1, 1);
   let headRot = -ecN(opts.headTilt, 0) * 0.2 + m.nod - 0.12 * pw('think') + 0.12 * pw('shrug') - 0.07 * laughW;
   let gx = ht * 0.6, gy = 0;
   if (pointL && pointL.amt > 0.3) {
@@ -716,19 +821,14 @@ function swToonCharacter(ctx, opts, styleName) {
   }
   const thinkW = pw('think');
   gx += (0.5 - gx) * thinkW; gy += (-0.85 - gy) * thinkW;
-  let look = null;
-  if (opts.lookAt === 'viewer' || opts.lookAt === 'camera') { gx = 0; gy = 0; }
-  else if (typeof opts.lookAt === 'string' && typeof opts.boxOf === 'function') {
-    const lb = opts.boxOf(opts.lookAt);
-    if (lb && lb.cx != null) look = { x: lb.cx, y: lb.cy };
-  } else if (opts.lookAt && typeof opts.lookAt.x === 'number' && typeof opts.lookAt.y === 'number') {
-    look = { x: nrmX(opts.lookAt.x), y: nrmY(opts.lookAt.y) };
-  }
-  if (look) {
+  let lookHt = null;
+  if (look === 'viewer') { gx = 0; gy = 0; ht = turn > 0.01 ? turn * 0.4 : (opts.headTurn != null ? ecN(opts.headTurn, 0) : 0); }
+  else if (look) {
     const L = toLocal(look.x, look.y);
     const vx = L.x - headC.x, vy = L.y - headC.y, vl = Math.hypot(vx, vy) || 1;
     gx = vx / vl; gy = vy / vl;
     headRot += ecClamp(Math.atan2(vy, Math.abs(vx)) * 0.2, -0.15, 0.15);
+    if (turn <= 0.01 && Math.abs(vx) > 20) lookHt = ecClamp(vx / 350, -0.45, 0.45);
   }
   if (opts.gaze && typeof opts.gaze === 'object') { gx = ecN(opts.gaze.x, gx); gy = ecN(opts.gaze.y, gy); }
 
@@ -760,20 +860,27 @@ function swToonCharacter(ctx, opts, styleName) {
   }
 
   /* Legs: the weight leg (the back one) straight, the free leg relaxed and
-     a little forward; walking swings both. */
+     a little forward; walking swings both. In a full-length dress or robe,
+     the stride stays gentler and upper legs remain tucked inside the skirt. */
   const ankleY = GROUND - 8;
+  const isRobe = outfit === 'robe' || outfit === 'kaftan' || outfit === 'caftan';
+  const isDress = outfit === 'dress' || outfit === 'gown';
+  const longSkirt = (isRobe || isDress) && part('torso') && (opts.kit || !(opts.parts && opts.parts.torso));
+  const skirtClipY = longSkirt && !seated ? Math.min(shY + (isRobe ? 212 : 200) * Math.hypot(hipX - chestX, hipY - shY) / 94 - 2, ankleY - 6) : null;
   const foot = side => {
     const phs = legPh + (side < 0 ? 0 : Math.PI);
     /* Standing, each foot sits right under its hip joint so the leg is
        straight; only the walk cycle bends the knees. */
-    const rest = side * hipW * 0.55;
+    const rest = side * hipW * 0.55 * hipAcross + hipShift;
     /* Feet stay hip-width apart; the stride shows as a short swing. */
-    const fx = rest + hipX + walkAmt * Math.sin(phs) * 14;
-    const lift = walkAmt * Math.max(0, Math.cos(phs)) * 14;
+    const walkStride = longSkirt ? 11 : 14, walkLift = longSkirt ? 5 : 10;
+    const fx = rest + hipX + walkAmt * Math.sin(phs) * walkStride;
+    const lift = walkAmt * Math.max(0, Math.cos(phs)) * walkLift;
     return { x: fx, y: ankleY - lift };
   };
   const knee = J => J.x;
-  const legs = [[HL, foot(-1), true], [HR, foot(1), false]];
+  /* the back leg: the weight leg square on, the far one (+x) turned */
+  const legs = turn > 0.05 ? [[HR, foot(1), true], [HL, foot(-1), false]] : [[HL, foot(-1), true], [HR, foot(1), false]];
   const legLen = (ankleY - S.hipY) / 2;
   /* The skeleton as drawn, in the figure's local frame (for checks). */
   const joints = { ground: GROUND, ankleY, legLen, upper: S.arm[0], fore: S.arm[1], chestX, shW, hipY, seated, legs: [], arms: {} };
@@ -794,10 +901,12 @@ function swToonCharacter(ctx, opts, styleName) {
     joints.legs.push({ hip: Hj, knee: ik.J, ankle: ik.E, back });
     const pts = swToonLimb(Hj, ik.J, ik.E, S.curve ? 0.35 : 0);
     const col = back ? swShade(pants, -0.1) : pants;
+    if (skirtClipY != null) { ctx.save(); ctx.beginPath(); ctx.rect(-300, skirtClipY, 600, 400); ctx.clip(); }
     if (part('thigh') && part('shin')) {
       if (!seated) drawPart(part('thigh'), Hj, ik.J, back);
       drawPart(part('shin'), ik.J, ik.E, back);
     } else swToonStroke(ctx, pts, S.legW, col);
+    if (skirtClipY != null) ctx.restore();
     /* Shoe */
     const sx = ik.E.x, sy = ik.E.y;
     const sh = back ? swShade(shoe, -0.08) : shoe;
@@ -838,20 +947,119 @@ function swToonCharacter(ctx, opts, styleName) {
   }
   /* Pelvis */
   if (!part('torso')) {
+    ctx.save();
+    turnedAcross(hipX, hipShift, hipAcross);
     ctx.fillStyle = pants;
     ctx.beginPath(); ctx.roundRect(hipX - hipW - 2, hipY - 14, hipW * 2 + 4, 24, 9); ctx.fill();
+    ctx.restore();
   }
 
+  const coat = outfit === 'jacket' || outfit === 'suit';
+  const sleeve = coat ? jacket : shirt;
+  /* Arms: elbows bend outward and down; the hand's thumb faces the viewer. */
+  const drawArm = (Sh, T, side, shape, ang, depth, elbow) => {
+    /* A forearm reaching toward the viewer is foreshortened. */
+    const fs = 1 - 0.5 * ecClamp(ecN(depth, 0), 0, 1), grow = 1 + 0.3 * (1 - fs);
+    /* The posed elbow, kept at the upper arm's length; the forearm then
+       aims at the hand target. Without a posed elbow, IK chooses one that
+       hangs down first, then outward. */
+    let ik, fUpper = 1, fFore = fs;
+    if (elbow) {
+      const ux = elbow.x - Sh.x, uy = elbow.y - Sh.y, ul = Math.hypot(ux, uy) || 1;
+      const shorten = side > 0 && opts.rightArmShorten === true;
+      const l1 = shorten ? Math.min(S.arm[0], ul) : S.arm[0];
+      const J = { x: Sh.x + ux / ul * l1, y: Sh.y + uy / ul * l1 };
+      const fx = T.x - J.x, fy = T.y - J.y, fl = Math.hypot(fx, fy) || 1;
+      const l2 = shorten ? Math.min(S.arm[1] * fs, fl) : S.arm[1] * fs;
+      ik = { J, E: { x: J.x + fx / fl * l2, y: J.y + fy / fl * l2 } };
+      if (shorten) { fUpper = ecClamp(l1 / S.arm[0], 0.2, 1); fFore = ecClamp(l2 / S.arm[1], 0.2, 1); }
+    } else ik = swToonIK(Sh, T, S.arm[0], S.arm[1] * fs, elbowPick(side));
+    const pts = swToonLimb(Sh, ik.J, ik.E, S.curve ? 0.5 : 0);
+    const short = outfit === 'tshirt';
+    const armBack = farBehind ? side > 0 : side < 0;
+    if (part('upperArm') && part('forearm')) {
+      drawPart(part('upperArm'), Sh, ik.J, armBack, fUpper < 1 ? { foreshorten: fUpper } : undefined);
+      drawPart(part('forearm'), ik.J, ik.E, armBack, { foreshorten: fFore });
+    } else {
+      swToonStroke(ctx, pts, S.armW * 0.84, armBack ? swShade(skin, -0.09) : skin);
+      swToonStroke(ctx, pts, S.armW, armBack ? swShade(sleeve, -0.09) : sleeve, short ? 0.36 : 0.9);
+    }
+    const last = pts[pts.length - 1], prev = pts[pts.length - 3] || pts[0];
+    const resolve = v => {
+      if (v && typeof v === 'object') {
+        const a = resolve(v.a), b = resolve(v.b), d = b - a;
+        return a + Math.atan2(Math.sin(d), Math.cos(d)) * ecClamp(ecN(v.q, 1), 0, 1);
+      }
+      return typeof v === 'number' && isFinite(v) ? v : Math.atan2(last[1] - prev[1], last[0] - prev[0]);
+    };
+    const a = resolve(ang);
+    /* Which side the thumb goes (hand-space +y or -y): palms face the
+       viewer, so a level hand shows its thumb on top and an upright or
+       hanging hand turns its thumb toward the body. Both arms mirror. */
+    const want = Math.abs(Math.cos(a)) >= 0.5 ? [0, -1] : [-side, 0];
+    const ts = -Math.sin(a) * want[0] + Math.cos(a) * want[1] >= 0 ? 1 : -1;
+    const handKey = String(shape || 'relaxed').toLowerCase().replace(/[^a-z]/g, '');
+    if (handKey === 'none') {
+      joints.arms[side < 0 ? 'l' : 'r'] = { shoulder: Sh, elbow: ik.J, wrist: { x: last[0], y: last[1] }, depth: ecN(depth, 0) };
+      return { x: last[0], y: last[1], wrist: { x: last[0], y: last[1] }, angle: a, len: 0 };
+    }
+    const hands = part('hands');
+    const handPart = hands && (hands[handKey] || hands.relaxed);
+    const c = Math.cos(a), s = Math.sin(a);
+    if (handPart && typeof handPart === 'object') {
+      /* Illustrated hands: thumb drawn on +y; length maps to the rig's reach. */
+      const L = ecN(handPart.length, tipLen) * grow;
+      const B = { x: last[0] + c * L, y: last[1] + s * L };
+      drawPart(handPart, { x: last[0], y: last[1] }, B, side < 0, { flipY: ts < 0 });
+      joints.arms[side < 0 ? 'l' : 'r'] = { shoulder: Sh, elbow: ik.J, wrist: { x: last[0], y: last[1] }, depth: ecN(depth, 0) };
+      return { x: B.x, y: B.y, wrist: { x: last[0], y: last[1] }, angle: a, len: L };
+    }
+    ctx.save();
+    ctx.translate(last[0], last[1]);
+    ctx.rotate(a);
+    const tip = swToonHand(ctx, shape, u * grow, skin, skinSh, styleName, ts);
+    ctx.restore();
+    joints.arms[side < 0 ? 'l' : 'r'] = { shoulder: Sh, elbow: ik.J, wrist: { x: last[0], y: last[1] }, depth: ecN(depth, 0) };
+    return { x: last[0] + tip.x * c - tip.y * s, y: last[1] + tip.x * s + tip.y * c, wrist: { x: last[0], y: last[1] }, angle: a, len: Math.hypot(tip.x, tip.y) };
+  };
+  const prop = typeof opts.prop === 'string' ? opts.prop.toLowerCase() : null;
+  if (prop && !opts.rightHandPose && !opts.handPose && hR !== 'point') hR = 'hold';
+  /* hideArm ('right' | 'left'): an arm out of sight, e.g. round someone's
+     back in a side hug; its joints are still solved. */
+  const armOrHidden = (side, ...args) => {
+    if (!(opts.hideArm === true || opts.hideArm === (side > 0 ? 'right' : 'left'))) return drawArm(...args);
+    ctx.save(); ctx.globalAlpha = 0;
+    const r = drawArm(...args);
+    ctx.restore();
+    return r;
+  };
+  /* Turned, the far arm (+x) goes behind the body; square on, both arms
+     are in front of it, the far one last. */
+  const farBehind = turn > 0.08 && opts.rightArmFront !== true;
+  const farHidden = opts.hideArm === true || opts.hideArm === 'right';
+  let farTip = farBehind ? armOrHidden(1, SR, tR, 1, hR, aR, dR, eR) : null;
+  if (prop && farBehind && !farHidden) swToonProp(ctx, prop, farTip, accent, ink);
+
+  const headPart = part('head');
+  /* Turned, the face comes round toward +x: its features shift over (the
+     hair a little less), the far ear goes behind the head. */
+  const faceShift = lead > 0.01 ? (look === 'viewer' ? 6.5 * lead : 11.5 * lead) : (lookHt != null ? lookHt * 11 : 0);
+  const faceScaleX = lead > 0.01 ? 1 - 0.14 * (1 - cosA) : 1;
+  const faceA = look === 'viewer' ? turnA * 0.55 : turnA;
+  const turnedHead = headPart && headPart.turn && (lead > 0.01 || Math.abs(faceShift) > 0.2) ? swTurnedHead(headPart, faceShift, faceA) : headPart;
   /* Back hair and hood. Head-frame parts map neck (0, ry) → crown (0, -ry). */
   const headA = { x: 0, y: hry }, headB = { x: 0, y: -hry };
   ctx.save();
   ctx.translate(headC.x, headC.y);
   ctx.rotate(headRot);
   if (part('hairBack')) {
-    ctx.save(); ctx.translate(lagX * 0.5, 0); drawPart(part('hairBack'), headA, headB); ctx.restore();
+    ctx.save(); ctx.translate(lagX * 0.5 + faceShift * 0.14, 0); drawPart(part('hairBack'), headA, headB); ctx.restore();
   } else if (!part('head')) swToonHairBack(ctx, hairStyle, hrx, hry, hairC, lagX, geo);
   ctx.restore();
-  if (outfit === 'hoodie' && !part('torso')) swToonEllipse(ctx, chestX, shY - 2, shW * 0.62, 13, 0, swShade(shirt, -0.2));
+  /* The hood and the torso, turned with the body. */
+  ctx.save();
+  turnedAcross(chestX);
+  if (outfit === 'hoodie' && !part('torso')) swToonEllipse(ctx, chestX + torsoShift * 0.5, shY - 2, shW * 0.62, 13, 0, swShade(shirt, -0.2));
 
   /* Torso */
   const top = shY, bot = hipY + (outfit === 'hoodie' ? 10 : outfit === 'tshirt' ? 3 : 12);
@@ -870,9 +1078,7 @@ function swToonCharacter(ctx, opts, styleName) {
   torso.quadraticCurveTo(chestX - shW + 8, (top + bot) / 2, chestX - shW + 7, top + r + 14);
   torso.quadraticCurveTo(chestX - shW, top + r + 9, chestX - shW, top + r);
   torso.closePath();
-  const coat = outfit === 'jacket' || outfit === 'suit';
-  const sleeve = coat ? jacket : shirt;
-  if (part('torso')) drawPart(part('torso'), { x: chestX, y: top }, { x: hipX, y: hipY });
+  if (part('torso')) drawPart(part('torso').turn && lead > 0.01 ? swTurnedTorso(part('torso'), torsoShift) : part('torso'), { x: chestX, y: top }, { x: hipX, y: hipY });
   else {
   ctx.fillStyle = sleeve;
   ctx.fill(torso);
@@ -882,43 +1088,45 @@ function swToonCharacter(ctx, opts, styleName) {
     ctx.fillStyle = `rgba(2,6,23,${S.shade})`;
     ctx.fillRect(chestX + shW * 0.45, top - 5, shW, bot - top + 10);
   }
+  const cxT = chestX + torsoShift, hxT = hipX + torsoShift * 0.85;
   if (coat) {
     const inner = outfit === 'suit' ? (opts.shirtColor || '#F8FAFC') : shirt;
     ctx.fillStyle = inner;
     ctx.beginPath();
-    ctx.moveTo(chestX - 10, top - 2); ctx.lineTo(chestX + 10, top - 2);
-    ctx.lineTo(hipX + 7, bot + 2); ctx.lineTo(hipX - 7, bot + 2); ctx.closePath(); ctx.fill();
+    ctx.moveTo(cxT - 10, top - 2); ctx.lineTo(cxT + 10, top - 2);
+    ctx.lineTo(hxT + 7, bot + 2); ctx.lineTo(hxT - 7, bot + 2); ctx.closePath(); ctx.fill();
     if (outfit === 'suit') {
       ctx.fillStyle = accent;
-      ctx.beginPath(); ctx.moveTo(chestX - 3, top + 2); ctx.lineTo(chestX + 3, top + 2);
-      ctx.lineTo(chestX + 4.5, top + 40); ctx.lineTo(chestX, top + 46); ctx.lineTo(chestX - 4.5, top + 40); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(cxT - 3, top + 2); ctx.lineTo(cxT + 3, top + 2);
+      ctx.lineTo(cxT + 4.5, top + 40); ctx.lineTo(cxT, top + 46); ctx.lineTo(cxT - 4.5, top + 40); ctx.closePath(); ctx.fill();
     }
     if (!geo) {
       ctx.fillStyle = swShade(jacket, -0.25);
       for (const s of [-1, 1]) {
-        ctx.beginPath(); ctx.moveTo(chestX + s * 10, top - 2); ctx.lineTo(chestX + s * 17, top + 4);
-        ctx.lineTo(chestX + s * 6, top + 38); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(cxT + s * 10, top - 2); ctx.lineTo(cxT + s * 17, top + 4);
+        ctx.lineTo(cxT + s * 6, top + 38); ctx.closePath(); ctx.fill();
       }
     }
   } else if (outfit === 'hoodie') {
     ctx.fillStyle = swShade(shirt, -0.12);
-    ctx.beginPath(); ctx.roundRect(hipX - bw * 0.62, bot - 26, bw * 1.24, 18, 7); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(hipX + torsoShift * 0.7 - bw * 0.62, bot - 26, bw * 1.24, 18, 7); ctx.fill();
     ctx.strokeStyle = swShade(shirt, 0.35); ctx.lineWidth = 2; ctx.lineCap = 'round';
-    for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(chestX + s * 5, top + 4); ctx.lineTo(chestX + s * 6, top + 22); ctx.stroke(); }
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(cxT + s * 5, top + 4); ctx.lineTo(cxT + s * 6, top + 22); ctx.stroke(); }
   } else {
     ctx.strokeStyle = swShade(shirt, -0.22); ctx.lineWidth = 2.4;
-    ctx.beginPath(); ctx.ellipse(chestX, top - 1, 9, 6, 0, 0, Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(chestX + torsoShift * 0.65, top - 1, 9, 6, 0, 0, Math.PI); ctx.stroke();
   }
   ctx.restore();
   }
+  ctx.restore();
 
   /* A crossbody bag: the strap from the far shoulder over the chest to a
      bag at the hip on the facing side. */
   if (opts.bag) {
     const bagC = typeof opts.bag === 'string' && /^#/.test(opts.bag) ? opts.bag : '#8D6E63';
-    const bx = hipX + hipW + 2, by = hipY - 22;
+    const bx = hipX + hipShift + (hipW + 2) * hipAcross, by = hipY - 22;
     ctx.strokeStyle = swShade(bagC, -0.25); ctx.lineWidth = 3.4; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(SL.x + 3, shY + 2); ctx.quadraticCurveTo(chestX, (shY + by) / 2 + 6, bx + 4, by + 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(SL.x + 3, shY + 2); ctx.quadraticCurveTo(chestX + bodyShift, (shY + by) / 2 + 6, bx + 4, by + 2); ctx.stroke();
     ctx.fillStyle = bagC;
     ctx.beginPath(); ctx.roundRect(bx - 2, by, 26, 22, 5); ctx.fill();
     ctx.fillStyle = swShade(bagC, -0.18);
@@ -929,19 +1137,19 @@ function swToonCharacter(ctx, opts, styleName) {
 
   /* Neck and head */
   const hx = headC.x, hy = headC.y;
+  const neckX = chestX + bodyShift + 1.2 * lead;
   ctx.fillStyle = skinSh;
-  if (part('neck')) drawPart(part('neck'), { x: chestX, y: top + 4 }, { x: hx, y: hy + hry * 0.6 });
+  if (part('neck')) drawPart(part('neck'), { x: neckX, y: top + 4 }, { x: hx + faceShift * 0.1, y: hy + hry * 0.6 });
   else if (styleName !== 'cartoon') {
-    ctx.beginPath(); ctx.roundRect(chestX - 6.5, hy + hry * 0.6, 13, top - (hy + hry * 0.6) + 4, 5); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(neckX - 6.5, hy + hry * 0.6, 13, top - (hy + hry * 0.6) + 4, 5); ctx.fill();
   }
   ctx.save();
   ctx.translate(hx, hy);
   ctx.rotate(headRot);
-  const headPart = part('head');
   if (headPart) {
     /* Illustrated head: face parts sit at its anchors; the eyes follow the
        gaze, the brows lift with the emotion, the mouth takes the viseme. */
-    drawPart(headPart, headA, headB, false, {
+    drawPart(turnedHead, headA, headB, false, {
       inner: () => {
         const eyes = part('eyes'), mouth = part('mouth'), brows = part('brows');
         if (eyes) {
@@ -949,23 +1157,33 @@ function swToonCharacter(ctx, opts, styleName) {
              shut, and a blink closes them for a beat. */
           const pick = blink < 0.4 && eyes.closed ? eyes.closed : emo.squint > 0.6 && eyes.squint ? eyes.squint : eyes.open;
           const g = ecN(eyes.gaze, 2);
-          swPartAt(ctx, pick, headPart.eyesAt, pick === eyes.open ? gx * g : 0, pick === eyes.open ? gy * g * 0.7 : 0, tokensFront, lt);
+          swPartAt(ctx, pick, headPart.eyesAt, faceShift + (pick === eyes.open ? gx * g : 0), pick === eyes.open ? gy * g * 0.7 : 0, tokensFront, lt, faceScaleX);
         }
-        if (brows) swPartAt(ctx, brows, headPart.browsAt, 0, -emo.brow * ecN(brows.lift, 3), tokensFront, lt);
-        if (part('glasses')) swPartAt(ctx, part('glasses'), headPart.eyesAt, 0, 0, tokensFront, lt);
+        if (brows) swPartAt(ctx, brows, headPart.browsAt, faceShift, -emo.brow * ecN(brows.lift, 3), tokensFront, lt, faceScaleX);
+        if (part('glasses')) {
+          /* turned, the far arm of the glasses goes behind the head */
+          ctx.save();
+          const shape = turnedHead !== headPart && headPart.layers[headPart.turn.shape[0]];
+          if (shape && typeof shape.d === 'string') { ctx.translate(faceShift * 0.2, 0); ctx.clip(new Path2D(shape.d)); ctx.translate(-faceShift * 0.2, 0); }
+          swPartAt(ctx, part('glasses'), headPart.eyesAt, faceShift, 0, tokensFront, lt, faceScaleX);
+          ctx.restore();
+        }
         if (mouth) {
           let key = vis.open > 0.06 || vis.press > 0.5 ? vis.key : 'rest';
           if (key === 'rest' && emo.smile > 0.5 && mouth.smile) key = 'smile';
           if (key === 'rest' && emo.smile < -0.2 && mouth.sad) key = 'sad';
-          swPartAt(ctx, mouth[key] || mouth.rest, headPart.mouthAt, 0, 0, tokensFront, lt);
+          swPartAt(ctx, mouth[key] || mouth.rest, headPart.mouthAt, faceShift, 0, tokensFront, lt, faceScaleX);
         }
       }
     });
     if (!part('eyes') && !part('mouth')) {
       swToonFace(ctx, S, styleName, { rx: hrx, ry: hry, ht, gx, gy, emo, vis, blink, skin, ink, eyeColor, browColor: swMix(hairC, ink, 0.3) });
     }
+    ctx.save();
+    ctx.translate(faceShift * 0.24, 0);
     if (part('hairFront')) drawPart(part('hairFront'), headA, headB);
     if (part('headwear')) drawPart(part('headwear'), headA, headB);
+    ctx.restore();
   }
   if (!headPart) {
   if (S.ears) {
@@ -1009,77 +1227,11 @@ function swToonCharacter(ctx, opts, styleName) {
   }
   ctx.restore();
 
-  /* Arms: elbows bend outward and down; the hand's thumb faces the viewer. */
-  const drawArm = (Sh, T, side, shape, ang, depth, elbow) => {
-    /* A forearm reaching toward the viewer is foreshortened. */
-    const fs = 1 - 0.5 * ecClamp(ecN(depth, 0), 0, 1), grow = 1 + 0.3 * (1 - fs);
-    /* The posed elbow, kept at the upper arm's length; the forearm then
-       aims at the hand target. Without a posed elbow, IK chooses one that
-       hangs down first, then outward. */
-    let ik;
-    if (elbow) {
-      const ux = elbow.x - Sh.x, uy = elbow.y - Sh.y, ul = Math.hypot(ux, uy) || 1;
-      const J = { x: Sh.x + ux / ul * S.arm[0], y: Sh.y + uy / ul * S.arm[0] };
-      const fx = T.x - J.x, fy = T.y - J.y, fl = Math.hypot(fx, fy) || 1, L2 = S.arm[1] * fs;
-      ik = { J, E: { x: J.x + fx / fl * L2, y: J.y + fy / fl * L2 } };
-    } else ik = swToonIK(Sh, T, S.arm[0], S.arm[1] * fs, elbowPick(side));
-    const pts = swToonLimb(Sh, ik.J, ik.E, S.curve ? 0.5 : 0);
-    const short = outfit === 'tshirt';
-    if (part('upperArm') && part('forearm')) {
-      drawPart(part('upperArm'), Sh, ik.J, side < 0);
-      drawPart(part('forearm'), ik.J, ik.E, side < 0, { foreshorten: fs });
-    } else {
-      swToonStroke(ctx, pts, S.armW * 0.84, skin);
-      swToonStroke(ctx, pts, S.armW, side > 0 ? sleeve : swShade(sleeve, -0.06), short ? 0.36 : 0.9);
-    }
-    const last = pts[pts.length - 1], prev = pts[pts.length - 3] || pts[0];
-    const resolve = v => {
-      if (v && typeof v === 'object') {
-        const a = resolve(v.a), b = resolve(v.b), d = b - a;
-        return a + Math.atan2(Math.sin(d), Math.cos(d)) * ecClamp(ecN(v.q, 1), 0, 1);
-      }
-      return typeof v === 'number' && isFinite(v) ? v : Math.atan2(last[1] - prev[1], last[0] - prev[0]);
-    };
-    const a = resolve(ang);
-    /* Which side the thumb goes (hand-space +y or -y): palms face the
-       viewer, so a level hand shows its thumb on top and an upright or
-       hanging hand turns its thumb toward the body. Both arms mirror. */
-    const want = Math.abs(Math.cos(a)) >= 0.5 ? [0, -1] : [-side, 0];
-    const ts = -Math.sin(a) * want[0] + Math.cos(a) * want[1] >= 0 ? 1 : -1;
-    const handKey = String(shape || 'relaxed').toLowerCase().replace(/[^a-z]/g, '');
-    const hands = part('hands');
-    const handPart = hands && (hands[handKey] || hands.relaxed);
-    const c = Math.cos(a), s = Math.sin(a);
-    if (handPart && typeof handPart === 'object') {
-      /* Illustrated hands: thumb drawn on +y; length maps to the rig's reach. */
-      const L = ecN(handPart.length, tipLen) * grow;
-      const B = { x: last[0] + c * L, y: last[1] + s * L };
-      drawPart(handPart, { x: last[0], y: last[1] }, B, side < 0, { flipY: ts < 0 });
-      joints.arms[side < 0 ? 'l' : 'r'] = { shoulder: Sh, elbow: ik.J, wrist: { x: last[0], y: last[1] }, depth: ecN(depth, 0) };
-      return { x: B.x, y: B.y, wrist: { x: last[0], y: last[1] }, angle: a, len: L };
-    }
-    ctx.save();
-    ctx.translate(last[0], last[1]);
-    ctx.rotate(a);
-    const tip = swToonHand(ctx, shape, u * grow, skin, skinSh, styleName, ts);
-    ctx.restore();
-    joints.arms[side < 0 ? 'l' : 'r'] = { shoulder: Sh, elbow: ik.J, wrist: { x: last[0], y: last[1] }, depth: ecN(depth, 0) };
-    return { x: last[0] + tip.x * c - tip.y * s, y: last[1] + tip.x * s + tip.y * c, wrist: { x: last[0], y: last[1] }, angle: a, len: Math.hypot(tip.x, tip.y) };
-  };
-  const prop = typeof opts.prop === 'string' ? opts.prop.toLowerCase() : null;
-  if (prop && !opts.rightHandPose && !opts.handPose && hR !== 'point') hR = 'hold';
-  /* hideArm ('right' | 'left'): an arm out of sight, e.g. round someone's
-     back in a side hug; its joints are still solved. */
-  const armOrHidden = (side, ...args) => {
-    if (!(opts.hideArm === true || opts.hideArm === (side > 0 ? 'right' : 'left'))) return drawArm(...args);
-    ctx.save(); ctx.globalAlpha = 0;
-    const r = drawArm(...args);
-    ctx.restore();
-    return r;
-  };
   const nearTip = armOrHidden(-1, SL, tL, -1, hL, aL, dL, eL);
-  const farTip = armOrHidden(1, SR, tR, 1, hR, aR, dR, eR);
-  if (prop) swToonProp(ctx, prop, farTip, accent, ink);
+  if (!farBehind) {
+    farTip = armOrHidden(1, SR, tR, 1, hR, aR, dR, eR);
+    if (prop && !farHidden) swToonProp(ctx, prop, farTip, accent, ink);
+  }
 
   if (pointL && opts.showPointerRay !== false) {
     const gap = Math.hypot(pointL.Fl.x - farTip.x, pointL.Fl.y - farTip.y) * sc;
@@ -1135,7 +1287,7 @@ function swCastResolve(opts) {
   return out;
 }
 /* age: 'child' (smaller, with a larger head for the body) or 'elder'
-   (greying unless a hairColor is given, a slight stoop). */
+   (greying unless a hairColor is given, upright unless `stoop` is passed). */
 function swAge(opts) {
   if (!opts || !opts.age) return opts;
   const age = String(opts.age).toLowerCase();
@@ -1143,7 +1295,7 @@ function swAge(opts) {
     return Object.assign({}, opts, { heightScale: 0.68, rig: Object.assign({ head: [35, 38] }, opts.rig || {}) });
   }
   if (age === 'elder') {
-    return Object.assign({ hairColor: '#C8C6C2' }, opts, { stoop: ecN(opts.stoop, 1) });
+    return Object.assign({ hairColor: '#C8C6C2' }, opts, { stoop: ecN(opts.stoop, 0) });
   }
   return opts;
 }
@@ -1174,6 +1326,9 @@ function swSpeakerAt(words, t) {
 SWDraw.speakerAt = swSpeakerAt;
 (() => {
   const detailed = SWDraw.character;
+  /* A character at x, y: a cast member or a kit, with pose, emotion, gaze
+     and pointing (list_components {componentId: 'codeOverlay_x'} notes
+     the options); returns its joints. */
   SWDraw.character = (ctx, opts) => {
     opts = swAge(swCastResolve(opts));
     /* A kit member: the kit's illustrated parts under the flat skeleton. */

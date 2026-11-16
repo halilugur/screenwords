@@ -456,4 +456,6 @@ function swSet(ctx, name, o) {
 }
 SWDraw.set = swSet;
 SWDraw.sets = Object.keys(SW_SETS);
+/* The floor line of a set (by name, or a described place's own floor) in
+   pixels of H. */
 SWDraw.setFloor = (name, H) => (name && typeof name === 'object' ? ecClamp(ecN(name.floor, 0.8), 0.3, 0.98) : ecN(SW_SET_FLOOR[String(name || '').toLowerCase()], 0.8)) * ecN(H, 1);

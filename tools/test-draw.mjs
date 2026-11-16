@@ -71,8 +71,8 @@ for (const op of [...PATH_OPS, 'beginPath', 'fill', 'stroke', 'clip', 'fillRect'
 }
 
 const ctx = vm.createContext({ console, Math, Map, Array, Object, String, Number, JSON, isFinite, parseFloat, parseInt, Path2D, DOMMatrix });
-vm.runInContext(src + '\n;globalThis.__sw = { SWDraw, swParsePath, swTrim, swBox, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES, swKitParts, SW_KIT_HATS, SW_OBJECTS };', ctx);
-const { SWDraw, swParsePath, swTrim, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES, swKitParts, SW_KIT_HATS, SW_OBJECTS } = ctx.__sw;
+vm.runInContext(src + '\n;globalThis.__sw = { SWDraw, swParsePath, swTrim, swBox, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES, swKitParts, SW_KIT_HATS, SW_OBJECTS, SW_SHOULDER };', ctx);
+const { SWDraw, swParsePath, swTrim, swBeat, swAutoDirect, swStoryBlocking, swStoryAt, SW_SIDE_POSES, swKitParts, SW_KIT_HATS, SW_OBJECTS, SW_SHOULDER } = ctx.__sw;
 
 let failed = 0;
 const near = (a, b, eps) => Math.abs(a - b) <= (eps ?? 1e-6);
@@ -835,7 +835,8 @@ function check(name, ok, detail) {
     const B = swStoryBlocking(sc, 0, 12, 1920, 1.6, lines, words, undefined);
     const t = lines[1].start + 1, pa = swStoryAt(B.plans.a, t), pb = swStoryAt(B.plans.b, t);
     const gap = Math.abs(pa.x - pb.x);
-    check(`story ${view}: a handshake happens at arm's length despite a later exit`, gap < 260 && gap > (view === 'auto' ? 220 : 150) && pa.walking < 0.05 && pb.walking < 0.05, gap.toFixed(0));
+    const armsLength = k => 1.6 * 2 * (SW_SHOULDER.out + k * SW_SHOULDER.arm);
+    check(`story ${view}: a handshake happens at arm's length despite a later exit`, gap > armsLength(0.6) && gap < armsLength(1) && pa.walking < 0.05 && pb.walking < 0.05, gap.toFixed(0));
   }
 }
 
@@ -950,6 +951,155 @@ function check(name, ok, detail) {
   }
 }
 
+// Handing something over and shaking hands: the arms reach out at a
+// comfortable length, the elbow open, never folded beside the body with the
+// elbow flung out past the hand (as a hand-over from a grandfather to a
+// child once was: elbows at 57° and 62°, half the arm's length).
+{
+  const rig = SWDraw.character(new MockCtx(), { kit: 'editorial', x: 500, y: 0, W: 1920, H: 1080, time: 0 }).joints;
+  check('reach: the shoulder the stories plan with is the rig\'s', Math.abs(rig.arms.r.shoulder.x - SW_SHOULDER.out) < 1 && Math.abs(rig.ground - rig.arms.r.shoulder.y - SW_SHOULDER.up) < 1 && rig.upper + rig.fore === SW_SHOULDER.arm,
+    JSON.stringify({ shoulder: rig.arms.r.shoulder, ground: rig.ground, arm: rig.upper + rig.fore }));
+  const L = (speaker, text, start, end) => text.split(' ').map((t, i, a) => ({ id: speaker + start + i, speaker, text: t, start: start + (end - start) * i / a.length, end: start + (end - start) * (i + 1) / a.length }));
+  const words = [].concat(L('n', 'They met at last.', 0.3, 2), L('g', 'This is for you.', 3, 5), L('k', 'Thank you!', 5.5, 6.5));
+  const lines = SWDraw.conversationPlan(words).lines;
+  const cases = [
+    ['give, grandfather to child', { g: { kit: 'editorial', age: 'elder', beard: 'full' }, k: { kit: 'editorial', age: 'child', outfit: 'dress' } }, { line: 1, type: 'give', a: 'g', b: 'k', prop: 'book' }],
+    ['handshake, two adults', { g: { kit: 'editorial' }, k: { kit: 'editorial', hair: 'long' } }, { line: 1, type: 'handshake', a: 'g', b: 'k' }]
+  ];
+  const deg = v => v * 180 / Math.PI;
+  const orig = SWDraw.character;
+  for (const [name, castTable, action] of cases) for (const [Wd, Hd] of [[1920, 1080], [1080, 1920]]) {
+    const scenes = [{ set: 'room', cast: [{ cast: 'k', x: 0.3, prop: action.prop ? undefined : undefined }, { cast: 'g', x: 0.7, prop: action.prop }], actions: [action] }];
+    const t = lines[1].start + 0.4;
+    const got = [];
+    SWDraw.character = (c, o) => { const r = orig(c, o); if (o && o.rightHand) got.push({ cast: o.cast, o, j: r.joints, s: r }); return r; };
+    try { SWDraw.story(new MockCtx(), { W: Wd, H: Hd, time: t, words, castTable, scenes, duration: 8 }); } finally { SWDraw.character = orig; }
+    check(`reach (${name}, ${Wd}x${Hd}): both reach`, got.length === 2, got.map(g => g.cast).join());
+    const hands = [];
+    for (const { cast, j, o } of got) {
+      const a = j.arms.r, up = { x: a.elbow.x - a.shoulder.x, y: a.elbow.y - a.shoulder.y }, fo = { x: a.wrist.x - a.elbow.x, y: a.wrist.y - a.elbow.y };
+      const elbow = 180 - deg(Math.acos((up.x * fo.x + up.y * fo.y) / Math.hypot(up.x, up.y) / Math.hypot(fo.x, fo.y)));
+      const below = deg(Math.atan2(up.y, Math.abs(up.x)));
+      const reach = Math.hypot(a.wrist.x - a.shoulder.x, a.wrist.y - a.shoulder.y) / (j.upper + j.fore);
+      const flung = Math.sign(up.x) === Math.sign(a.wrist.x - a.shoulder.x) && Math.abs(up.x) > Math.abs(a.wrist.x - a.shoulder.x) + 2;
+      check(`reach (${name}, ${Wd}x${Hd}): ${cast}'s elbow is open, the arm out, sloping down`,
+        elbow >= 105 && reach >= 0.72 && below >= 5 && below <= 88 && !flung,
+        `elbow ${elbow.toFixed(0)}°, reach ${(reach * 100).toFixed(0)}%, upper arm ${below.toFixed(0)}° below level, flung ${flung}`);
+      hands.push(o.rightHand);
+    }
+    if (hands.length === 2) check(`reach (${name}, ${Wd}x${Hd}): the hands meet`, Math.abs(hands[0].x - hands[1].x) < 2 && Math.abs(hands[0].y - hands[1].y) < 24, JSON.stringify(hands));
+  }
+}
+
+// Turning toward someone: the body narrows and comes round, the legs stay
+// straight under the hips, and a story eases people round to whoever they
+// talk with or act with — never a snap from one frame to the next.
+{
+  const look = { kit: 'editorial', age: 'elder', beard: 'full', glasses: true };
+  const at = turn => SWDraw.character(new MockCtx(), Object.assign({ x: 500, y: 0, W: 1920, H: 1080, time: 1, turn }, look));
+  const square = at(0), plain = SWDraw.character(new MockCtx(), Object.assign({ x: 500, y: 0, W: 1920, H: 1080, time: 1 }, look));
+  check('turn: no turn is the square-on figure, unchanged', JSON.stringify(square.joints) === JSON.stringify(plain.joints));
+  const span = r => r.joints.arms.r.shoulder.x - r.joints.arms.l.shoulder.x;
+  let prev = square;
+  for (const turn of [0.2, 0.4, 0.6, 0.7]) {
+    const r = at(turn), j = r.joints;
+    check(`turn ${turn}: the shoulders narrow, in order`, span(r) < span(prev) && span(r) > span(square) * 0.55 && j.arms.l.shoulder.x < j.arms.r.shoulder.x, `${span(r).toFixed(1)} after ${span(prev).toFixed(1)}`);
+    check(`turn ${turn}: the head comes round toward the way it faces`, r.head.x > prev.head.x, `${r.head.x} ${prev.head.x}`);
+    for (const leg of j.legs) {
+      const len = Math.hypot(leg.knee.x - leg.hip.x, leg.knee.y - leg.hip.y) + Math.hypot(leg.ankle.x - leg.knee.x, leg.ankle.y - leg.knee.y);
+      const straight = Math.hypot(leg.ankle.x - leg.hip.x, leg.ankle.y - leg.hip.y);
+      check(`turn ${turn}: a standing leg stays straight, the foot under the hip`, Math.abs(len - straight) < 0.5 && Math.abs(leg.ankle.x - leg.hip.x) < 3, `${len.toFixed(1)} vs ${straight.toFixed(1)}, foot ${(leg.ankle.x - leg.hip.x).toFixed(1)} off`);
+    }
+    check(`turn ${turn}: the far leg (the way it faces) is the one behind`, j.legs[0].back && j.legs[0].hip.x > j.legs[1].hip.x);
+    prev = r;
+  }
+  check('turn: past 0.7 it holds (the profile view takes over there)', JSON.stringify(at(0.95).joints) === JSON.stringify(at(0.7).joints));
+  for (const pose of ['explain', 'shrug']) {
+    const r = SWDraw.character(new MockCtx(), Object.assign({ x: 500, y: 0, W: 1920, H: 1080, time: 1, turn: 0.65, pose }, look));
+    const al = r.joints.arms.l, ar = r.joints.arms.r;
+    check(`turn 0.65 ${pose}: near arm comes forward toward +x instead of behind`, al.wrist.x > al.shoulder.x && ar.wrist.x > ar.shoulder.x, `${al.shoulder.x.toFixed(1)} -> ${al.wrist.x.toFixed(1)}`);
+  }
+  {
+    const r = at(0.65), j = r.joints;
+    const midHip = (j.legs[0].hip.x + j.legs[1].hip.x) / 2;
+    const headLocalX = r.head.x - 500;
+    const a = 0.65 * Math.PI / 2, across = Math.sqrt(Math.cos(a) ** 2 + 0.36 * Math.sin(a) ** 2);
+    check('turn 0.65: head stays aligned over spine and near sleeve sits flush inside back',
+      Math.abs(headLocalX - midHip) < 4 && (midHip - j.arms.l.shoulder.x + 9) <= j.shW * across + 0.5,
+      `headOffset ${(headLocalX - midHip).toFixed(1)}, backEdge ${(midHip - j.arms.l.shoulder.x + 9).toFixed(1)} vs ${(j.shW * across).toFixed(1)}`);
+  }
+  for (const outfit of ['dress', 'robe']) for (const view of ['front', 'side']) {
+    const a = 0.7 * Math.PI / 2, across = Math.sqrt(Math.cos(a) ** 2 + 0.36 * Math.sin(a) ** 2);
+    const hemHalf = (outfit === 'robe' ? 38 : 44) * across;
+    let maxOff = 0, rects = [];
+    for (let t = 0; t < 1.5; t += 0.25) {
+      const mc = new MockCtx();
+      mc.rect = (...args) => rects.push(args);
+      const r = SWDraw.character(mc, { kit: 'editorial', outfit, age: outfit === 'dress' ? 'child' : 'adult', view, turn: 0.7, pose: 'walk', walkAmount: 1, x: 500, y: 0, W: 1920, H: 1080, time: t });
+      const midHip = (r.joints.legs[0].hip.x + r.joints.legs[1].hip.x) / 2;
+      for (const leg of r.joints.legs) maxOff = Math.max(maxOff, Math.abs(leg.ankle.x - midHip));
+    }
+    check(`${outfit} (${view}) walk: ankles stay inside hem and upper legs are clipped to skirt`,
+      (view === 'side' || maxOff <= hemHalf - 8) && rects.some(q => q[1] > 125 && q[1] < 160),
+      `maxOff ${maxOff.toFixed(1)} vs hem ${(hemHalf - 8).toFixed(1)}, clips ${rects.length}`);
+  }
+
+  // In a story: who turns how far, and how fast.
+  const L = (speaker, text, start, end) => text.split(' ').map((t, i, a) => ({ id: speaker + start + i, speaker, text: t, start: start + (end - start) * i / a.length, end: start + (end - start) * (i + 1) / a.length }));
+  const words = [].concat(L('n', 'Two of them in a room.', 0.3, 2.3), L('g', 'Hello there, take it.', 3.5, 5.5), L('k', 'For me? Thank you!', 6.2, 7.6), L('n', 'And that was that.', 9.2, 10.8));
+  const lines = SWDraw.conversationPlan(words).lines;
+  const castTable = { g: { kit: 'editorial', age: 'elder' }, k: { kit: 'editorial', age: 'child' } };
+  const scenes = [{ set: 'room', cast: [{ cast: 'k', x: 0.3 }, { cast: 'g', x: 0.7, prop: 'book' }], actions: [{ line: 2, type: 'give', a: 'g', b: 'k', prop: 'book' }] }];
+  const orig = SWDraw.character;
+  const turnsAt = t => {
+    const got = {};
+    SWDraw.character = (c, o) => { if (o && o.cast) got[o.cast] = o.turn; return orig(c, o); };
+    try { SWDraw.story(new MockCtx(), { W: 1920, H: 1080, time: t, words, castTable, scenes, duration: 12 }); } finally { SWDraw.character = orig; }
+    return got;
+  };
+  const narrating = turnsAt(1.9), talking = turnsAt(5.2), giving = turnsAt(lines[2].start + 0.6), after = turnsAt(10.6);
+  check('story turn: square-ish to the room while the narrator talks', narrating.g < 0.2 && narrating.k < 0.2, JSON.stringify(narrating));
+  check('story turn: turned firmly toward each other while talking', talking.g > 0.5 && talking.k > 0.5, JSON.stringify(talking));
+  check('story turn: squared up to hand something over', giving.g > 0.55 && giving.k > 0.55, JSON.stringify(giving));
+  check('story turn: back toward the room once it is over', after.g < 0.25 && after.k < 0.25, JSON.stringify(after));
+  // Greeting another cast member in a story still looks at them, not at the camera.
+  {
+    const dir = {};
+    SWDraw.character = (c, o) => { if (o && o.cast) dir[o.cast] = swAutoDirect(o).lookAt; return orig(c, o); };
+    try { SWDraw.story(new MockCtx(), { W: 1920, H: 1080, time: 4.0, words, castTable, scenes, duration: 12 }); } finally { SWDraw.character = orig; }
+    check('story lookAt: greeting someone in a story looks at them, not the viewer', dir.g && dir.g !== 'viewer' && dir.g.y > dir.k.y, JSON.stringify(dir));
+  }
+  {
+    const scHug = [{ set: 'room', cast: [{ cast: 'k', x: 0.3 }, { cast: 'g', x: 0.7 }], actions: [{ at: 4, type: 'hug', a: 'k', b: 'g' }] }];
+    const drawn = [];
+    SWDraw.character = (c, o) => { const r = orig(c, o); if (o && o.cast) drawn.push({ cast: o.cast, o, r }); return r; };
+    try { SWDraw.story(new MockCtx(), { W: 1920, H: 1080, time: 5.0, words, castTable, scenes: scHug, duration: 10 }); } finally { SWDraw.character = orig; }
+    const dg = drawn.find(x => x.cast === 'g'), dk = drawn.find(x => x.cast === 'k');
+    check('side hug: taller draws behind, both keep arms visible, elder hand rests on child shoulder and child hugs waist in front',
+      drawn.map(x => x.cast).join() === 'g,k' && !dg.o.hideArm && !dk.o.hideArm && dg.o.rightHand.y > dk.r.head.y && dk.o.rightArmFront === true,
+      JSON.stringify(drawn.map(x => ({ cast: x.cast, hide: x.o.hideArm, handY: x.o.rightHand?.y, front: x.o.rightArmFront, headY: x.r.head.y }))));
+  }
+  let worst = 0;
+  for (let t = 0; t < 11; t += 1 / 30) {
+    const a = turnsAt(t), b = turnsAt(t + 1 / 30);
+    for (const id of ['g', 'k']) worst = Math.max(worst, Math.abs(b[id] - a[id]));
+  }
+  check('story turn: eased, never a snap between frames', worst < 0.05, worst.toFixed(3));
+  // Three-person story: the middle character turns smoothly to face whichever side speaks.
+  {
+    const w3 = [].concat(L('a', 'Look over here.', 0.5, 2.5), L('c', 'No, look over here.', 4.5, 6.5));
+    const ct3 = { a: { kit: 'editorial' }, b: { kit: 'editorial' }, c: { kit: 'editorial' } };
+    const sc3 = [{ set: 'room', cast: [{ cast: 'a', x: 0.2 }, { cast: 'b', x: 0.5 }, { cast: 'c', x: 0.8 }] }];
+    const faceB = t => {
+      let f = 0;
+      SWDraw.character = (c, o) => { if (o && o.cast === 'b') f = o.facing; return orig(c, o); };
+      try { SWDraw.story(new MockCtx(), { W: 1920, H: 1080, time: t, words: w3, castTable: ct3, scenes: sc3, duration: 8 }); } finally { SWDraw.character = orig; }
+      return f;
+    };
+    check('story 3-cast: middle character faces the left speaker then turns to the right speaker', faceB(2.0) === -1 && faceB(6.0) === 1, `${faceB(2.0)} -> ${faceB(6.0)}`);
+  }
+}
+
 // The whole catalog through the shared chain, every module loaded as the
 // pages load it: no id may throw, warn, paint NaN geometry or leave a save
 // open, with default, typical or malformed params, in both orientations.
@@ -984,6 +1134,19 @@ function pointOf(v, fx, fy) { return v && typeof v === 'object' && Number.isFini
     if (why) { failedIds.add(id); check(`catalog: ${id} draws cleanly (params ${k}, ${W}x${H}, t ${t})`, false, why.slice(0, 200)); }
   }
   check('catalog: every id was drawn', ids.length > 500, ids.length);
+  // A code overlay's frame: word times, progress since a moment, and the
+  // helpers a drawing leans on, called the way a film calls them.
+  {
+    const out = [], c = new MockCtx();
+    const code = `params.out.push(sw.wordStart('w2'), sw.wordStart('gone'), sw.since(sw.wordStart('w2'), 2), sw.since(5, 1), sw.backOut(0), sw.backOut(1),
+      sw.backOut(0.5) > 1, sw.hash(3) === sw.hash(3), sw.hash(3) >= 0 && sw.hash(3) < 1, sw.mix('#000000', sw.mix('#FFFFFF', '#FFFFFF', 0.3), 0.5), sw.easeOutCubic(0.4) === sw.easeOut(0.4));
+      sw.text(ctx, 'Dünya', 540, 900, { size: 62, color: sw.theme.ink, align: 'left' }); sw.text(ctx, 'x', 0, 0);`;
+    bad.length = 0; warns.length = 0;
+    draw(c, 1080, 1920, 2, [{ id: 'c1', componentId: 'codeOverlay_check', start: 0, end: 3, params: { code, out } }], { words });
+    check('frame helpers: the overlay ran cleanly', !warns.length && !bad.length && c.depth === 0, warns[0] || bad[0]);
+    check('frame helpers: wordStart, since, backOut ends, hash, nested mix, easeOutCubic',
+      JSON.stringify(out) === JSON.stringify([1, null, 0.5, 0, 0, 1, true, true, true, 'rgb(128,128,128)', true]), JSON.stringify(out));
+  }
   // animate out: sink moves down, rise moves up
   for (const [out, down] of [['sink', true], ['rise', false]]) {
     const c = new MockCtx(), ys = [];

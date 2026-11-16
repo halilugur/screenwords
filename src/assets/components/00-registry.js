@@ -25,6 +25,15 @@ const RENDERED_IDS = [
   'lottieSocialHandle', 'lottieEmphasisBurst', 'lottieCountdown', 'lottieLogoReveal'
 ];
 
+/* How much the page overlays (captions, titles, lower thirds) are scaled
+   on a stage w x h px whose overlays were drawn for a 9:16 box of
+   baseW x baseH: by the stage's short side, so text keeps the same share of
+   the frame in portrait and landscape, at any size. The editor, the player
+   and the render all ask this, so what the editor shows is what renders. */
+function swOverlayScale(w, h, baseW, baseH) {
+  return { sx: Math.min(w / baseW, h / baseH), sy: h / baseH };
+}
+
 /* Scene components drawn by the character modules (02e-conversation.js). */
 const SW_SCENE_IDS = ['conversation', 'story'];
 

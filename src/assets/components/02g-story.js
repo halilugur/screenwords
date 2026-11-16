@@ -55,10 +55,39 @@ function swStoryScenes(scenes, lines, words, end) {
   return timed;
 }
 
+/* A hand-over and a handshake happen at a comfortable arm's length: each
+   arm reaches out toward the other with the elbow open (past about 105°;
+   reaching down to a child, the upper arm hangs and the forearm offers),
+   sloping down from the shoulder (`slope` radians below level), and
+   the hands meet between the two — not folded at the elbow next to the
+   body. In figure units the rig's
+   shoulder stands `out` from the centre line and `up` above the feet, and
+   the arm is `arm` long (the flat rig of 02c-toon; the draw checks hold
+   these to it). */
+const SW_SHOULDER = { out: 26, up: 227, arm: 100 };
+const SW_REACH_SLOPE = { give: 0.6, handshake: 0.8 };
+/* ka, kb: the two people's sizes (px per figure unit). How far apart their
+   centres stand, how far each hand reaches out from its own centre, and the
+   hands' height above the floor. */
+function swHandsMeet(ka, kb, slope) {
+  const r = SW_SHOULDER.arm * 0.95;
+  /* nearer the taller one's natural height: a grown-up reaches down to a
+     child more than the child reaches up */
+  const height = (ka * ka + kb * kb) / (ka + kb) * (SW_SHOULDER.up - r * Math.sin(slope));
+  const reach = k => k * (SW_SHOULDER.out + r * Math.cos(Math.asin(ecClamp((SW_SHOULDER.up - height / k) / r, 0.15, 0.95))));
+  const a = reach(ka), b = reach(kb);
+  return { apart: a + b, a, b, height };
+}
+/* A person's size in px per figure unit: the story's scale, the member's
+   own, and a child's smaller body. */
+function swStorySize(s, member, look) {
+  return s * ecN(member && member.scale, 1) * ecN(swAge(Object.assign({}, look, member)).heightScale, 1);
+}
+
 /* Where each cast member stands at time t (px) and whether they walk:
    entrances, moves, exits and the approaches actions need, each a walk at a
    steady pace. Returns { x, walking, vx } per cast id. */
-function swStoryBlocking(sc, a, b, W, s, lines, words, view) {
+function swStoryBlocking(sc, a, b, W, s, lines, words, view, castTable) {
   const pace = 260 * s;
   const people = (sc.cast || []).filter(m => m && typeof m.cast === 'string');
   const plans = {};
@@ -129,7 +158,9 @@ function swStoryBlocking(sc, a, b, W, s, lines, words, view) {
        two faces in profile read as a kiss). An embrace closes right in:
        the one in front then hides the other's face behind their head. */
     const both = prof(act.a) && prof(act.b);
-    const gap = (act.type === 'hug' ? (both ? 10 : 27) : act.type === 'give' ? (both ? 70 : 56) : (both ? 74 : 60)) * s, side = xa <= xb ? 1 : -1;
+    const size = id => swStorySize(s, people.find(m => m.cast === id), castTable && castTable[id]);
+    const gap = act.type === 'hug' ? (both ? 10 * s : (size(act.a) + size(act.b)) * 14.5) : swHandsMeet(size(act.a), size(act.b), SW_REACH_SLOPE[act.type] || 0.7).apart / 2;
+    const side = xa <= xb ? 1 : -1;
     /* A seated person stays put and the other comes to them — except for a
        hug, where the one sitting gets up and goes to the other. */
     const hug = act.type === 'hug';
@@ -143,8 +174,8 @@ function swStoryBlocking(sc, a, b, W, s, lines, words, view) {
     walkTo(act.b, act.t - lead - 0.4, tb);
     /* after a hug each steps back to a talking distance */
     if (hug) {
-      walkTo(act.a, act.t + 2.6, ta - side * 40 * s);
-      walkTo(act.b, act.t + 2.6, tb + side * 40 * s);
+      walkTo(act.a, act.t + 2.25, ta - side * 36 * s);
+      walkTo(act.b, act.t + 2.25, tb + side * 36 * s);
     }
   } });
   events.map((e, i) => Object.assign(e, { i })).sort((p, q) => p.t - q.t || p.k - q.k || p.i - q.i).forEach(e => e.run());
@@ -300,6 +331,7 @@ function swStoryCrowd(ctx, crowd, people, time, W, H, floorY, s, words, heads, s
     SWDraw.character(ctx, Object.assign({}, e.look, {
       W, H, time, localTime: time, x: e.x, y: yFeet - 170 * k, scale: k,
       facing: e.walking ? e.dir : (speaking && heads[speaking] ? (heads[speaking].x >= e.x ? 1 : -1) : (e.x < W / 2 ? 1 : -1)),
+      turn: e.walking ? 0.7 : (speaking && heads[speaking] ? 0.5 : 0.15),
       walkAmount: e.walking ? 1 : 0, vx: e.walking ? e.dir * e.pace : 0,
       pose: e.walking ? 'walk' : ['idle', 'idle', 'hold', 'think'][Math.floor(e.row * 4)],
       lookAt: !e.walking && speaking && heads[speaking] ? heads[speaking] : undefined,
@@ -347,14 +379,18 @@ function swStory(ctx, opts) {
   const s = (portrait ? U / 520 : U / 640) * ecN(sc.scale, 1);
   const font = opts.fontFamily || '"Space Grotesk", sans-serif';
   const floorY = SWDraw.setFloor(sc.set, H);
-  const { plans, items, solo } = swStoryBlocking(sc, a, b, W, s, lines, words, opts.view);
+  const { plans, items, solo } = swStoryBlocking(sc, a, b, W, s, lines, words, opts.view, castTable);
   const actions = swStoryActions(sc, lines, words, a);
   const people = (sc.cast || []).filter(m => m && typeof m.cast === 'string');
   const pos = {};
   for (const m of people) pos[m.cast] = swStoryAt(plans[m.cast], time);
   const speaking = SWDraw.speakerAt(words, time);
+  const sitDropOf = (mm, cid) => (mm.seated && Math.abs(pos[cid].x - plans[cid].home) < 2 && pos[cid].walking < 0.05 ? SWDraw.seatDrop((castTable[cid] && castTable[cid].style) || 'flat') * swStorySize(s, mm, castTable[cid]) : 0);
   const heads = {};
-  for (const m of people) heads[m.cast] = { x: pos[m.cast].x, y: floorY - (170 + 140) * s * ecN(m.scale, 1) };
+  for (const m of people) {
+    const k = swStorySize(s, m, castTable[m.cast]);
+    heads[m.cast] = { x: pos[m.cast].x, y: floorY - 275 * k + sitDropOf(m, m.cast) };
+  }
 
   /* Camera: shots with a purpose. Wide while the scene opens, while
      anyone walks, for the narrator and for short reactions; a close shot
@@ -412,8 +448,28 @@ function swStory(ctx, opts) {
     const cx = others.length ? others.reduce((acc, o) => acc + plans[o.cast].home, 0) / others.length : W / 2;
     return cx >= plans[id].home ? 1 : -1;
   };
-  /* People, back to front by x so overlaps read left to right. */
-  const order = people.slice().sort((p, q) => pos[p.cast].x - pos[q.cast].x);
+  /* People, back to front by x — except during a front side hug, where the
+     shoulder-hugger (taller partner, or left if same size) stays behind so
+     their sleeve wraps behind the shorter partner's neck while the shorter
+     partner hugs across the waist in front. */
+  const hugShoulder = new Set();
+  for (const act of actions) {
+    if (act.type !== 'hug') continue;
+    const dt = time - act.t;
+    if (dt < -1.8 || dt > 3.6) continue;
+    const ma = people.find(m => m.cast === act.a) || {}, mb = people.find(m => m.cast === act.b) || {};
+    const prof = mm => /^(side|auto)$/.test(String(mm.view || sc.view || opts.view || ''));
+    if (prof(ma) && prof(mb)) continue;
+    if (!pos[act.a] || !pos[act.b]) continue;
+    const sa = swStorySize(s, ma, castTable[act.a]), sb = swStorySize(s, mb, castTable[act.b]);
+    const pick = Math.abs(sa - sb) > 0.08 * s ? (sa > sb ? act.a : act.b) : (pos[act.a].x < pos[act.b].x || (pos[act.a].x === pos[act.b].x && act.a < act.b) ? act.a : act.b);
+    hugShoulder.add(pick);
+  }
+  const order = people.slice().sort((p, q) => {
+    const pb = hugShoulder.has(p.cast), qb = hugShoulder.has(q.cast);
+    if (pb !== qb) return pb ? -1 : 1;
+    return pos[p.cast].x - pos[q.cast].x;
+  });
   swStoryEffects(ctx, sc.effects, 'back', time, a, b, lines, words, W, H);
   swStoryCrowd(ctx, sc.crowd, people, time, W, H, floorY, s, words, heads, speaking, String((sc.crowd && sc.crowd.view) || sc.view || opts.view || "").toLowerCase());
   const hugHands = [];
@@ -443,22 +499,87 @@ function swStory(ctx, opts) {
       swStoryTable(ctx, plans[m.cast].home + (m.facing ? m.facing : facingHome(m.cast)) * 34 * ms, floorY, ms, sc.night);
     }
   }
+  /* How far each person's body turns toward whoever they talk with or act
+     with: square-ish to the room while nobody in the scene talks, turned
+     squarely toward the speaker/listener during dialogue (even across brief
+     pauses between lines), while walking, or while acting together (less
+     in a side hug). Signed turns follow through 0 so switching sides in a
+     group eases instead of snapping. */
+  const inScene = new Set(people.map(m => m.cast));
+  const talkAt = (cid, t) => {
+    const sp = SWDraw.speakerAt(words, t);
+    if (sp && inScene.has(sp)) return sp;
+    let prev = null, next = null;
+    for (const l of lines) {
+      if (l.end <= t) prev = l;
+      else if (l.start >= t && !next) { next = l; break; }
+    }
+    if (prev && next && inScene.has(prev.id) && inScene.has(next.id) && next.start - prev.end <= 1.2) {
+      return prev.id === cid ? next.id : prev.id;
+    }
+    return null;
+  };
+  const speakerTarget = (cid, t) => {
+    const others = people.filter(o => o.cast !== cid).map(o => o.cast);
+    if (!others.length) return W / 2;
+    if (others.length === 1) return swStoryAt(plans[others[0]], t).x;
+    const li = lines.findIndex(l => l.id === cid && t >= l.start - 0.2 && t <= l.end + 0.3);
+    const prev = li > 0 ? lines[li - 1].id : null;
+    const ring = prev && others.includes(prev) ? [prev].concat(others.filter(k => k !== prev)) : others;
+    const k = li >= 0 ? Math.floor((t - lines[li].start) / 2.6) : 0;
+    const targetId = ring[(k + ring.length) % ring.length];
+    return swStoryAt(plans[targetId], t).x;
+  };
+  const dirAt = (m, cid, t) => {
+    if (m.facing) return ecN(m.facing, 1) >= 0 ? 1 : -1;
+    const at = swStoryAt(plans[cid], t);
+    if (Math.abs(at.vx) > 20) return Math.sign(at.vx);
+    for (const act of solo) {
+      if (act.a === cid && act.type === 'pickup' && act.x != null && t - act.t > -0.35 && t - act.t < 1.1) return act.x >= at.x ? 1 : -1;
+    }
+    for (const act of actions) {
+      const dt = t - act.t;
+      if (dt < -0.5 || dt > 2.4) continue;
+      const partner = act.a === cid ? act.b : act.b === cid ? act.a : null;
+      if (partner && plans[partner]) return swStoryAt(plans[partner], t).x >= at.x ? 1 : -1;
+    }
+    const sp = talkAt(cid, t);
+    if (sp && sp !== cid && plans[sp]) return swStoryAt(plans[sp], t).x >= at.x ? 1 : -1;
+    if (sp === cid) return speakerTarget(cid, t) >= at.x ? 1 : -1;
+    const others = people.filter(o => o.cast !== cid);
+    const tx = others.length ? others.reduce((acc, o) => acc + swStoryAt(plans[o.cast], t).x, 0) / others.length : W / 2;
+    return tx >= at.x ? 1 : -1;
+  };
+  const turnTarget = (cid, t) => {
+    for (const act of actions) {
+      if ((act.a === cid || act.b === cid) && t - act.t > -0.6 && t - act.t < 2.4) return act.type === 'hug' ? 0.06 : 0.7;
+    }
+    for (const act of solo) {
+      if (act.a === cid && act.type === 'pickup' && t - act.t > -0.35 && t - act.t < 1.1) return 0.65;
+    }
+    if (swStoryAt(plans[cid], t).walking > 0.05) return 0.7;
+    return talkAt(cid, t) && people.length > 1 ? 0.65 : 0.1;
+  };
+  const turnOf = (m, cid, seated) => SWDraw.follow(
+    t => dirAt(m, cid, t) * Math.min(seated ? 0.55 : 0.7, turnTarget(cid, t)),
+    time, { freq: 1.0, damping: 1, window: 1.6, steps: 40 }
+  );
   for (const m of order) {
     const p = pos[m.cast], id = m.cast, ms = s * ecN(m.scale, 1);
-    const others = people.filter(o => o.cast !== id);
+    const seatedNow = !!m.seated && Math.abs(p.x - plans[id].home) < 2 && p.walking < 0.05;
+    const st = turnOf(m, id, seatedNow);
     let facing = ecN(m.facing, 0);
     if (Math.abs(p.vx) > 20) facing = Math.sign(p.vx);
-    else if (!facing) {
-      const target = speaking && speaking !== id && pos[speaking] ? pos[speaking].x
-        : others.length ? others.reduce((acc, o) => acc + pos[o.cast].x, 0) / others.length : W / 2;
-      facing = target >= p.x ? 1 : -1;
-    }
+    else if (!facing) facing = st >= 0 ? 1 : -1;
+    else facing = facing >= 0 ? 1 : -1;
     const o = {
       cast: id, castTable, words, W, H, time, localTime: time,
       x: p.x, y: floorY - 170 * ms, scale: ms, facing,
-      walkAmount: p.walking, vx: p.vx, seated: !!m.seated && Math.abs(p.x - plans[id].home) < 2 && p.walking < 0.05,
-      prop: m.prop, pose: p.walking > 0.05 ? 'walk' : 'auto', lookAt: 'speaker', seatHeads: heads
+      walkAmount: p.walking, vx: p.vx, seated: seatedNow,
+      prop: m.prop, pose: p.walking > 0.05 ? 'walk' : 'auto',
+      lookAt: 'speaker', seatHeads: heads, addressViewer: people.length <= 1
     };
+    o.turn = ecClamp(Math.abs(st), 0, 0.7);
     let hugging = false;
     o.bag = m.bag;
     /* Profile view: always, or ('auto') while walking, picking something
@@ -492,30 +613,35 @@ function swStory(ctx, opts) {
       const partner = act.a === id ? act.b : act.b === id ? act.a : null;
       if (!partner || !pos[partner]) continue;
       /* reach only once the two stand together, never mid-stride */
-      const q = (p.walking > 0.05 || pos[partner].walking > 0.05) ? 0 : ease((dt + 0.3) / 0.45) * ease((2.4 - dt) / 0.45);
+      const q = (p.walking > 0.05 || pos[partner].walking > 0.05) ? 0
+        : act.type === 'hug' ? ease((dt + 0.3) / 0.4) * ease((2.2 - dt) / 0.4)
+        : ease((dt + 0.3) / 0.45) * ease((2.4 - dt) / 0.45);
       const px = pos[partner].x, toward = px >= p.x ? 1 : -1;
       const pm = people.find(x => x.cast === partner) || {}, pk = s * ecN(pm.scale, 1);
       const sitDrop = (mm, k, cid) => (mm.seated && pos[cid].walking < 0.05 ? SWDraw.seatDrop('flat') * k : 0);
       const myDrop = sitDrop(m, ms, id), theirDrop = sitDrop(pm, pk, partner);
+      const mySize = swStorySize(s, m, castTable[id]), pkSize = swStorySize(s, pm, castTable[partner]);
       o.facing = toward;
       o.pose = 'idle';
-      o.lookAt = { x: px, y: floorY - 275 * pk + theirDrop };
+      o.lookAt = { x: px, y: floorY - 275 * pkSize + sitDrop(pm, pkSize, partner) };
       const lerp = (u, v) => u + (v - u) * q;
-      if (act.type === 'handshake') {
-        /* Right hands clasp between them at the waist and pump twice. */
-        const meetX = (p.x + px) / 2, meetY = (floorY - 160 * ms + myDrop + floorY - 160 * pk + theirDrop) / 2;
-        const pump = dt > 0 && dt < 1.3 ? Math.sin(dt * Math.PI * 2 / 0.65) * 5 * ms : 0;
-        const rest = { x: p.x + toward * 20 * ms, y: floorY - 120 * ms + myDrop };
-        o.rightHand = { x: lerp(rest.x, meetX - toward * 12 * ms), y: lerp(rest.y, meetY + pump) };
-        o.rightHandPose = 'hold';
-        o.emotion = 'happy';
-      } else if (act.type === 'give') {
-        /* The giver holds the thing out; the receiver opens a palm under it. */
-        const meetX = (p.x + px) / 2, meetY = (floorY - 175 * ms + myDrop + floorY - 175 * pk + theirDrop) / 2;
+      if (act.type === 'handshake' || act.type === 'give') {
+        /* The two hands meet at arm's length between them (swHandsMeet), at
+           the point their reaches share: a handshake low and pumping
+           twice, a hand-over a little higher, the giver holding the thing
+           out and the receiver opening a palm under it. */
+        const ka = swStorySize(s, act.a === id ? m : pm, castTable[act.a]), kb = swStorySize(s, act.b === id ? m : pm, castTable[act.b]);
+        const meet = swHandsMeet(ka, kb, SW_REACH_SLOPE[act.type]);
+        const xa = act.a === id ? p.x : px, xb = act.a === id ? px : p.x;
+        const meetX = xa + (xb - xa) * meet.a / meet.apart, meetY = floorY - meet.height + (myDrop + theirDrop) / 2;
         const rest = { x: p.x + toward * 20 * ms, y: floorY - 120 * ms + myDrop };
         const giver = act.a === id;
-        o.rightHand = { x: lerp(rest.x, meetX - toward * (giver ? 16 : 6) * ms), y: lerp(rest.y, meetY + (giver ? 0 : 8 * ms)) };
-        o.rightHandPose = giver ? 'hold' : 'open';
+        const shake = act.type === 'handshake';
+        const pump = shake && dt > 0 && dt < 1.3 ? Math.sin(dt * Math.PI * 2 / 0.65) * 5 * ms : 0;
+        const hold = shake ? 0 : (giver ? -6 : 4) * ms;
+        o.rightHand = { x: lerp(rest.x, meetX), y: lerp(rest.y, meetY + pump + hold) };
+        o.rightHandPose = shake || giver ? 'hold' : 'open';
+        if (shake) o.emotion = 'happy';
       } else if (act.type === 'hug' && side && sideFor(pm, partner)) {
         /* An embrace in profile: chest to chest, so close that the one in
            front (drawn last) hides the other's face behind their head —
@@ -534,23 +660,33 @@ function swStory(ctx, opts) {
         hugging = true;
         o.emotion = q > 0.5 ? 'content' : 'happy';
       } else if (act.type === 'hug') {
-        /* A side hug — the embrace that reads with figures facing the
-           camera: shoulder to shoulder, heads leaning together, eyes closed,
-           the inner arms round each other's backs. Those arms are out of
-           sight; only the hands show, laid on afterwards (see below): the
-           one behind rests a hand on the front one's far shoulder, the one
-           in front a hand on the other's far waist. The outer arms hang. */
-        const behind = pos[id].x < pos[partner].x || (pos[id].x === pos[partner].x && id < partner);
-        if (q > 0.2) {
-          o.hideArm = 'right';
-          const pSkin = (castTable[partner] && castTable[partner].skinColor) || '#F2C4A2';
-          const mySkin = (castTable[id] && castTable[id].skinColor) || (castTable[id] && castTable[id].kit ? '#F2C4A2' : '#F2C4A2');
-          void pSkin;
-          hugHands.push(behind
-            ? { x: px + toward * 22 * pk, y: floorY - 222 * pk + theirDrop, angle: Math.PI / 2 + toward * 0.35, s: ms, skin: mySkin, q }
-            : { x: px + toward * 26 * pk, y: floorY - 160 * pk + theirDrop, angle: Math.PI / 2 - toward * 0.5, s: ms, skin: mySkin, q });
+        /* A side hug — shoulder to shoulder, heads leaning together, eyes
+           closed: the taller partner (or left when matched) reaches a visible
+           arm behind the other's neck onto their far shoulder (with the hand
+           draped over the shoulder cap), while the partner wraps their inner
+           arm openly across the waist in front. Both arms stay drawn. */
+        const shoulderRole = hugShoulder.has(id);
+        const dropOfPartner = sitDrop(pm, pkSize, partner);
+        const mySizeDrop = sitDrop(m, mySize, id);
+        const mySkin = (castTable[id] && castTable[id].skinColor) || '#F2C4A2';
+        const restX = p.x + toward * 20 * mySize, restY = floorY - 126 * mySize + mySizeDrop;
+        const restEx = p.x + toward * 24 * mySize, restEy = floorY - 174 * mySize + mySizeDrop;
+        o.rightArmShorten = true;
+        if (shoulderRole) {
+          const sx = px + toward * 20 * pkSize, sy = floorY - 218 * pkSize + dropOfPartner;
+          const hx = lerp(restX, sx), hy = lerp(restY, sy);
+          o.rightHand = { x: hx, y: hy };
+          o.rightElbow = { x: lerp(restEx, px - toward * 4 * pkSize), y: lerp(restEy, sy + 6 * s) };
+          o.rightHandPose = q > 0.45 ? 'none' : 'relaxed';
+          if (q > 0.45) hugHands.push({ x: hx, y: hy, angle: Math.PI / 2 - toward * 0.45, ts: -toward, s: mySize, skin: mySkin, q: (q - 0.45) / 0.55 });
+        } else {
+          o.rightArmFront = true;
+          const waistY = floorY - Math.min(148 * pkSize, 186 * mySize) + dropOfPartner;
+          o.rightHand = { x: lerp(restX, px - toward * 20 * pkSize), y: lerp(restY, waistY + 2 * mySize) };
+          o.rightElbow = { x: lerp(restEx, p.x + toward * 21 * mySize), y: lerp(restEy, waistY - 4 * mySize) };
+          o.rightHandPose = 'relaxed';
         }
-        o.headTilt = 0.5 * q;
+        o.headTilt = 0.7 * q;
         /* Nobody hugs from a chair, or with a phone in hand. */
         o.seated = false;
         o.prop = null;
@@ -572,13 +708,13 @@ function swStory(ctx, opts) {
        front far better than legs do. */
     if (o.seated && (m.table === true || (m.table !== false && sc.set === 'cafe'))) swStoryTable(ctx, plans[id].home + (m.facing ? m.facing : facingHome(id)) * 34 * ms, floorY, ms, sc.night);
   }
-  /* Hands from a side hug, laid over both figures. */
+  /* Resting shoulder hand from a side hug, laid over the partner's far shoulder. */
   for (const h of hugHands) {
     ctx.save();
-    ctx.globalAlpha *= ecClamp((h.q - 0.2) / 0.3, 0, 1);
+    ctx.globalAlpha *= ecClamp(h.q, 0, 1);
     ctx.translate(h.x, h.y);
     ctx.rotate(h.angle);
-    swToonHand(ctx, 'relaxed', 12 * h.s, h.skin, swShade(h.skin, -0.16), 'flat', 1);
+    swToonHand(ctx, 'relaxed', 12 * h.s, h.skin, swShade(h.skin, -0.16), 'flat', h.ts || 1);
     ctx.restore();
   }
   SWDraw.set(ctx, sc.set, { W, H, time, night: !!sc.night, colors: sc.colors, layer: 'front', camX });
@@ -674,4 +810,7 @@ function swStory(ctx, opts) {
   return { camera: { zoom, x: zoom > 1.001 ? fx : W / 2, y: zoom > 1.001 ? fy : H / 2 } };
 }
 SWDraw.story = swStory;
+/* The actions a scene plays between two of its people (`a` and `b`); a
+   scene's `drop` and `pickup` are one person's and take an item. */
+SWDraw.storyActions = ['handshake', 'give', 'hug'];
 SWDraw.storyScenes = swStoryScenes;

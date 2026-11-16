@@ -15,6 +15,28 @@ pub fn render_data(p: &Project) -> Value {
 
 /// `render_data` with the bundle folder for relative asset paths (audio is
 /// inlined as a data: URI, so it has to be found before the page is built).
+/// How long the film runs: its set length, or a second past the last word
+/// when it has none, and never shorter than the speech or than the last
+/// visible component.
+pub fn film_duration(p: &Project) -> f64 {
+    let speech_end = p.words().iter().map(|w| w.end().seconds()).fold(0.0_f64, f64::max);
+    let visual_end = p
+        .tracks()
+        .into_iter()
+        .filter(|t| !t.is_hidden())
+        .flat_map(|t| t.components().iter())
+        .filter(|c| c.get("isEnabled").and_then(Value::as_bool).unwrap_or(true))
+        .filter_map(|c| p.component_window(c))
+        .map(|(start, end)| end.unwrap_or(start).seconds())
+        .fold(0.0_f64, f64::max);
+    p.settings()
+        .target_duration()
+        .map(|t| t.seconds())
+        .unwrap_or(speech_end + 1.0)
+        .max(speech_end + 0.5)
+        .max(visual_end)
+}
+
 pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
     let s = p.settings();
     let words: Vec<Value> = p
@@ -35,11 +57,7 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
             o
         })
         .collect();
-    let speech_end = words
-        .iter()
-        .filter_map(|w| w.get("end").and_then(Value::as_f64))
-        .fold(0.0_f64, f64::max);
-    let components: Vec<Value> = p
+    let mut components: Vec<Value> = p
         .tracks()
         .into_iter()
         .filter(|t| !t.is_hidden())
@@ -66,16 +84,15 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
             Some(o)
         })
         .collect();
-    let visual_end = components
-        .iter()
-        .filter_map(|c| c.get("end").and_then(Value::as_f64))
-        .fold(0.0_f64, f64::max);
-    let duration = s
-        .target_duration()
-        .map(|t| t.seconds())
-        .unwrap_or(speech_end + 1.0)
-        .max(speech_end + 0.5)
-        .max(visual_end);
+    // Pictures the project imported travel inside the page.
+    if let Some(base) = base {
+        for c in components.iter_mut() {
+            if let Some(params) = c.get_mut("params") {
+                crate::preview::embed_local_images(params, base);
+            }
+        }
+    }
+    let duration = film_duration(p);
 
     let mut tracks = Vec::new();
     for t in p.tracks() {
@@ -132,9 +149,12 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
                 .resolve_time(e.get("start").unwrap_or(&Value::Null))
                 .map(|tm| tm.seconds())
                 .unwrap_or(0.0);
-            let dur = RationalTime::from_json(e.get("duration").unwrap_or(&Value::Null))
-                .unwrap_or(RationalTime::ZERO)
-                .seconds();
+            // Music placed "to the end" is as long as what is left of the film.
+            let dur = if e.get("toEnd").and_then(Value::as_bool).unwrap_or(false) {
+                (duration - start).max(0.0)
+            } else {
+                RationalTime::from_json(e.get("duration").unwrap_or(&Value::Null)).unwrap_or(RationalTime::ZERO).seconds()
+            };
             let mut o = Value::obj();
             o.set("kind", Value::str("audio"));
             o.set("id", Value::str(e.get("id").and_then(Value::as_str).unwrap_or("")));
@@ -234,66 +254,14 @@ pub fn render_data_in(p: &Project, base: Option<&Path>) -> Value {
         p.root.get("settings").and_then(|st| st.get("cast")).cloned().unwrap_or_else(Value::obj),
     );
 
-    let mut audio_uri: Option<String> = None;
-    let mut audio_bytes = None;
-    let mut audio_wav = false;
-    let mut audio_assets = Vec::new();
-    let voice_track_muted = p
-        .tracks()
-        .iter()
-        .any(|t| t.role() == Some("voice") && t.is_muted() && !t.audio_events().is_empty());
-    for t in p.tracks() {
-        if t.is_muted() {
-            continue;
-        }
-        for ev in t.audio_events() {
-            if ev.get("role").and_then(Value::as_str) == Some("voice") {
-                if let Some(a) = ev.get("assetId").and_then(Value::as_str).and_then(|id| p.asset(id)) {
-                    audio_assets.push(a);
-                }
-            }
-        }
+    // The one track the player plays: narration, with music and effects
+    // mixed in when the film has them.
+    let track = crate::audio::film_sound(p, base, duration);
+    if let Some(sound) = track.sound {
+        r.set("audioData", Value::str(&format!("data:{};base64,{}", sound.mime, base64_encode(&sound.bytes))));
     }
-    if !voice_track_muted {
-        audio_assets.extend(p.assets());
-    }
-    for a in audio_assets {
-        if a.get("kind").and_then(Value::as_str) == Some("audio") {
-            // New projects embed narration as a data URI: nothing on disk.
-            // A path is only the legacy form (older bundles, CLI output).
-            if let Some(uri) = a.get("source").and_then(|s| s.get("dataUri")).and_then(Value::as_str) {
-                if uri.starts_with("data:") {
-                    audio_uri = Some(uri.to_string());
-                    break;
-                }
-            }
-            if let Some(src) = a.get("source").and_then(|s| s.get("path")).and_then(Value::as_str) {
-                let path = Path::new(src);
-                let resolved = if path.is_absolute() {
-                    path.to_path_buf()
-                } else {
-                    match base {
-                        Some(base) => base.join(path),
-                        None => path.to_path_buf(),
-                    }
-                };
-                if let Ok(bytes) = std::fs::read(&resolved) {
-                    audio_wav = resolved
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .map(|e| e.eq_ignore_ascii_case("wav"))
-                        .unwrap_or(false);
-                    audio_bytes = Some(bytes);
-                    break;
-                }
-            }
-        }
-    }
-    if let Some(uri) = audio_uri {
-        r.set("audioData", Value::str(&uri));
-    } else if let Some(bytes) = audio_bytes {
-        let mime = if audio_wav { "audio/wav" } else { "audio/mp3" };
-        r.set("audioData", Value::str(&format!("data:{mime};base64,{}", base64_encode(&bytes))));
+    if !track.notes.is_empty() {
+        r.set("soundNotes", Value::Array(track.notes.iter().map(|n| Value::str(n)).collect()));
     }
     r
 }
@@ -371,6 +339,7 @@ const TEMPLATE: &str = include_str!("assets/player.html");
 /// script with one global scope.
 pub const COMPONENTS: &str = concat!(
     include_str!("assets/components/00-registry.js"),
+    include_str!("assets/components/00a-reset.js"),
     include_str!("assets/components/01-catalog.js"),
     include_str!("assets/components/02-helpers.js"),
     include_str!("assets/components/02a-vector.js"),
@@ -401,6 +370,7 @@ pub const COMPONENTS: &str = concat!(
     include_str!("assets/components/17-data.js"),
     include_str!("assets/components/18-dispatch.js"),
     include_str!("assets/components/19-base.js"),
+    include_str!("assets/components/20-html.js"),
 );
 
 /// Where the library goes in a page asset.
@@ -593,6 +563,70 @@ mod tests {
         let call = COMPONENTS.find("c._compiled(ctx,").expect("code overlays are called");
         let try_at = COMPONENTS[..call].rfind("try {").expect("the call is guarded");
         assert_eq!(COMPONENTS[try_at..call].trim(), "try {", "the overlay call must open its try block");
+    }
+
+    #[test]
+    fn the_browsers_own_styles_are_removed_once_for_pages_and_scenes() {
+        // One reset, in the library both pages embed; HTML scenes start from
+        // the same text, and no page keeps a partial copy of its own.
+        assert_eq!(COMPONENTS.matches("const SW_RESET_CSS").count(), 1);
+        assert!(COMPONENTS.contains("const SW_HTML_BASE = SW_RESET_CSS"), "HTML scenes start from the reset");
+        assert!(COMPONENTS.contains("document.head.prepend(sheet)"), "the pages take it as their first sheet");
+        let reset = block_between(COMPONENTS, "const SW_RESET_CSS = [", "].join(");
+        for rule in ["margin: 0; padding: 0; border: 0", "font: inherit", "list-style: none", "appearance: none", "border-collapse: collapse"] {
+            assert!(reset.contains(rule), "the reset misses {rule}");
+        }
+        // Zero specificity throughout, so any rule of ours wins: every
+        // selector is `*`, a pseudo-element or inside :where().
+        let mut rules = 0;
+        for line in reset.lines().map(str::trim).filter(|l| l.starts_with('\'')) {
+            let selector = line.trim_start_matches('\'').split('{').next().unwrap_or("");
+            // What is left once every :where(...) group, `*` and the two
+            // pseudo-elements are taken out carries weight.
+            let mut rest = selector.to_string();
+            while let Some(from) = rest.find(":where(") {
+                let to = from + rest[from..].find(')').expect("a closed :where()") + 1;
+                rest.replace_range(from..to, "");
+            }
+            let weight: String = rest.replace("::before", "").replace("::after", "").chars().filter(|c| !matches!(c, '*' | ',' | ' ')).collect();
+            assert!(weight.is_empty(), "a reset selector with weight: {selector}");
+            rules += 1;
+        }
+        assert!(rules >= 15, "only {rules} reset rules were read");
+        for (page, name) in [(include_str!("assets/player.html"), "player"), (include_str!("assets/editor.html"), "editor")] {
+            assert!(!page.contains("*, *::before, *::after { box-sizing: border-box; }"), "the {name} keeps its own copy of the reset");
+            // The reset takes every control's own look; a page that uses a
+            // checkbox draws one, or the box is invisible.
+            if page.contains("type=\"checkbox\"") {
+                assert!(page.contains("input[type=checkbox]:checked::after"), "the {name} has checkboxes with no look");
+            }
+        }
+    }
+
+    #[test]
+    fn captions_are_scaled_one_way_in_the_editor_the_player_and_the_render() {
+        // A landscape film's captions came out twice as large in the editor
+        // as in the video: each place had its own formula. Now all ask one.
+        assert_eq!(COMPONENTS.matches("function swOverlayScale(").count(), 1);
+        for (text, name) in [(include_str!("assets/player.html"), "player"), (include_str!("assets/editor.html"), "editor"), (include_str!("../tools/stage-page.mjs"), "render")] {
+            assert!(text.contains("swOverlayScale("), "the {name} does not use the shared overlay scale");
+            assert!(!text.contains("setProperty('--sx', Math"), "the {name} still computes its own overlay scale");
+        }
+    }
+
+    #[test]
+    fn html_scenes_come_from_the_shared_library_in_both_pages() {
+        // One implementation, called by the player and by the editor stage,
+        // and left alone by the canvas chain.
+        assert!(COMPONENTS.contains("function swHtmlOverlays(canvas, comps, time, env)"));
+        assert!(COMPONENTS.contains("a.currentTime ="), "animations are set to the film's time");
+        assert!(COMPONENTS.contains("indexOf(SW_HTML_PREFIX) !== 0"), "the canvas chain skips HTML scenes");
+        for (page, name) in [(include_str!("assets/player.html"), "player"), (include_str!("assets/editor.html"), "editor")] {
+            assert_eq!(page.matches("swHtmlOverlays(").count(), 1, "the {name} calls the library once");
+            assert!(!page.contains("attachShadow"), "the {name} grew its own HTML scene code");
+        }
+        // A renderer that snapshots the DOM on change asks whether a scene is on show.
+        assert!(include_str!("../tools/render-mp4.mjs").contains("swHtmlKey()"));
     }
 
     #[test]

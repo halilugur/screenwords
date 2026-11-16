@@ -72,9 +72,9 @@ const SW_KIT_OUTFITS = {
    and a long dress fitted to the waist with a flared skirt (shirtColor). */
 const SW_KIT_ROBE_SLEEVES = {
   upperArm: [
-    { d: 'M-11 -1 Q-12 26 -10 52 L10 52 Q12 26 11 -1 Q0 -10 -11 -1 Z', fill: '$jacket' },
-    { d: 'M-10 52 a10 10 0 1 0 20 0 a10 10 0 1 0 -20 0 Z', fill: '$jacket' },
-    { d: 'M-11 -1 Q-12 26 -10 52 M11 -1 Q12 26 10 52', stroke: '$jacketDark', lineWidth: 1.7 }],
+    { d: 'M-10.5 -1 Q-11.5 26 -9.5 52 L9.5 52 Q11.5 26 10.5 -1 Q0 -8.5 -10.5 -1 Z', fill: '$jacket' },
+    { d: 'M-9.5 52 a9.5 9.5 0 1 0 19 0 a9.5 9.5 0 1 0 -19 0 Z', fill: '$jacket' },
+    { d: 'M-10.5 -1 Q-11.5 26 -9.5 52 M10.5 -1 Q11.5 26 9.5 52', stroke: '$jacketDark', lineWidth: 1.7 }],
   forearm: [
     { d: 'M-4.6 38 L4.6 38 L4.4 50 L-4.4 50 Z', fill: '$skin' },
     { d: 'M-9 -3 Q-11 20 -15 41 L15 41 Q11 20 9 -3 Z', fill: '$jacket' },
@@ -177,11 +177,26 @@ function swKitParts(opts) {
     parts.upperArm = Object.assign({}, SW_KIT_EDITORIAL.upperArm, { layers: O.upperArm });
     parts.forearm = Object.assign({}, SW_KIT_EDITORIAL.forearm, { layers: O.forearm });
   }
+  /* How the torso turns (swTurnedTorso): its silhouette is the first layer
+     that is not the waistband; front details come round while wrap-around
+     bands (belts, hems, sashes) stay full width. */
+  const TORSO_TURN_FACTORS = {
+    blazer: [1, 1, 1, 1, 0.25, 1, 1],
+    hoodie: [0.25, 0.7, 1, 0.85, 0],
+    tshirt: [0.25, 1, 1, 0],
+    robe: [1, 1, 0.25, 0, 0.5, 0, 1],
+    dress: [1, 0, 0.35, 0.25]
+  };
+  parts.torso = Object.assign({}, parts.torso, { turn: { body: parts.torso.layers.findIndex(L => L.fill !== '$pants'), factors: TORSO_TURN_FACTORS[outfit] } });
   if (glasses) parts.glasses = SW_KIT_GLASSES;
   if (hat) parts.headwear = { pivot: [0, 33], tip: [0, -33], layers: SW_KIT_HATS[hat] };
   if (shoes) parts.foot = Object.assign({}, SW_KIT_EDITORIAL.foot, { layers: SW_KIT_SHOES[shoes] });
   const head = Object.assign({}, SW_KIT_EDITORIAL.head);
   head.layers = SW_KIT_EDITORIAL.head.layers.slice(0, 4).concat(blush ? SW_KIT_BLUSH : [], SW_KIT_EDITORIAL.head.layers.slice(4), beard ? [SW_KIT_BEARDS[beard]] : []);
+  /* How the head turns (swTurnedHead): the ears are its first two layers,
+     near (-x) then far (+x), 29 out; the head's shape and shade move less,
+     a beard stays with the mouth, and the face is everything from blush/nose on. */
+  head.turn = { ears: [0, 1], shape: [2, 3], beard: beard ? head.layers.length - 1 : -1, face: 4, earX: 29 };
   parts.head = head;
   const H = SW_KIT_HAIR[hair];
   const rim = hair !== 'hijab' && SW_KIT_HAT_RIM[hat];

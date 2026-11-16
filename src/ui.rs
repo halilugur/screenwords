@@ -57,75 +57,14 @@ fn route(ui: &Ui, request: &Request) -> Response {
         }
         ("GET", "/api/audio") => {
             let base = project_base(&ui.project_path);
-            let mut resolved: Option<(String, Vec<u8>)> = None;
-            {
+            // The film's track as the export hears it: narration plus any
+            // music and effects.
+            let sound = {
                 let doc = ui.document.lock().unwrap();
                 let p = doc.project();
-                // The voice event wins, then the other audio assets, then a
-                // sidecar voice.mp3 next to the bundle. Muted tracks are skipped.
-                let voice_track_muted = p
-                    .tracks()
-                    .iter()
-                    .any(|t| t.role() == Some("voice") && t.is_muted() && !t.audio_events().is_empty());
-                let mut ids: Vec<String> = Vec::new();
-                for t in p.tracks() {
-                    if t.is_muted() {
-                        continue;
-                    }
-                    for ev in t.audio_events() {
-                        if ev.get("role").and_then(Value::as_str) == Some("voice") {
-                            if let Some(aid) = ev.get("assetId").and_then(Value::as_str) {
-                                if !ids.iter().any(|x| x == aid) {
-                                    ids.push(aid.to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-                if !voice_track_muted {
-                    for a in p.assets() {
-                        if a.get("kind").and_then(Value::as_str) == Some("audio") {
-                            if let Some(aid) = a.get("id").and_then(Value::as_str) {
-                                if !ids.iter().any(|x| x == aid) {
-                                    ids.push(aid.to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-                for id in ids {
-                    let Some(a) = p.asset(&id) else { continue };
-                    // Embedded narration (the normal case) carries its bytes.
-                    if let Some(uri) = a.get("source").and_then(|s| s.get("dataUri")).and_then(Value::as_str) {
-                        if let Some((mime, bytes)) = data_uri(uri) {
-                            resolved = Some((mime, bytes));
-                            break;
-                        }
-                    }
-                    let Some(src) = a.get("source").and_then(|s| s.get("path")).and_then(Value::as_str) else {
-                        continue;
-                    };
-                    let candidate = resolve_asset_path(src, base.as_deref());
-                    if candidate.exists() {
-                        let mime = audio_content_type(&candidate).to_string();
-                        if let Ok(bytes) = std::fs::read(&candidate) {
-                            resolved = Some((mime, bytes));
-                            break;
-                        }
-                    }
-                }
-            }
-            if resolved.is_none() {
-                if let Some(base) = &base {
-                    let default_voice = base.join("voice.mp3");
-                    if default_voice.exists() {
-                        if let Ok(bytes) = std::fs::read(&default_voice) {
-                            resolved = Some((audio_content_type(&default_voice).to_string(), bytes));
-                        }
-                    }
-                }
-            }
-            let Some((mime, bytes)) = resolved else {
+                crate::audio::film_sound(p, base.as_deref(), crate::render::film_duration(p)).sound
+            };
+            let Some(crate::audio::Sound { mime, bytes }) = sound else {
                 return Response::text(404, "no audio found");
             };
             let mut r = match parse_range(request.header("range"), bytes.len()) {
@@ -554,17 +493,26 @@ fn route(ui: &Ui, request: &Request) -> Response {
             }
         }
         ("GET", "/api/script") => {
-            // The whole narration, one sentence per line: what the Voice panel
-            // edits and what TTS speaks in one pass.
+            // The script the Script panel edits: every line with who says it,
+            // the language it is written in and the voice of each speaker.
             let doc = ui.document.lock().unwrap();
-            let text = script_text(&doc);
+            let p = doc.project();
             let mut r = Value::obj();
-            r.set("text", Value::str(&text));
-            r.set(
-                "lines",
-                Value::Int(text.lines().filter(|l| !l.trim().is_empty()).count() as i64),
-            );
-            r.set("words", Value::Int(doc.project().words().len() as i64));
+            r.set("lines", Value::Array(script_lines(&doc)));
+            r.set("language", Value::str(p.transcripts().first().and_then(|t| t.get("language")).and_then(Value::as_str).unwrap_or("en")));
+            r.set("voices", p.root.get("settings").and_then(|s| s.get("voices")).cloned().unwrap_or_else(Value::obj));
+            // The film's music, which the panel offers with the voices.
+            r.set("moods", Value::Array(crate::audio::MOODS.iter().map(|m| Value::str(m)).collect()));
+            let music = p.tracks().into_iter().flat_map(|t| t.audio_events().iter()).find(|e| e.get("role").and_then(Value::as_str) == Some("music"));
+            if let Some(event) = music {
+                let synth = event.get("assetId").and_then(Value::as_str).and_then(|id| p.asset(id)).and_then(|a| a.get("source")).and_then(|s| s.get("synth"));
+                let mut m = Value::obj();
+                m.set("eventId", event.get("id").cloned().unwrap_or(Value::Null));
+                m.set("mood", synth.and_then(|s| s.get("music")).cloned().unwrap_or(Value::Null));
+                m.set("seed", synth.and_then(|s| s.get("seed")).cloned().unwrap_or(Value::Null));
+                m.set("gainDB", event.get("gainDB").cloned().unwrap_or(Value::Int(0)));
+                r.set("music", m);
+            }
             Response::json(200, r.to_string_pretty(false))
         }
         ("POST", "/api/synthesize") => {
@@ -587,51 +535,23 @@ fn route(ui: &Ui, request: &Request) -> Response {
                     json_error("badRequest", "narration needs an on-disk project (screenwords app)"),
                 );
             };
-            let text = args
-                .get("text")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .unwrap_or("")
-                .to_string();
             // A throwaway server handle: `call_tool` only needs the bundle path
             // and the shared document, so the editor and MCP share one path.
+            // The Script panel saves the script as an edit first; this only
+            // gives it a voice.
             let (server, _) = McpServer::new_shared(ui.document.clone(), Some(base));
             let result = (|| -> Result<Value, EditError> {
                 let mut doc = ui.document.lock().unwrap();
-                let current = script_text(&doc);
-                if text.is_empty() {
-                    if current.trim().is_empty() {
-                        return Err(EditError::Validation {
-                            path: "text".into(),
-                            message: "write the narration first".into(),
-                        });
-                    }
-                } else if squeeze(&current) != squeeze(&text) {
-                    // "Generate" writes the script too, so a new text is one
-                    // action: transcript first, then the voice reads it. The
-                    // replace flag is what makes it a rewrite, not a second
-                    // transcript appended to the first.
-                    let mut author = Value::obj();
-                    author.set("text", Value::str(&text));
-                    author.set("replace", Value::Bool(true));
-                    doc.apply_edits(
-                        Some("author_transcript"),
-                        None,
-                        &[EditOp::new("author_transcript", author)],
-                    )?;
+                if doc.project().words().is_empty() {
+                    return Err(EditError::Validation { path: "script".into(), message: "write the script first".into() });
                 }
                 let mut synth = Value::obj();
-                for key in ["lang", "voice", "voices", "bed", "seed"] {
+                for key in ["lang", "voice", "voices", "bed", "seed", "rate"] {
                     if let Some(v) = args.get(key) {
                         synth.set(key, v.clone());
                     }
                 }
-                let mut out = crate::server::call_tool(&server, &mut doc, "synthesize_speech", &synth)?;
-                out.set(
-                    "transcriptUpdated",
-                    Value::Bool(!text.is_empty() && squeeze(&current) != squeeze(&text)),
-                );
-                Ok(out)
+                crate::server::call_tool(&server, &mut doc, "synthesize_speech", &synth)
             })();
             match result {
                 Ok(v) => Response::json(200, v.to_string_pretty(false)),
@@ -950,7 +870,16 @@ pub fn export_player(project: &crate::project::Project, base: &std::path::Path) 
     r.set("bytes", Value::Int(html.len() as i64));
     let duration = crate::render::render_data_in(project, Some(base)).get("duration").and_then(Value::as_f64).unwrap_or(0.0);
     r.set("durationSeconds", Value::from_f64((duration * 100.0).round() / 100.0));
+    note_sound(&mut r, project, base);
     Ok(r)
+}
+
+/// Says in an export's result what could not go into the film's track.
+fn note_sound(result: &mut Value, project: &crate::project::Project, base: &std::path::Path) {
+    let notes = crate::audio::film_sound(project, Some(base), crate::render::film_duration(project)).notes;
+    if !notes.is_empty() {
+        result.set("soundNotes", Value::Array(notes.iter().map(|n| Value::str(n)).collect()));
+    }
 }
 
 /// A real render to `<slug>.mp4` next to the project: one headless Chrome
@@ -992,6 +921,7 @@ pub fn render_video(project: &crate::project::Project, base: &std::path::Path) -
             "durationSeconds",
             Value::from_f64(project.settings().target_duration().map(|t| t.seconds()).unwrap_or(0.0)),
         );
+        note_sound(&mut r, project, base);
         Ok(r)
     })();
     MP4_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -1001,26 +931,39 @@ pub fn render_video(project: &crate::project::Project, base: &std::path::Path) -
 /// Where tools/render-mp4.mjs lives: next to the binary, or in the source tree
 /// when running out of target/debug.
 fn render_tool() -> Result<std::path::PathBuf, String> {
-    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-    if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())) {
-        candidates.push(dir.join("tools").join("render-mp4.mjs"));
-        candidates.push(dir.join("..").join("..").join("tools").join("render-mp4.mjs"));
-    }
-    candidates.push(std::path::PathBuf::from("tools/render-mp4.mjs"));
-    candidates
-        .into_iter()
-        .find(|p| p.exists())
-        .ok_or_else(|| "tools/render-mp4.mjs not found (run from the repository or install it next to the binary)".to_string())
+    crate::preview::tool_path("render-mp4.mjs")
+}
+
+/// The plain letter(s) an accented Latin letter is filed under, so a name in
+/// Turkish, German, French or Spanish keeps its letters in a file name.
+fn plain_letters(ch: char) -> Option<&'static str> {
+    Some(match ch {
+        'ç' | 'Ç' => "c",
+        'ğ' | 'Ğ' => "g",
+        'ı' | 'İ' | 'í' | 'ì' | 'î' | 'ï' | 'Í' | 'Î' => "i",
+        'ö' | 'Ö' | 'ó' | 'ò' | 'ô' | 'õ' | 'Ó' | 'Ô' => "o",
+        'ş' | 'Ş' => "s",
+        'ü' | 'Ü' | 'ú' | 'ù' | 'û' | 'Ú' | 'Û' => "u",
+        'â' | 'à' | 'á' | 'ä' | 'ã' | 'å' | 'Â' | 'À' | 'Á' | 'Ä' | 'Å' => "a",
+        'é' | 'è' | 'ê' | 'ë' | 'É' | 'È' | 'Ê' => "e",
+        'ñ' | 'Ñ' => "n",
+        'ß' => "ss",
+        _ => return None,
+    })
 }
 
 /// A file-safe name for the exported video: "A Short History" ->
-/// "a-short-history". Falls back to "story" when a name has no usable chars.
-fn slug(name: &str) -> String {
+/// "a-short-history", "Güneşin doğuşu" -> "gunesin-dogusu". Falls back
+/// to "story" when a name has no usable chars.
+pub(crate) fn slug(name: &str) -> String {
     let mut out = String::new();
     let mut dash = false;
     for ch in name.chars() {
         if ch.is_ascii_alphanumeric() {
             out.push(ch.to_ascii_lowercase());
+            dash = false;
+        } else if let Some(letters) = plain_letters(ch) {
+            out.push_str(letters);
             dash = false;
         } else if !out.is_empty() && !dash {
             out.push('-');
@@ -1045,51 +988,50 @@ fn frame_rate(args: &Value) -> Result<Option<f64>, String> {
     Ok(Some(raw))
 }
 
-/// The narration as plain text, one sentence (segment) per line.
-///
-/// Built from the WORDS, not the segment copy: a segment's `text` is stored
-/// with punctuation stripped, and punctuation is what tells the authoring step
-/// where sentences end. Reading the words keeps the panel showing exactly what
-/// the voice will speak.
-fn script_text(doc: &Document) -> String {
+/// The script as lines: one per turn of a transcript authored with turns
+/// (with its speaker), else one per sentence. A line's text is its words as
+/// written, punctuation and all.
+fn script_lines(doc: &Document) -> Vec<Value> {
     let p = doc.project();
-    let p_words = p.words();
-    let word_map: std::collections::HashMap<&str, &str> =
-        p_words.iter().map(|w| (w.id(), w.text())).collect();
-    let Some(segs) = p
-        .transcripts()
-        .first()
-        .and_then(|t| t.get("segments"))
-        .and_then(Value::as_array)
-    else {
-        return String::new();
+    let Some(transcript) = p.transcripts().first() else {
+        return Vec::new();
     };
-    let mut lines: Vec<String> = Vec::new();
-    for seg in segs {
-        let joined = seg
-            .get("wordIds")
-            .and_then(Value::as_array)
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|v| v.as_str())
-                    .filter_map(|id| word_map.get(id).copied())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            })
-            .unwrap_or_default();
-        if !joined.is_empty() {
-            lines.push(joined);
-        } else if let Some(text) = seg.get("text").and_then(Value::as_str) {
-            lines.push(text.to_string());
+    let words = transcript.get("words").and_then(Value::as_array).unwrap_or(&[]);
+    let by_id: std::collections::HashMap<&str, &Value> = words.iter().filter_map(|w| Some((w.get("id")?.as_str()?, w))).collect();
+    let text_of = |w: &Value| w.get("text").and_then(Value::as_str).unwrap_or("").to_string();
+    // Groups of words, each one line.
+    let groups: Vec<Vec<&Value>> = if words.iter().any(|w| w.get("turn").is_some()) {
+        let mut out: Vec<Vec<&Value>> = Vec::new();
+        for w in words {
+            match out.last_mut() {
+                Some(line) if line[0].get("turn") == w.get("turn") => line.push(w),
+                _ => out.push(vec![w]),
+            }
         }
-    }
-    lines.join("\n")
-}
-
-/// Compare scripts by content, not line breaks or double spaces: re-submitting
-/// the untouched panel must not rewrite the transcript.
-fn squeeze(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+        out
+    } else {
+        transcript
+            .get("segments")
+            .and_then(Value::as_array)
+            .map(|segs| {
+                segs.iter()
+                    .map(|seg| seg.get("wordIds").and_then(Value::as_array).map(|ids| ids.iter().filter_map(|id| by_id.get(id.as_str()?).copied()).collect()).unwrap_or_default())
+                    .filter(|line: &Vec<&Value>| !line.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    groups
+        .into_iter()
+        .map(|line| {
+            let mut o = Value::obj();
+            if let Some(speaker) = line[0].get("speaker").and_then(Value::as_str) {
+                o.set("speaker", Value::str(speaker));
+            }
+            o.set("text", Value::str(&line.iter().map(|w| text_of(w)).collect::<Vec<_>>().join(" ")));
+            o
+        })
+        .collect()
 }
 
 fn json_error(code: &str, message: &str) -> String {
@@ -1108,44 +1050,6 @@ fn project_base(path: &str) -> Option<std::path::PathBuf> {
     } else {
         p.parent().map(|d| d.to_path_buf())
     }
-}
-
-fn resolve_asset_path(src: &str, base: Option<&std::path::Path>) -> std::path::PathBuf {
-    let p = std::path::Path::new(src);
-    if p.is_absolute() {
-        return p.to_path_buf();
-    }
-    match base {
-        Some(base) => base.join(p),
-        None => p.to_path_buf(),
-    }
-}
-
-fn audio_content_type(path: &std::path::Path) -> &'static str {
-    match path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())
-        .as_deref()
-    {
-        Some("wav") => "audio/wav",
-        Some("mp3") => "audio/mpeg",
-        Some("m4a") | Some("mp4") => "audio/mp4",
-        Some("aac") => "audio/aac",
-        Some("ogg") | Some("oga") => "audio/ogg",
-        Some("flac") => "audio/flac",
-        Some("aif") | Some("aiff") | Some("caf") => "audio/aiff",
-        _ => "application/octet-stream",
-    }
-}
-
-/// Split `data:<mime>;base64,<payload>` into the media type and its bytes.
-fn data_uri(uri: &str) -> Option<(String, Vec<u8>)> {
-    let rest = uri.strip_prefix("data:")?;
-    let (meta, payload) = rest.split_once(',')?;
-    let mime = meta.strip_suffix(";base64")?;
-    let bytes = crate::render::base64_decode(payload)?;
-    Some((mime.to_string(), bytes))
 }
 
 fn asset_label(asset: &Value, fallback: &str) -> String {
@@ -1228,6 +1132,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_name_keeps_its_letters_in_the_file_name() {
+        // The film that came out as "d-nyan-n-varolu-u.mp4".
+        assert_eq!(slug("Güneşin doğuşu"), "gunesin-dogusu");
+        assert_eq!(slug("IŞIK & Gölge: Çağ"), "isik-golge-cag");
+        assert_eq!(slug("Straße über Ñandú"), "strasse-uber-nandu");
+        assert_eq!(slug("A Short History"), "a-short-history");
+        assert_eq!(slug("日本"), "story");
+    }
+
+    #[test]
     fn ranges_resolve_like_a_browser_expects() {
         assert!(matches!(parse_range(None, 100), RangeSpec::Full));
         assert!(matches!(parse_range(Some("bytes=0-9"), 100), RangeSpec::Partial(0, 9)));
@@ -1240,14 +1154,6 @@ mod tests {
         assert!(matches!(parse_range(Some("bytes=0-0"), 0), RangeSpec::Unsatisfiable));
     }
 
-    #[test]
-    fn audio_content_types_follow_the_extension() {
-        use std::path::Path;
-        assert_eq!(audio_content_type(Path::new("a/b/narration.wav")), "audio/wav");
-        assert_eq!(audio_content_type(Path::new("voice.MP3")), "audio/mpeg");
-        assert_eq!(audio_content_type(Path::new("a.caf")), "audio/aiff");
-        assert_eq!(audio_content_type(Path::new("blob")), "application/octet-stream");
-    }
 
     #[test]
     fn editor_has_no_placeholder_content_constants() {
@@ -1274,18 +1180,32 @@ mod tests {
     }
 
     #[test]
-    fn the_editor_offers_narration_generation() {
-        // Script box, one language picker, one button: the panel stays small.
+    fn the_editor_writes_a_story_cast_script_and_scenes() {
+        // A story is written in the editor: three panels, each over its part
+        // of the document, each saving through the edit route.
         let page = page_html();
-        assert!(page.contains("data-tab=\"voice\""), "no Voice tab");
-        assert!(page.contains("id=\"tts-text\""), "no script box to write into");
-        assert!(page.contains("id=\"tts-lang\""), "no language picker");
-        assert!(page.contains("id=\"ttsgo\">Generate<"), "no generate button");
-        assert!(page.contains("'/api/synthesize'"), "the button does not call the route");
-        assert!(page.contains("'/api/script'"), "the script box is not hydrated");
-        // Phonon has voice styles per .bin prompt; EMA Lightning has one sound.
-        assert!(page.contains("id=\"tts-voice\""), "no English voice picker");
-        assert!(page.contains("'/api/voices'"), "the voice picker is not hydrated");
+        for tab in ["cast", "voice", "story"] {
+            assert!(page.contains(&format!("data-tab=\"{tab}\"")), "no {tab} tab");
+            assert!(page.contains(&format!("<section data-panel=\"{tab}\">")), "no {tab} panel");
+        }
+        // Cast: settings.cast, every option the kit offers, drawn by the engine.
+        assert!(page.contains("SWDraw.kits.editorial") && page.contains("SWDraw.character(ctx"), "the cast is not the engine's");
+        assert!(page.contains("arguments: { cast: { [id]: castPick.member } }"), "a character is not saved to the cast");
+        // Script: a line per row with its speaker, voices kept, then the voice.
+        assert!(page.contains("id=\"script-lines\"") && page.contains("id=\"tts-lang\"") && page.contains("id=\"ttsgo\">Generate voice<"));
+        assert!(page.contains("{ turns: lines, language: ttsLang.value, replace: true }"), "lines are not authored as turns");
+        assert!(page.contains("arguments: { voices: chosenVoices() }"), "voices are not kept");
+        for route in ["'/api/script'", "'/api/voices'", "'/api/synthesize'"] {
+            assert!(page.contains(route), "the script panel does not call {route}");
+        }
+        // Story: the engine's places, props and actions; saved on the component.
+        for list in ["SWDraw.sets", "SWDraw.props", "SWDraw.storyActions"] {
+            assert!(page.contains(list), "the story panel does not read {list}");
+        }
+        assert!(page.contains("tool: 'update_component', arguments: { instanceId: storyId, params: { scenes: storyScenes } }"));
+        for list in ["SWDraw.props = [", "SWDraw.storyActions = ["] {
+            assert!(crate::render::COMPONENTS.contains(list), "the engine does not define {list}");
+        }
     }
 
     fn authored(text: &str) -> Document {
@@ -1314,16 +1234,48 @@ mod tests {
     }
 
     #[test]
-    fn the_script_route_returns_one_sentence_per_line() {
+    fn the_script_route_returns_lines_with_their_speakers_language_and_voices() {
+        // A narration: one line per sentence, nobody named.
         let ui = ui_for(authored("First sentence. Second one here."), "script");
-        let res = handle(&ui, &request("GET", "/api/script", ""));
-        assert_eq!(res.status, 200);
-        let body = String::from_utf8_lossy(&res.body);
-        let json: Value = Value::parse(&body).unwrap();
-        assert_eq!(json.get("lines").and_then(Value::as_i64), Some(2), "{body}");
-        let text = json.get("text").and_then(Value::as_str).unwrap_or("");
-        assert_eq!(text.lines().count(), 2, "{text}");
-        assert!(text.contains("Second one here"), "{text}");
+        let json = Value::parse(&String::from_utf8_lossy(&handle(&ui, &request("GET", "/api/script", "")).body)).unwrap();
+        let lines = json.get("lines").and_then(Value::as_array).unwrap();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1].get("text").and_then(Value::as_str), Some("Second one here."));
+        assert!(lines[0].get("speaker").is_none());
+
+        // A story: one line per turn — two sentences of one turn stay one
+        // line — with its speaker, the language and the voices kept.
+        let mut doc = Document::new(crate::server::blank_project("story", false));
+        doc.apply_edits(None, None, &[
+            EditOp::new("author_transcript", Value::parse(r#"{"language": "tr", "turns": [
+                {"speaker": "narrator", "text": "Kız koştu."},
+                {"speaker": "elder", "text": "Bu akşam hikâye yok. Sana bir hediyem var."},
+                {"speaker": "child", "text": "Ne hediyesi?"}]}"#).unwrap()),
+            EditOp::new("set_project_settings", Value::parse(r#"{"voices": {"narrator": "M3", "elder": "M4"}}"#).unwrap()),
+        ]).unwrap();
+        let ui = ui_for(doc, "story");
+        let json = Value::parse(&String::from_utf8_lossy(&handle(&ui, &request("GET", "/api/script", "")).body)).unwrap();
+        let lines: Vec<(String, String)> = json.get("lines").and_then(Value::as_array).unwrap().iter()
+            .map(|l| (l.get("speaker").and_then(Value::as_str).unwrap_or("").to_string(), l.get("text").and_then(Value::as_str).unwrap_or("").to_string()))
+            .collect();
+        assert_eq!(lines, vec![
+            ("narrator".to_string(), "Kız koştu.".to_string()),
+            ("elder".to_string(), "Bu akşam hikâye yok. Sana bir hediyem var.".to_string()),
+            ("child".to_string(), "Ne hediyesi?".to_string()),
+        ]);
+        assert_eq!(json.get("language").and_then(Value::as_str), Some("tr"));
+        assert_eq!(json.get("voices").and_then(|v| v.get("elder")).and_then(Value::as_str), Some("M4"));
+        // No music yet; the moods to choose from are offered.
+        assert!(json.get("music").is_none());
+        assert_eq!(json.get("moods").and_then(Value::as_array).map(|m| m.len()), Some(crate::audio::MOODS.len()));
+        // Music placed: its mood, piece and level come back for the panel.
+        ui.document.lock().unwrap().apply_edits(None, None, &[EditOp::new("add_music", Value::parse(r#"{"mood": "wonder", "seed": 12, "gainDB": -4}"#).unwrap())]).unwrap();
+        let json = Value::parse(&String::from_utf8_lossy(&handle(&ui, &request("GET", "/api/script", "")).body)).unwrap();
+        let music = json.get("music").expect("the music is reported");
+        assert_eq!(music.get("mood").and_then(Value::as_str), Some("wonder"));
+        assert_eq!(music.get("seed").and_then(Value::as_i64), Some(12));
+        assert_eq!(music.get("gainDB").and_then(Value::as_f64), Some(-4.0));
+        assert!(music.get("eventId").and_then(Value::as_str).is_some_and(|id| id.starts_with("aud_")));
     }
 
     #[test]
@@ -1434,6 +1386,30 @@ mod tests {
     }
 
     #[test]
+    fn every_editor_button_has_a_style() {
+        // A button whose class has no rule falls back to the browser's own
+        // look (the track Hide button did). Every class a <button> carries —
+        // in the markup or in the script that builds the timeline — must be
+        // styled in the page's stylesheet.
+        let style = &PAGE[..PAGE.rfind("</style>").expect("the page has a stylesheet")];
+        let mut seen = 0;
+        for (at, _) in PAGE.match_indices("<button") {
+            let tag = &PAGE[at..at + PAGE[at..].find('>').unwrap_or(0)];
+            let Some(from) = tag.find("class=\"") else {
+                panic!("a button without a class: {tag}");
+            };
+            let classes = &tag[from + 7..];
+            // The script closes the string to append a state class: class="mini-btn' + ...
+            let end = classes.find(['"', '\'']).unwrap_or(classes.len());
+            for class in classes[..end].split_whitespace() {
+                seen += 1;
+                assert!(style.contains(&format!(".{class} ")) || style.contains(&format!(".{class}:")) || style.contains(&format!(".{class}.")), "button class '{class}' has no style: {tag}");
+            }
+        }
+        assert!(seen > 10, "the scan found only {seen} button classes");
+    }
+
+    #[test]
     fn the_header_offers_preview_and_create_video() {
         let page = page_html();
         assert!(page.contains("Open preview"), "the preview button keeps the old name");
@@ -1526,33 +1502,12 @@ mod tests {
     }
 
     #[test]
-    fn an_unchanged_script_is_not_rewritten() {
-        // Line breaks and runs of spaces are formatting, not content: pressing
-        // Generate twice must not re-author the transcript.
-        assert_eq!(squeeze("a b.\n\nc  d"), squeeze("a b. c d"));
-        assert_ne!(squeeze("a b"), squeeze("a b c"));
-        assert_eq!(squeeze("  \n "), "");
-    }
-
-    #[test]
-    fn an_empty_script_is_refused_before_touching_anything() {
-        let ui = ui_for(Document::new(crate::server::blank_project("empty", true)), "empty");
-        let res = handle(&ui, &request("POST", "/api/synthesize", "{\"lang\":\"en\",\"text\":\"   \"}"));
-        assert_eq!(res.status, 400, "{}", String::from_utf8_lossy(&res.body));
-        assert!(
-            String::from_utf8_lossy(&res.body).contains("write the narration first"),
-            "{}",
-            String::from_utf8_lossy(&res.body)
-        );
-    }
-
-    #[test]
-    fn narration_without_a_transcript_is_refused_with_a_reason() {
+    fn a_voice_needs_a_script() {
+        // Nothing written yet: refused with the reason, before any synthesis.
         let ui = ui_for(Document::new(crate::server::blank_project("empty", true)), "empty");
         let res = handle(&ui, &request("POST", "/api/synthesize", "{\"lang\":\"en\"}"));
         assert_eq!(res.status, 400, "{}", String::from_utf8_lossy(&res.body));
-        let body = String::from_utf8_lossy(&res.body);
-        assert!(body.contains("write the narration first"), "{body}");
+        assert!(String::from_utf8_lossy(&res.body).contains("write the script first"), "{}", String::from_utf8_lossy(&res.body));
     }
 
     #[test]
@@ -1603,36 +1558,6 @@ mod tests {
         assert!(after > 0.0, "target duration was not fitted to the audio");
         assert!((after - before).abs() > 0.001, "the story did not re-time to the real speech");
         drop(doc);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn generating_from_new_text_rewrites_the_transcript_and_speaks_it() {
-        if !crate::tts::models_dir().join("en").join("flow_lm_main.onnx").exists() {
-            return; // models not staged: skip
-        }
-        let dir = std::env::temp_dir().join(format!("sw-narration-new-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-
-        let ui = ui_for(authored("Old line."), &dir.to_string_lossy());
-        let body = "{\"lang\":\"en\",\"text\":\"A brand new line. And one more.\"}";
-        let res = handle(&ui, &request("POST", "/api/synthesize", body));
-        let out = String::from_utf8_lossy(&res.body).to_string();
-        assert_eq!(res.status, 200, "{out}");
-        let json = Value::parse(&out).unwrap();
-        assert_eq!(json.get("transcriptUpdated").and_then(Value::as_bool), Some(true), "{out}");
-        assert!(json.get("durationSeconds").and_then(Value::as_f64).unwrap_or(0.0) > 0.0, "{out}");
-
-        let doc = ui.document.lock().unwrap();
-        let script = script_text(&doc);
-        assert!(script.contains("brand new line"), "{script}");
-        assert!(!script.contains("Old line"), "the old script survived: {script}");
-        assert_eq!(doc.project().words().len(), 7, "the transcript was not re-authored");
-        drop(doc);
-
-        let saved = std::fs::read_to_string(dir.join("project.json")).unwrap();
-        assert!(saved.contains("brand new line"), "the new script was not persisted");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

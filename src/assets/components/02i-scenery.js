@@ -576,6 +576,8 @@ const SW_SCENERY_SIZE = { flowers: [0.14, 0.08], well: [0.14, 0.16], lamp: [0.1,
   vase: [0.07, 0.13], chair: [0.13, 0.3], plant: [0.12, 0.26], bowl: [0.1, 0.045], lantern: [0.05, 0.11], candle: [0.04, 0.08],
   chest: [0.18, 0.12], books: [0.08, 0.05], teapot: [0.08, 0.07], cup: [0.025, 0.04] };
 
+/* A described place drawn from parts: spec {theme, inside, floor, pieces,
+   ...} as the story component takes it, o {W, H, time, camX}. */
 function swScenery(ctx, spec, o) {
   spec = spec && typeof spec === 'object' ? spec : {};
   o = o || {};

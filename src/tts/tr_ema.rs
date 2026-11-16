@@ -3,7 +3,12 @@
 //! timeline comes from rounding durations per word; sound.onnx runs the four
 //! flow steps to latents; decoder.onnx maps latents to 48 kHz audio.
 
-use super::{models_dir, Audio};
+use super::phrasing::{sentences, Pace, Spoken};
+use super::{models_dir, Speech};
+
+const SAMPLE_RATE: u32 = 48000;
+/// One frame of the model's timeline: 1920 samples.
+const FRAME_SECONDS: f64 = 1920.0 / SAMPLE_RATE as f64;
 use crate::json::Value;
 use ort::session::Session;
 use ort::value::Tensor;
@@ -203,13 +208,66 @@ impl Noise {
     }
 }
 
-pub fn speak(text: &str, seed: u32) -> Result<Audio, String> {
+/// EMA's own tempo is its narration tempo. Every stretch that was tried
+/// (x1.24, x1.1, x1.05) was heard as slow; what made the model sound hurried
+/// was reading a paragraph without a breath, which speaking sentence by
+/// sentence with pauses already cures.
+const NARRATION_STRETCH: f32 = 1.0;
+/// Longest sentence handed to the model in one pass, in characters.
+const MAX_SENTENCE: usize = 300;
+
+/// Speak `text` sentence by sentence — each gets its own intonation and the
+/// pause its punctuation asks for — and report where every sentence and
+/// every written word sits in the audio.
+pub fn speak_timed(text: &str, seed: u32, pace: Pace) -> Result<Speech, String> {
     let mut tr = load()?;
+    let mut take = Spoken::new(SAMPLE_RATE);
+    for (i, sentence) in sentences(text, MAX_SENTENCE).iter().enumerate() {
+        let (pcm, words) = utter(&mut tr, sentence, seed.wrapping_add(i as u32), pace.stretch(NARRATION_STRETCH))?;
+        take.push(&pcm, words, sentence, pace);
+    }
+    take.finish()
+}
+
+/// How many words the model says for each written word of `sentence`: one,
+/// several for a number ("4,6" is read as three), none for a symbol it has
+/// no letter for.
+fn spoken_per_written(sentence: &str) -> Vec<usize> {
+    sentence.split_whitespace().map(|word| frontend(&read_numbers(word)).split_whitespace().count()).collect()
+}
+
+/// The `(start, end)` seconds of each written word, from the frames the
+/// model gave each word it said. None when the two do not add up (the
+/// frontend read the sentence differently as a whole than word by word).
+fn written_word_spans(sentence: &str, frames: &[usize]) -> Option<Vec<(f64, f64)>> {
+    let per_written = spoken_per_written(sentence);
+    if per_written.iter().sum::<usize>() != frames.len() {
+        return None;
+    }
+    let mut at = 0usize;
+    let mut frame = 0usize;
+    Some(
+        per_written
+            .iter()
+            .map(|&said| {
+                let start = frame;
+                frame += frames[at..at + said].iter().sum::<usize>();
+                at += said;
+                (start as f64 * FRAME_SECONDS, frame as f64 * FRAME_SECONDS)
+            })
+            .collect(),
+    )
+}
+
+/// One sentence in one pass, its letter durations multiplied by `stretch`,
+/// with the time of each of its written words. Empty when nothing in it can
+/// be read.
+fn utter(tr: &mut Tr, sentence: &str, seed: u32, stretch: f32) -> Result<(Vec<f32>, Option<Vec<(f64, f64)>>), String> {
     // number reading pass, then alphabet
-    let normalized = read_numbers(text);
-    let alpha = frontend(&normalized);
-    if alpha.is_empty() {
-        return Err("nothing to say".into());
+    let alpha = frontend(&read_numbers(sentence));
+    // Punctuation alone has durations too; the model would voice them as noise.
+    if !alpha.chars().any(char::is_alphabetic) {
+        return Ok((Vec::new(), None));
     }
     let stoi = |c: char| {
         tr.vocab
@@ -231,7 +289,7 @@ pub fn speak(text: &str, seed: u32) -> Result<Audio, String> {
         let d = out["dur"].try_extract_array::<f32>().map_err(|e| e.to_string())?;
         (
             h.as_slice().map(<[f32]>::to_vec).ok_or("h")?,
-            d.as_slice().map(<[f32]>::to_vec).ok_or("dur")?,
+            d.as_slice().ok_or("dur")?.iter().map(|frames| frames * stretch).collect::<Vec<f32>>(),
         )
     };
 
@@ -301,7 +359,7 @@ pub fn speak(text: &str, seed: u32) -> Result<Audio, String> {
     let fp_t = Tensor::from_array(([1usize, t], fp)).map_err(|e| e.to_string())?;
     let noise_t =
         Tensor::from_array(([1usize, 4, t, 64usize], noise_data)).map_err(|e| e.to_string())?;
-    let (_lat, samples) = {
+    let samples = {
         let out = tr
             .sound
             .run(ort::inputs![
@@ -318,10 +376,9 @@ pub fn speak(text: &str, seed: u32) -> Result<Audio, String> {
             .run(ort::inputs!["z" => z_t])
             .map_err(|e| e.to_string())?;
         let audio_arr = out2["audio"].try_extract_array::<f32>().map_err(|e| e.to_string())?;
-        let samples: Vec<f32> = audio_arr.as_slice().map(<[f32]>::to_vec).ok_or("audio")?;
-        (Vec::<f32>::new(), samples)
+        audio_arr.as_slice().map(<[f32]>::to_vec).ok_or("audio")?
     };
-    Ok(Audio { samples, rate: 48000 })
+    Ok((samples, written_word_spans(sentence, &counts)))
 }
 
 /// Replace digit runs with Turkish words (integers + decimal commas).
@@ -370,6 +427,59 @@ fn read_numbers(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_paragraph_is_spoken_sentence_by_sentence_at_the_asked_pace() {
+        if !models_dir().join("tr").join("text.onnx").exists() {
+            return; // models not staged: skip
+        }
+        // Three sentences of a real narration, with a number and a colon.
+        let text = "4,6 milyar yıl önce bir gaz ve toz bulutu çöktü. Merkezinde Güneş yandı. Erimiş bir gezegen doğdu: Dünya.";
+        let Speech { audio: calm, sentences: windows, words } = speak_timed(text, 42, Pace::NARRATION).unwrap();
+        assert_eq!(calm.rate, SAMPLE_RATE);
+        // Every written word has its own time, in order, inside its sentence:
+        // "4,6" (read as three words) is one span, "çöktü." ends sentence one.
+        let words = words.expect("the Turkish voice knows its word times");
+        assert_eq!(words.len(), text.split_whitespace().count());
+        assert!(words.iter().all(|(a, b)| b > a), "{words:?}");
+        assert!(words.windows(2).all(|p| p[1].0 >= p[0].1 - 1e-9), "{words:?}");
+        assert!(words[0].1 - words[0].0 > 0.6, "the number takes as long as its three words: {:?}", words[0]);
+        let first_end = windows[0].0 + windows[0].1;
+        assert!((words[9].1 - first_end).abs() < 0.05, "sentence one ends with its last word: {} vs {first_end}", words[9].1);
+        assert!((words[10].0 - windows[1].0).abs() < 1e-6, "sentence two starts with its first word");
+        assert_eq!(windows.len(), 3, "one window per sentence: {windows:?}");
+        assert!(calm.samples.iter().all(|s| s.is_finite()));
+        // A breath between sentences: each starts after the last one ended.
+        for pair in windows.windows(2) {
+            let gap = pair[1].0 - (pair[0].0 + pair[0].1);
+            assert!((gap - 0.45).abs() < 0.01, "pause of {gap}s");
+        }
+        // The model's own tempo while speaking, about 5.2 to 6.2 syllables a
+        // second: not the stretched 4.6 that was heard as dragging.
+        let syllables = text.chars().filter(|c| "aeıioöuü".contains(*c)).count() as f64 + 8.0; // "4,6" is read as four words
+        let speaking: f64 = windows.iter().map(|w| w.1).sum();
+        let pace = syllables / speaking;
+        assert!((5.2..6.2).contains(&pace), "{pace:.2} syllables a second");
+        // Asked to be brisk, the same text takes less time; nothing is cut.
+        let Speech { audio: brisk, sentences: brisk_windows, .. } = speak_timed(text, 42, Pace::new(1.3).unwrap()).unwrap();
+        assert_eq!(brisk_windows.len(), 3);
+        assert!((brisk.samples.len() as f64) < calm.samples.len() as f64 * 0.85, "{} vs {}", brisk.samples.len(), calm.samples.len());
+        // A text with nothing readable is an error, not silence.
+        assert!(speak_timed("… — …", 42, Pace::NARRATION).is_err());
+    }
+
+    #[test]
+    fn written_words_take_the_frames_of_what_was_said_for_them() {
+        // "4,6" is said as "dört virgül altı" and the arrow, which the model
+        // has no letter for, as nothing.
+        assert_eq!(spoken_per_written("4,6 milyar yıl → önce"), vec![3, 1, 1, 0, 1]);
+        // 25 frames a second: six said words, their frames summed per written word.
+        let spans = written_word_spans("4,6 milyar yıl → önce", &[10, 8, 7, 20, 5, 25]).unwrap();
+        assert_eq!(spans, vec![(0.0, 1.0), (1.0, 1.8), (1.8, 2.0), (2.0, 2.0), (2.0, 3.0)]);
+        // The model said a different number of words than the text predicts:
+        // no word times rather than wrong ones.
+        assert_eq!(written_word_spans("iki kelime", &[10, 10, 10]), None);
+    }
 
     #[test]
     fn frontend_folds_to_the_model_alphabet() {

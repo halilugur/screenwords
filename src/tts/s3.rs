@@ -13,7 +13,8 @@
 //! the `unicode_indexer.json` table has combining marks but not precomposed
 //! accents, which is why [`super::nfkd`] exists.
 
-use super::{models_dir, Audio};
+use super::phrasing::{sentences, Pace, Spoken};
+use super::{models_dir, Speech};
 use crate::json::Value;
 use ort::session::Session;
 use ort::value::Tensor;
@@ -38,8 +39,9 @@ const DEFAULT_STEPS: usize = 8;
 /// Characters per synthesis chunk (Korean needs shorter ones).
 const MAX_CHUNK: usize = 300;
 const MAX_CHUNK_KO: usize = 120;
-/// Silence inserted between sentence chunks, in seconds.
-const SILENCE: f32 = 0.3;
+/// Supertonic's own pace is already a narrator's (about 4.4 syllables a
+/// second in Turkish), so narration needs no stretch.
+const NARRATION_STRETCH: f32 = 1.0;
 
 // ---------- language / voice discovery ----------
 
@@ -219,8 +221,9 @@ impl Engine {
             .collect()
     }
 
-    /// One chunk of speech, without silence padding.
-    fn synth(&mut self, text: &str, lang: &str, voice: &str, seed: u32) -> Result<Vec<f32>, String> {
+    /// One chunk of speech, without silence padding, its predicted duration
+    /// multiplied by `stretch`.
+    fn synth(&mut self, text: &str, lang: &str, voice: &str, seed: u32, stretch: f32) -> Result<Vec<f32>, String> {
         let style = self.style(voice)?;
         let prepared = preprocess(text, lang_tag(lang));
         if prepared.trim().is_empty() {
@@ -255,6 +258,7 @@ impl Engine {
         if dur <= 0.0 || !dur.is_finite() {
             return Err(format!("duration_predictor returned {dur}"));
         }
+        let dur = dur * stretch;
 
         let out = self
             .enc
@@ -462,113 +466,28 @@ fn preprocess(text: &str, lang: &str) -> String {
     format!("<{lang}>{clean}</{lang}>")
 }
 
-fn is_abbrev(s: &str) -> bool {
-    let token = s.trim_end_matches('.').split_whitespace().last().unwrap_or("");
-    matches!(
-        token,
-        "Mr" | "Mrs" | "Ms" | "Dr" | "Prof" | "Sr" | "Jr" | "St" | "Ave" | "Blvd" | "Inc"
-            | "Ltd" | "Co" | "Corp" | "vs" | "e.g" | "i.e" | "etc" | "Ph.D"
-    ) || (token.chars().count() == 1 && token.chars().next().map(char::is_uppercase).unwrap_or(false))
-}
-
-/// One chunk per sentence: the audio window of each chunk then maps 1:1 to a
-/// transcript segment, which is what caption re-timing needs.
-fn plan(text: &str, lang: &str) -> Vec<String> {
-    let max = if lang == "ko" { MAX_CHUNK_KO } else { MAX_CHUNK };
-    let mut sentences: Vec<String> = Vec::new();
-    let mut cur = String::new();
-    for c in text.chars() {
-        cur.push(c);
-        let boundary = matches!(c, '.' | '!' | '?' | '…' | '。' | '！' | '？') && !is_abbrev(&cur);
-        if boundary || c == '\n' {
-            let s = cur.trim();
-            if !s.is_empty() {
-                sentences.push(s.to_string());
-            }
-            cur.clear();
-        }
-    }
-    if !cur.trim().is_empty() {
-        sentences.push(cur.trim().to_string());
-    }
-
-    let mut out = Vec::new();
-    for sentence in sentences {
-        if sentence.chars().count() <= max {
-            out.push(sentence);
-            continue;
-        }
-        let mut line = String::new();
-        for word in sentence.split_whitespace() {
-            let len = word.chars().count();
-            if len > max {
-                // No-space scripts (CJK) still have to be cut somewhere.
-                if !line.is_empty() {
-                    out.push(std::mem::take(&mut line));
-                }
-                let chars: Vec<char> = word.chars().collect();
-                for part in chars.chunks(max) {
-                    out.push(part.iter().collect());
-                }
-                continue;
-            }
-            if !line.is_empty() && line.chars().count() + 1 + len > max {
-                out.push(std::mem::take(&mut line));
-            }
-            if !line.is_empty() {
-                line.push(' ');
-            }
-            line.push_str(word);
-        }
-        if !line.is_empty() {
-            out.push(line);
-        }
-    }
-    out
-}
-
 // ---------- public entry points ----------
 
-/// Speak `text` in `lang` with a Supertonic voice style.
-pub fn speak(text: &str, voice: &str, seed: u32, lang: &str) -> Result<Audio, String> {
-    speak_timed(text, voice, seed, lang).map(|(audio, _)| audio)
-}
-
-/// As [`speak`], plus the `(start, duration)` window of every sentence chunk so
-/// the caller can map transcript times onto the real audio.
+/// Speak `text` in `lang` with a Supertonic voice style, sentence by
+/// sentence, and report the `(start, duration)` window of every sentence so
+/// the caller can map transcript times onto the real audio. The model
+/// predicts one duration for a whole sentence, so it has no word times.
 pub fn speak_timed(
     text: &str,
     voice: &str,
     seed: u32,
     lang: &str,
-) -> Result<(Audio, Vec<(f64, f64)>), String> {
-    let chunks = plan(text, lang);
-    if chunks.is_empty() {
-        return Err("nothing to say".into());
-    }
+    pace: Pace,
+) -> Result<Speech, String> {
+    let max = if lang == "ko" { MAX_CHUNK_KO } else { MAX_CHUNK };
     let mut guard = engine()?;
     let engine = guard.as_mut().ok_or("supertonic engine unavailable")?;
-    let rate = engine.sample_rate;
-    let silence = vec![0f32; (SILENCE * rate as f32) as usize];
-
-    let mut samples: Vec<f32> = Vec::new();
-    let mut windows: Vec<(f64, f64)> = Vec::new();
-    for (i, chunk) in chunks.iter().enumerate() {
-        let pcm = engine.synth(chunk, lang, voice, seed.wrapping_add(i as u32))?;
-        if pcm.is_empty() {
-            continue;
-        }
-        let start = samples.len() as f64 / rate as f64;
-        windows.push((start, pcm.len() as f64 / rate as f64));
-        samples.extend_from_slice(&pcm);
-        if i + 1 < chunks.len() {
-            samples.extend_from_slice(&silence);
-        }
+    let mut take = Spoken::new(engine.sample_rate);
+    for (i, sentence) in sentences(text, max).iter().enumerate() {
+        let pcm = engine.synth(sentence, lang, voice, seed.wrapping_add(i as u32), pace.stretch(NARRATION_STRETCH))?;
+        take.push(&pcm, None, sentence, pace);
     }
-    if samples.is_empty() {
-        return Err("supertonic produced no audio".into());
-    }
-    Ok((Audio { samples, rate }, windows))
+    take.finish()
 }
 
 #[cfg(test)]
@@ -600,27 +519,6 @@ mod tests {
     }
 
     #[test]
-    fn plan_is_one_chunk_per_sentence() {
-        let chunks = plan("One sentence. Two sentences here!\nThird?", "en");
-        assert_eq!(chunks, vec!["One sentence.", "Two sentences here!", "Third?"]);
-    }
-
-    #[test]
-    fn plan_keeps_abbreviations_together() {
-        let chunks = plan("Dr. Smith arrived. He left.", "en");
-        assert_eq!(chunks.len(), 2, "{chunks:?}");
-        assert!(chunks[0].starts_with("Dr. Smith"));
-    }
-
-    #[test]
-    fn long_sentences_are_split() {
-        let text = "word ".repeat(200);
-        let chunks = plan(text.trim(), "en");
-        assert!(chunks.len() > 1);
-        assert!(chunks.iter().all(|c| c.chars().count() <= MAX_CHUNK));
-    }
-
-    #[test]
     fn voice_names_and_routing() {
         assert!(is_voice("M1"));
         assert!(is_voice("F5"));
@@ -634,7 +532,7 @@ mod tests {
         if !available() {
             return; // models not staged: skip
         }
-        let (audio, windows) = speak_timed("Hello there.", "M1", 7, "en").unwrap();
+        let Speech { audio, sentences: windows, .. } = speak_timed("Hello there.", "M1", 7, "en", Pace::NARRATION).unwrap();
         assert_eq!(audio.rate, 44100);
         assert!(audio.samples.len() > 4410, "expected >0.1s of audio");
         assert_eq!(windows.len(), 1);
