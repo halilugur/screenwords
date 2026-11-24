@@ -299,7 +299,7 @@ fn route(ui: &Ui, request: &Request) -> Response {
         ("GET", "/api/voices") => {
             // English voice styles are files: list what is staged in
             // tts-models/en so the picker never drifts from disk. Turkish has
-            // one sound (EMA Lightning takes no voice argument).
+            // Antalia-2 Mini first when staged (the default), then Ahenk Cep in its speaking styles.
             let mut names: Vec<String> = std::fs::read_dir(crate::tts::models_dir().join("en"))
                 .map(|rd| {
                     rd.flatten()
@@ -331,6 +331,7 @@ fn route(ui: &Ui, request: &Request) -> Response {
             }
             let mut r = Value::obj();
             r.set("voices", Value::Array(names.iter().map(|n| Value::str(n)).collect()));
+            r.set("turkish", Value::Array(crate::tts::turkish_voices().iter().map(|n| Value::str(n)).collect()));
             r.set(
                 "supertonic",
                 Value::Array(supertonic.iter().map(|n| Value::str(n)).collect()),
@@ -1218,19 +1219,26 @@ mod tests {
     }
 
     #[test]
-    fn the_voice_route_lists_the_staged_english_prompts() {
+    fn the_voice_route_lists_the_staged_english_prompts_and_the_turkish_styles() {
         let ui = ui_for(Document::new(crate::server::blank_project("voices", true)), "voices");
         let res = handle(&ui, &request("GET", "/api/voices", ""));
         assert_eq!(res.status, 200);
         let body = String::from_utf8_lossy(&res.body).to_string();
         let json = Value::parse(&body).unwrap();
-        let voices: Vec<String> = json
-            .get("voices")
-            .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
-            .unwrap_or_default();
+        let names = |key: &str| -> Vec<String> {
+            json.get(key)
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default()
+        };
+        let voices = names("voices");
         assert!(voices.contains(&"easton".to_string()), "{body}");
         assert!(voices.len() >= 2, "only one English style staged: {body}");
+        // Turkish speaks in styles, neutral first so it is the default pick.
+        assert_eq!(names("turkish"), crate::tts::turkish_voices(), "{body}");
+        // Cep's styles follow Antalia, the default, when that is staged.
+        let styles = ["neutral", "angry", "calm", "cheerful", "empathetic", "sad", "surprised"];
+        assert!(names("turkish").ends_with(&styles.map(String::from)), "{body}");
     }
 
     #[test]

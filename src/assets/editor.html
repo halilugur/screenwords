@@ -2474,11 +2474,12 @@ function voiceLabel(name) {
       : w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
 }
-let allVoices = [], supertonicVoices = [], savedVoices = {}, scriptDirty = false, scriptAsLoaded = '';
-/* English and Turkish have voices of their own; every other language is
-   spoken by Supertonic 3, so only its styles are offered there. */
+let allVoices = [], turkishStyles = [], supertonicVoices = [], savedVoices = {}, scriptDirty = false, scriptAsLoaded = '';
+/* English has voices of its own and Turkish speaking styles; every other
+   language is spoken by Supertonic 3, so only its styles are offered there. */
 function voicesForLanguage() {
-  return ttsLang.value === 'en' || ttsLang.value === 'tr' ? allVoices : supertonicVoices;
+  if (ttsLang.value === 'en') return allVoices;
+  return ttsLang.value === 'tr' ? turkishStyles.concat(supertonicVoices) : supertonicVoices;
 }
 function renderScript() {
   scriptList.innerHTML = scriptLines.map((l, i) => '<li class="line-row" data-line="' + i + '">' +
@@ -2550,6 +2551,7 @@ voiceMap.addEventListener('change', () => { scriptDirty = true; });
 ttsLang.addEventListener('change', () => { scriptDirty = true; renderVoices(); });
 fetch('/api/voices').then(r => r.json()).then(d => {
   allVoices = Array.isArray(d.voices) ? d.voices : [];
+  turkishStyles = Array.isArray(d.turkish) ? d.turkish : [];
   supertonicVoices = Array.isArray(d.supertonic) ? d.supertonic : [];
   renderVoices();
 }).catch(() => {});

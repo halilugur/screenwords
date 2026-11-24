@@ -1,10 +1,14 @@
-//! EMA Lightning (Turkish): three ONNX graphs, one whole-utterance pass.
-//! text.onnx turns letters into features and per-letter durations; the frame
-//! timeline comes from rounding durations per word; sound.onnx runs the four
-//! flow steps to latents; decoder.onnx maps latents to 48 kHz audio.
+//! Ahenk Cep (Turkish): EMA Lightning's architecture fine-tuned on Ahenk's
+//! designed voice f022, with a speaking style. text.onnx turns letters and a
+//! style into features and per-letter durations; the frame timeline comes
+//! from rounding durations per word; cond.onnx lays the letters on that
+//! timeline; step.onnx is one guided Euler step of the flow, run `steps`
+//! times from seeded noise to latents; decoder.onnx maps latents to 48 kHz.
+//! The decoder's background hiss is turned down over the finished take
+//! ([`super::denoise`]).
 
 use super::phrasing::{sentences, Pace, Spoken};
-use super::{models_dir, Speech};
+use super::{models_dir, Noise, Speech};
 
 const SAMPLE_RATE: u32 = 48000;
 /// One frame of the model's timeline: 1920 samples.
@@ -15,12 +19,28 @@ use ort::value::Tensor;
 
 struct Tr {
     vocab: Vec<String>,
+    /// The style id for `text.onnx`: its index in the config's `styles`.
+    style: i64,
+    /// Euler steps and classifier-free guidance scale (config `defaults`).
+    steps: usize,
+    cfg: f32,
     text: Session,
-    sound: Session,
+    cond: Session,
+    step: Session,
     decoder: Session,
 }
 
-fn load() -> Result<Tr, String> {
+/// The styles the voice was trained in, in config order. "laughter" is in
+/// the model's table but was never trained, so it is not offered.
+pub const STYLES: [&str; 7] = ["neutral", "angry", "calm", "cheerful", "empathetic", "sad", "surprised"];
+
+/// The style a voice name asks for: one of [`STYLES`], or neutral for any
+/// other name (a voice picked for another language).
+fn style_of(voice: &str) -> &'static str {
+    STYLES.iter().copied().find(|s| s.eq_ignore_ascii_case(voice)).unwrap_or(STYLES[0])
+}
+
+fn load(style: &str) -> Result<Tr, String> {
     let dir = models_dir().join("tr");
     let cfg: Value = Value::parse(
         &std::fs::read_to_string(dir.join("config.json")).map_err(|e| e.to_string())?,
@@ -31,6 +51,12 @@ fn load() -> Result<Tr, String> {
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
         .ok_or("config vocab")?;
+    let style = cfg
+        .get("styles")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().position(|v| v.as_str() == Some(style)))
+        .ok_or_else(|| format!("config styles: no '{style}'"))? as i64;
+    let default = |key: &str| cfg.get("defaults").and_then(|d| d.get(key)).and_then(Value::as_f64).ok_or(format!("config defaults.{key}"));
     let session = |name: &str| {
         Session::builder()
             .and_then(|b| b.commit_from_file(dir.join(name)))
@@ -38,8 +64,12 @@ fn load() -> Result<Tr, String> {
     };
     Ok(Tr {
         vocab,
+        style,
+        steps: default("steps")? as usize,
+        cfg: default("cfg")? as f32,
         text: session("text.onnx")?,
-        sound: session("sound.onnx")?,
+        cond: session("cond.onnx")?,
+        step: session("step.onnx")?,
         decoder: session("decoder.onnx")?,
     })
 }
@@ -186,29 +216,8 @@ pub fn frontend(text: &str) -> String {
     collapsed.trim().to_string()
 }
 
-/// Seeded f32 gaussian (xorshift + Box-Muller) for the sound graph's noise.
-struct Noise(u64);
-impl Noise {
-    fn next_u32(&mut self) -> u32 {
-        // xorshift64*
-        let mut x = self.0;
-        x ^= x >> 12;
-        x ^= x << 25;
-        x ^= x >> 27;
-        self.0 = x;
-        (x.wrapping_mul(0x2545F4914F6CDD1D) >> 32) as u32
-    }
-    fn uniform(&mut self) -> f64 {
-        (self.next_u32() as f64 + 0.5) / 4294967296.0
-    }
-    fn normal(&mut self) -> f32 {
-        let u = self.uniform();
-        let v = self.uniform();
-        ((-2.0 * u.ln()).sqrt() * (2.0 * std::f64::consts::PI * v).cos()) as f32
-    }
-}
-
-/// EMA's own tempo is its narration tempo. Every stretch that was tried
+/// The model's own tempo is its narration tempo (measured on EMA Lightning,
+/// whose durations Ahenk Cep keeps). Every stretch that was tried
 /// (x1.24, x1.1, x1.05) was heard as slow; what made the model sound hurried
 /// was reading a paragraph without a breath, which speaking sentence by
 /// sentence with pauses already cures.
@@ -216,17 +225,20 @@ const NARRATION_STRETCH: f32 = 1.0;
 /// Longest sentence handed to the model in one pass, in characters.
 const MAX_SENTENCE: usize = 300;
 
-/// Speak `text` sentence by sentence — each gets its own intonation and the
-/// pause its punctuation asks for — and report where every sentence and
-/// every written word sits in the audio.
-pub fn speak_timed(text: &str, seed: u32, pace: Pace) -> Result<Speech, String> {
-    let mut tr = load()?;
+/// Speak `text` in the style `voice` names (see [`STYLES`]) sentence by
+/// sentence — each gets its own intonation and the pause its punctuation
+/// asks for — and report where every sentence and every written word sits
+/// in the audio.
+pub fn speak_timed(text: &str, voice: &str, seed: u32, pace: Pace) -> Result<Speech, String> {
+    let mut tr = load(style_of(voice))?;
     let mut take = Spoken::new(SAMPLE_RATE);
     for (i, sentence) in sentences(text, MAX_SENTENCE).iter().enumerate() {
         let (pcm, words) = utter(&mut tr, sentence, seed.wrapping_add(i as u32), pace.stretch(NARRATION_STRETCH))?;
         take.push(&pcm, words, sentence, pace);
     }
-    take.finish()
+    let mut speech = take.finish()?;
+    speech.audio.samples = super::denoise::denoise(&speech.audio.samples);
+    Ok(speech)
 }
 
 /// How many words the model says for each written word of `sentence`: one,
@@ -278,12 +290,13 @@ fn utter(tr: &mut Tr, sentence: &str, seed: u32, stretch: f32) -> Result<(Vec<f3
     let ids: Vec<i64> = alpha.chars().map(|c| stoi(c) as i64).collect();
     let l = ids.len();
 
-    // text graph: h and per-letter durations
+    // text graph: h and per-letter durations, in the asked style
     let ids_t = Tensor::from_array(([1usize, l], ids)).map_err(|e| e.to_string())?;
+    let style_t = Tensor::from_array(([1usize], vec![tr.style])).map_err(|e| e.to_string())?;
     let (h_vec, dur_vec) = {
         let out = tr
             .text
-            .run(ort::inputs!["ids" => ids_t])
+            .run(ort::inputs!["ids" => ids_t, "style" => style_t])
             .map_err(|e| e.to_string())?;
         let h = out["h"].try_extract_array::<f32>().map_err(|e| e.to_string())?;
         let d = out["dur"].try_extract_array::<f32>().map_err(|e| e.to_string())?;
@@ -344,39 +357,50 @@ fn utter(tr: &mut Tr, sentence: &str, seed: u32, stretch: f32) -> Result<(Vec<f3
     }
     let t = fw.len();
 
-    // seeded noise [1,4,T,64]
+    let tensor_err = |e: ort::Error| e.to_string();
+    let h_t = Tensor::from_array(([1usize, l, 224usize], h_vec)).map_err(tensor_err)?;
+    let dur_t = Tensor::from_array(([1usize, l], dur_vec)).map_err(tensor_err)?;
+    let cw_t = Tensor::from_array(([1usize, l], cw)).map_err(tensor_err)?;
+    let ws_t = Tensor::from_array(([1usize, l], wstart)).map_err(tensor_err)?;
+    let fw_t = Tensor::from_array(([1usize, t], fw)).map_err(tensor_err)?;
+    let fp_t = Tensor::from_array(([1usize, t], fp)).map_err(tensor_err)?;
+    // the letters laid on the frame timeline, once for every step
+    let cond: Vec<f32> = {
+        let out = tr
+            .cond
+            .run(ort::inputs!["h" => h_t, "dur" => dur_t, "cw" => cw_t, "wstart" => ws_t, "fw" => fw_t, "fp" => fp_t])
+            .map_err(tensor_err)?;
+        let c = out["cond"].try_extract_array::<f32>().map_err(tensor_err)?;
+        c.as_slice().map(<[f32]>::to_vec).ok_or("cond")?
+    };
+
+    // seeded noise [1,T,64], carried to latents by the guided Euler steps
     let mut noise = Noise(seed as u64 ^ 0xA5A5_1F2E_9D3C_7B4A);
-    let mut noise_data = vec![0f32; 4 * t * 64];
-    for v in noise_data.iter_mut() {
-        *v = noise.normal();
+    let mut x: Vec<f32> = (0..t * 64).map(|_| noise.normal()).collect();
+    let dt = 1.0 / tr.steps as f32;
+    let scalar = |v: f32| Tensor::from_array(([1usize], vec![v])).map_err(tensor_err);
+    for k in 0..tr.steps {
+        let out = tr
+            .step
+            .run(ort::inputs![
+                "x" => Tensor::from_array(([1usize, t, 64usize], x)).map_err(tensor_err)?,
+                "cond" => Tensor::from_array(([1usize, t, 224usize], cond.clone())).map_err(tensor_err)?,
+                "t" => scalar(k as f32 * dt)?, "dt" => scalar(dt)?, "cfg" => scalar(tr.cfg)?,
+            ])
+            .map_err(tensor_err)?;
+        let next = out["x_next"].try_extract_array::<f32>().map_err(tensor_err)?;
+        x = next.as_slice().map(<[f32]>::to_vec).ok_or("x_next")?;
     }
 
-    let h_t = Tensor::from_array(([1usize, l, 224usize], h_vec)).map_err(|e| e.to_string())?;
-    let dur_t = Tensor::from_array(([1usize, l], dur_vec)).map_err(|e| e.to_string())?;
-    let cw_t = Tensor::from_array(([1usize, l], cw)).map_err(|e| e.to_string())?;
-    let ws_t = Tensor::from_array(([1usize, l], wstart)).map_err(|e| e.to_string())?;
-    let fw_t = Tensor::from_array(([1usize, t], fw)).map_err(|e| e.to_string())?;
-    let fp_t = Tensor::from_array(([1usize, t], fp)).map_err(|e| e.to_string())?;
-    let noise_t =
-        Tensor::from_array(([1usize, 4, t, 64usize], noise_data)).map_err(|e| e.to_string())?;
+    // the decoder reads latents channel-first: [1,64,T]
+    let z: Vec<f32> = (0..64).flat_map(|c| x.iter().skip(c).step_by(64).copied().collect::<Vec<f32>>()).collect();
     let samples = {
         let out = tr
-            .sound
-            .run(ort::inputs![
-                "h" => h_t, "dur" => dur_t, "cw" => cw_t, "wstart" => ws_t,
-                "fw" => fw_t, "fp" => fp_t, "noise" => noise_t,
-            ])
-            .map_err(|e| e.to_string())?;
-        let lat_arr = out["latents"].try_extract_array::<f32>().map_err(|e| e.to_string())?;
-        let lat: Vec<f32> = lat_arr.as_slice().map(<[f32]>::to_vec).ok_or("latents")?;
-        drop(out);
-        let z_t = Tensor::from_array(([1usize, t, 64usize], lat)).map_err(|e| e.to_string())?;
-        let out2 = tr
             .decoder
-            .run(ort::inputs!["z" => z_t])
-            .map_err(|e| e.to_string())?;
-        let audio_arr = out2["audio"].try_extract_array::<f32>().map_err(|e| e.to_string())?;
-        audio_arr.as_slice().map(<[f32]>::to_vec).ok_or("audio")?
+            .run(ort::inputs!["z" => Tensor::from_array(([1usize, 64usize, t], z)).map_err(tensor_err)?])
+            .map_err(tensor_err)?;
+        let audio = out["audio"].try_extract_array::<f32>().map_err(tensor_err)?;
+        audio.as_slice().map(<[f32]>::to_vec).ok_or("audio")?
     };
     Ok((samples, written_word_spans(sentence, &counts)))
 }
@@ -430,12 +454,12 @@ mod tests {
 
     #[test]
     fn a_paragraph_is_spoken_sentence_by_sentence_at_the_asked_pace() {
-        if !models_dir().join("tr").join("text.onnx").exists() {
+        if !models_dir().join("tr").join("step.onnx").exists() {
             return; // models not staged: skip
         }
         // Three sentences of a real narration, with a number and a colon.
         let text = "4,6 milyar yıl önce bir gaz ve toz bulutu çöktü. Merkezinde Güneş yandı. Erimiş bir gezegen doğdu: Dünya.";
-        let Speech { audio: calm, sentences: windows, words } = speak_timed(text, 42, Pace::NARRATION).unwrap();
+        let Speech { audio: calm, sentences: windows, words } = speak_timed(text, "neutral", 42, Pace::NARRATION).unwrap();
         assert_eq!(calm.rate, SAMPLE_RATE);
         // Every written word has its own time, in order, inside its sentence:
         // "4,6" (read as three words) is one span, "çöktü." ends sentence one.
@@ -461,11 +485,45 @@ mod tests {
         let pace = syllables / speaking;
         assert!((5.2..6.2).contains(&pace), "{pace:.2} syllables a second");
         // Asked to be brisk, the same text takes less time; nothing is cut.
-        let Speech { audio: brisk, sentences: brisk_windows, .. } = speak_timed(text, 42, Pace::new(1.3).unwrap()).unwrap();
+        let Speech { audio: brisk, sentences: brisk_windows, .. } = speak_timed(text, "neutral", 42, Pace::new(1.3).unwrap()).unwrap();
         assert_eq!(brisk_windows.len(), 3);
         assert!((brisk.samples.len() as f64) < calm.samples.len() as f64 * 0.85, "{} vs {}", brisk.samples.len(), calm.samples.len());
         // A text with nothing readable is an error, not silence.
-        assert!(speak_timed("… — …", 42, Pace::NARRATION).is_err());
+        assert!(speak_timed("… — …", "neutral", 42, Pace::NARRATION).is_err());
+    }
+
+    #[test]
+    fn a_style_is_picked_by_name_and_anything_else_speaks_neutral() {
+        assert_eq!(style_of("sad"), "sad");
+        assert_eq!(style_of("Cheerful"), "cheerful");
+        // A voice chosen for another language, and the untrained laughter.
+        assert_eq!(style_of("easton"), "neutral");
+        assert_eq!(style_of("laughter"), "neutral");
+    }
+
+    #[test]
+    fn every_offered_style_is_the_one_the_model_was_trained_on() {
+        if !models_dir().join("tr").join("step.onnx").exists() {
+            return; // models not staged: skip
+        }
+        for (i, style) in STYLES.iter().enumerate() {
+            assert_eq!(load(style).unwrap().style, i as i64, "{style}");
+        }
+    }
+
+    #[test]
+    fn a_sad_reading_is_slower_than_a_neutral_one() {
+        if !models_dir().join("tr").join("step.onnx").exists() {
+            return; // models not staged: skip
+        }
+        // The card measures "sad" about 8 % slower: the style reaches the
+        // durations, not only the sound.
+        let text = "Ne kadar uğraştıysam da yetişemedim, onunla son kez vedalaşamadım.";
+        let speaking = |style: &str| -> f64 {
+            speak_timed(text, style, 7, Pace::NARRATION).unwrap().sentences.iter().map(|w| w.1).sum()
+        };
+        let (neutral, sad) = (speaking("neutral"), speaking("sad"));
+        assert!(sad > neutral * 1.03, "sad {sad:.2}s vs neutral {neutral:.2}s");
     }
 
     #[test]

@@ -175,7 +175,7 @@ screenshots above.
 | `reads` | Transcript views & search, chapters, notes, SRT/WebVTT export |
 | `mcp` / `mcp_proxy` | Streamable-HTTP MCP client and the stdio bridge |
 | `server` / `ui` / `render` | MCP server, web editor, shared animated renderer |
-| `tts` | On-device ONNX voices (English Phonon, Turkish EMA) + alignment |
+| `tts` | On-device ONNX voices (English Phonon, Turkish Ahenk Cep and Antalia-2 Mini) + alignment |
 | `json`, `regex`, `http(d)`, `inflate`, `zip` | The std-only foundations |
 
 Component renderers live in [`src/assets/components/`](src/assets/components) —
@@ -199,3 +199,15 @@ cargo test    # 110 tests: engine contracts, renderer data, UI routes, pages
 ## License
 
 [MIT](LICENSE) © Halil UGUR
+
+The Turkish voice is Ahenk Cep, Ahenk (https://github.com/ozguradmin/ahenk-turkish-tts),
+CC BY 4.0, from [ozgurguler/ahenk-cep-tr](https://huggingface.co/ozgurguler/ahenk-cep-tr)
+(its `onnx/` graphs in `tts-models/tr`, `onnx/ahenk-cep.json` as `config.json`). Its voice is
+synthetic: label what it speaks as AI-generated.
+
+Turkish speaks Antalia-2 Mini by default, a male voice (Cep speaks when one of its styles is
+chosen), from
+[cloud0day3/antalia-mini](https://huggingface.co/cloud0day3/antalia-mini) (Apache-2.0): convert it
+once with `tools/export-antalia.py` into `tts-models/antalia` (about 50 MB, including its
+normaliser's data and the CMU Pronouncing Dictionary under its own BSD-style licence). Its voice is
+synthetic too.
